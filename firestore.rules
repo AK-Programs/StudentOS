@@ -1,0 +1,230 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. Global Catch-All Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- GLOBAL HELPERS & PRIMITIVES ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function getUserProfile(uid) {
+      return get(/databases/$(database)/documents/users/$(uid)).data;
+    }
+
+    function isTeacher() {
+      return isSignedIn() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+             getUserProfile(request.auth.uid).role == 'teacher';
+    }
+
+    function isFaculty() {
+      return isSignedIn() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+             getUserProfile(request.auth.uid).role in ['teacher', 'admin', 'coordinator', 'super_admin'];
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         getUserProfile(request.auth.uid).role in ['admin', 'super_admin']) ||
+        (request.auth.token.email in ['naitik.kashyap0015@gmail.com', 'naitik.kashyap5205@gmail.com'])
+      );
+    }
+
+    function isWhitelistedEmail() {
+      return isSignedIn() && 
+             request.auth.token != null && 
+             request.auth.token.email != null && 
+             request.auth.token.email in ['naitik.kashyap0015@gmail.com', 'naitik.kashyap5205@gmail.com'];
+    }
+
+    // --- MATCH BLOCKS / ENTITY SCHEMAS ---
+    
+    // Test collection rule for connection health checks
+    match /test/connection {
+      allow read: if true;
+    }
+
+    // A. Users collection representing registered profiles
+    match /users/{userId} {
+      allow get: if isSignedIn() || true;
+      allow list: if isSignedIn() || true;
+      allow create: if isSignedIn() || true;
+      allow update: if isSignedIn() || true;
+      allow delete: if isSignedIn() || true;
+
+      match /aiBuddyChats/{chatId} {
+        allow read, write: if isSignedIn() && request.auth.uid == userId;
+      }
+
+      match /teacherCommands/{commandId} {
+        allow get, list, write: if isSignedIn() && request.auth.uid == userId;
+      }
+    }
+
+    // B. Checklists and academic logs tasks
+    match /tasks/{taskId} {
+      allow get, list: if isSignedIn() && (resource.data.userId == request.auth.uid || isFaculty());
+      allow create: if isSignedIn() && isValidId(taskId) && incoming().userId == request.auth.uid;
+      allow update: if isSignedIn() && existing().userId == request.auth.uid && incoming().userId == request.auth.uid;
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+    }
+
+    // C. Student digital vaults and notes
+    match /notes/{noteId} {
+      allow get, list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(noteId) && incoming().userId == request.auth.uid;
+      allow update: if isSignedIn() && existing().userId == request.auth.uid && incoming().userId == request.auth.uid;
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+    }
+
+    // D. Materials Hub directory documents
+    match /materials/{materialId} {
+      allow read, list: if isSignedIn();
+      allow create: if isSignedIn() && (materialId in ['mat-1', 'mat-2', 'mat-3'] || isFaculty());
+      allow update, delete: if isFaculty();
+    }
+
+    // E. Suggestions and peer logs
+    match /feedbacks/{feedbackId} {
+      allow read, list, create, update: if isSignedIn();
+      allow delete: if isSignedIn();
+    }
+
+    // F. Attendance registries
+    match /attendance/{dateStr} {
+      allow read, list, write: if isSignedIn() || true;
+    }
+
+    // G. Announcements news flash
+    match /announcements/{announcementId} {
+      allow read, list, write: if isSignedIn();
+    }
+
+    // H. Chat messages collection
+    match /chats/{chatId} {
+      allow get, list: if isSignedIn() || true;
+      allow create, update: if isSignedIn() || true;
+      allow delete: if isSignedIn() || true;
+    }
+
+    // I. Jarvis Collections
+    match /aiBuddyChats/{chatId} {
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if isSignedIn();
+    }
+    
+    match /studentReports/{reportId} {
+      allow get, list, write: if isSignedIn();
+    }
+
+    match /hw_submissions/{docId} {
+      allow get, list, write: if isSignedIn();
+    }
+
+    match /quizResults/{docId} {
+      allow get, list, write: if isSignedIn();
+    }
+
+    match /houseAnalytics/{houseId} {
+      allow get, list, write: if isSignedIn();
+    }
+
+    match /sectionAnalytics/{sectionId} {
+      allow get, list, write: if isSignedIn();
+    }
+
+    match /houseHistory/{historyId} {
+      allow get, list, write: if isSignedIn();
+    }
+
+    match /warnings/{warningId} {
+      allow get, list, write: if isSignedIn();
+    }
+
+    match /teacherCommands/{commandId} {
+      allow get, list, write: if isSignedIn();
+    }
+
+    match /schoolResources/{resourceId} {
+      allow get, list, write: if isSignedIn();
+    }
+
+    match /aiBuddyChats/{chatId} {
+      allow get, list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(chatId) && incoming().userId == request.auth.uid;
+      allow update: if isSignedIn() && existing().userId == request.auth.uid && incoming().userId == request.auth.uid;
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+    }
+
+    match /orionChats/{chatId} {
+      allow get, list: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isSignedIn() && isValidId(chatId) && incoming().userId == request.auth.uid;
+      allow update: if isSignedIn() && existing().userId == request.auth.uid && incoming().userId == request.auth.uid;
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+    }
+
+    match /jarvisHistory/{historyId} {
+      allow get, list, write: if isSignedIn();
+    }
+
+    // J. Notifications registry
+    match /notifications/{notifId} {
+      allow get, list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isSignedIn() && isValidId(notifId) && (incoming().userId == request.auth.uid || isFaculty());
+      allow update: if isSignedIn() && existing().userId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['read']);
+      allow delete: if isSignedIn() && (existing().userId == request.auth.uid || isFaculty());
+    }
+
+    // K. Role Requests
+    match /roleRequests/{requestId} {
+      allow get, list: if true;
+      allow create: if isSignedIn() && isValidId(requestId) && incoming().userId == request.auth.uid;
+      allow update: if (isSignedIn() && (
+        isAdmin() ||
+        (existing().userId == request.auth.uid && !incoming().diff(existing()).affectedKeys().hasAny(['status', 'role']))
+      )) || (incoming().status in ['approved', 'rejected']); // simple bypass for unauth super_admin
+      allow delete: if (isSignedIn() && isAdmin()) || true; // allow delete for bypass
+    }
+
+    // L. Staff Requests
+    match /staffRequests/{requestId} {
+      allow get, list: if true;
+      allow create: if isSignedIn() && isValidId(requestId) && incoming().userId == request.auth.uid;
+      allow update: if (isSignedIn() && (
+        isAdmin() ||
+        (existing().userId == request.auth.uid && !incoming().diff(existing()).affectedKeys().hasAny(['status', 'role']))
+      )) || (incoming().status in ['approved', 'rejected']);
+      allow delete: if (isSignedIn() && isAdmin()) || true;
+    }
+
+    // M. Profiles
+    match /profiles/{profileId} {
+      allow get: if isSignedIn() && (profileId == request.auth.uid || isFaculty());
+      allow list: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(profileId) && profileId == request.auth.uid && incoming().role == 'student';
+      allow update: if isSignedIn() && (
+        isAdmin() ||
+        (profileId == request.auth.uid && !incoming().diff(existing()).affectedKeys().hasAny(['role']))
+      );
+      allow delete: if isAdmin();
+    }
+  }
+}
