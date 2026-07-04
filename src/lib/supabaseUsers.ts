@@ -16,7 +16,7 @@ export interface SupabaseUser {
 export function mapSupabaseUserToProfile(u: any): UserProfile {
   return {
     uid: u.firebase_uid || u.id || '',
-    email: u.email,
+    email: u.email?.toLowerCase(),
     name: u.name || u.full_name || 'Student',
     role: u.role as UserRole,
     permissions: u.permissions || [],
@@ -40,7 +40,7 @@ export function mapSupabaseUserToProfile(u: any): UserProfile {
  */
 export function mapProfileToSupabaseUser(profile: UserProfile): Partial<SupabaseUser> {
   return {
-    email: profile.email,
+    email: profile.email?.toLowerCase(),
     full_name: profile.name,
     role: profile.role,
     permissions: profile.permissions || [],
@@ -144,13 +144,14 @@ export async function getSupabaseUserProfile(uid: string, email?: string): Promi
     }
   }
 
-  // 3. Try querying by email
+  // 3. Try querying by email (normalized to lowercase)
   if (!data && email) {
     try {
+      const normalized = email.toLowerCase();
       const { data: res, error: err } = await supabase
         .from('users')
         .select('*')
-        .eq('email', email)
+        .eq('email', normalized)
         .maybeSingle();
       if (!err && res) {
         data = res;
@@ -197,10 +198,11 @@ export async function saveSupabaseUserProfile(profile: UserProfile): Promise<Use
 
   if (!existing && profile.email) {
     try {
+      const normalized = profile.email.toLowerCase();
       const { data } = await supabase
         .from('users')
         .select('*')
-        .eq('email', profile.email)
+        .eq('email', normalized)
         .maybeSingle();
       if (data) existing = data;
     } catch (e) {}
@@ -209,7 +211,7 @@ export async function saveSupabaseUserProfile(profile: UserProfile): Promise<Use
   // Construct initial full payload representing all possible database column shapes
   const initialPayload: any = {
     firebase_uid: profile.uid,
-    email: profile.email,
+    email: profile.email?.toLowerCase(),
     name: profile.name,
     full_name: profile.name,
     role: profile.role,
