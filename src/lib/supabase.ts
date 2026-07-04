@@ -9,9 +9,11 @@ const getEnvVar = (key: string): string => {
     val = import.meta.env.VITE_SUPABASE_ANON_KEY;
   }
   
-  // Fallback to dynamic lookup
+  // Fallback to dynamic lookup safely without triggering ReferenceError on 'process'
   if (!val) {
-    val = (import.meta as any).env?.[key] || (process as any).env?.[key] || '';
+    const metaEnv = (import.meta as any).env;
+    const processEnv = typeof process !== 'undefined' ? (process as any).env : null;
+    val = metaEnv?.[key] || processEnv?.[key] || '';
   }
   
   if (!val) return '';
@@ -29,6 +31,14 @@ const supabaseAnonKey = getEnvVar('VITE_SUPABASE_ANON_KEY');
 
 console.log('[DEBUG-SUPABASE] Sanitized Supabase URL:', supabaseUrl);
 console.log('[DEBUG-SUPABASE] Sanitized Key length:', supabaseAnonKey ? supabaseAnonKey.length : 0);
+
+// Attach to window so the Diagnostic UI can safely inspect the active values
+(window as any).__SUPABASE_CONFIG__ = {
+  url: supabaseUrl,
+  anonKey: supabaseAnonKey,
+  rawUrl: import.meta.env.VITE_SUPABASE_URL || '',
+  rawKey: import.meta.env.VITE_SUPABASE_ANON_KEY || ''
+};
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
