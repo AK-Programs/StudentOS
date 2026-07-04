@@ -23,7 +23,15 @@ export function initSupabaseAuthListener(setProfile: (p: UserProfile | null) => 
               const res: any = await (supabase.auth as any).getSessionFromUrl();
               const session = res?.data?.session;
               const user = session?.user;
-              if (user) await handleSession(user, setProfile);
+              if (user) {
+                // Clean up the URL so the hash isn't re-parsed on reload
+                try {
+                  history.replaceState(null, '', window.location.pathname + window.location.search);
+                } catch (e) {
+                  /* ignore */
+                }
+                await handleSession(user, setProfile);
+              }
             } catch (e) {
               console.warn('[AUTH-LISTENER] getSessionFromUrl failed:', e);
             }
@@ -57,6 +65,12 @@ export function initSupabaseAuthListener(setProfile: (p: UserProfile | null) => 
       const user = session?.user;
       console.log('[AUTH-LISTENER] onAuthStateChange event:', _event);
       if (user) {
+        // If URL still contains an OAuth hash, clean it now (defensive)
+        try {
+          if (typeof window !== 'undefined' && window.location && window.location.hash) {
+            history.replaceState(null, '', window.location.pathname + window.location.search);
+          }
+        } catch (e) {}
         await handleSession(user, setProfile);
       } else {
         setProfile(null);
