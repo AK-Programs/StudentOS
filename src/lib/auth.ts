@@ -8,6 +8,35 @@ import type { UserProfile } from '../types';
  * setProfile should accept a UserProfile | null and update your app state.
  */
 export function initSupabaseAuthListener(setProfile: (p: UserProfile | null) => void) {
+  // If URL contains OAuth response in the hash, explicitly parse it first so the SDK stores the session
+  try {
+    if (typeof window !== 'undefined' && window.location) {
+      const hash = window.location.hash || '';
+      const hasOAuthHash = hash.includes('access_token') || hash.includes('type=oauth') || hash.includes('refresh_token');
+      if (hasOAuthHash) {
+        console.log('[AUTH-LISTENER] OAuth hash found in URL — attempting to parse session from URL');
+        // supabase.auth.getSessionFromUrl will parse the hash and store the session in browser storage
+        try {
+          // getSessionFromUrl is available in supabase-js v2
+          (async () => {
+            try {
+              const res: any = await (supabase.auth as any).getSessionFromUrl();
+              const session = res?.data?.session;
+              const user = session?.user;
+              if (user) await handleSession(user, setProfile);
+            } catch (e) {
+              console.warn('[AUTH-LISTENER] getSessionFromUrl failed:', e);
+            }
+          })();
+        } catch (e) {
+          console.warn('[AUTH-LISTENER] getSessionFromUrl not available on this SDK version:', e);
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('[AUTH-LISTENER] URL check failed:', e);
+  }
+
   // Immediately check current session on load
   (async () => {
     try {
@@ -26,6 +55,7 @@ export function initSupabaseAuthListener(setProfile: (p: UserProfile | null) => 
   try {
     supabase.auth.onAuthStateChange(async (_event: any, session: any) => {
       const user = session?.user;
+      console.log('[AUTH-LISTENER] onAuthStateChange event:', _event);
       if (user) {
         await handleSession(user, setProfile);
       } else {
