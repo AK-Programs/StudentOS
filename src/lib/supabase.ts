@@ -46,3 +46,37 @@ if (typeof window !== 'undefined' && (window as any).WebSocket) {
     console.warn('[WS GUARD] Unable to install WebSocket guard:', e);
   }
 }
+
+// Immediately attempt to parse OAuth hash *synchronously* on module load so other modules don't race
+// This runs very early because many modules import supabase from this file.
+if (typeof window !== 'undefined') {
+  try {
+    const hash = window.location.hash || '';
+    const hasOAuthHash = hash.includes('access_token') || hash.includes('refresh_token') || hash.includes('type=oauth');
+    if (hasOAuthHash) {
+      (async () => {
+        try {
+          console.log('[SUPABASE OAUTH PARSE] Detected OAuth hash on module load — parsing session now');
+          // getSessionFromUrl parses the URL hash and stores the session in browser storage
+          if ((supabase.auth as any).getSessionFromUrl) {
+            const res: any = await (supabase.auth as any).getSessionFromUrl();
+            console.log('[SUPABASE OAUTH PARSE] getSessionFromUrl result:', res?.data?.session ? 'session set' : res);
+            // Clean up the URL to avoid duplicate parsing and accidental leaks
+            try {
+              history.replaceState(null, '', window.location.pathname + window.location.search);
+              console.log('[SUPABASE OAUTH PARSE] Cleared URL hash');
+            } catch (e) {
+              console.warn('[SUPABASE OAUTH PARSE] Failed to clear URL hash:', e);
+            }
+          } else {
+            console.warn('[SUPABASE OAUTH PARSE] getSessionFromUrl not available on this SDK version');
+          }
+        } catch (e) {
+          console.warn('[SUPABASE OAUTH PARSE] Error while parsing session from URL hash:', e);
+        }
+      })();
+    }
+  } catch (e) {
+    console.warn('[SUPABASE OAUTH PARSE] URL hash check failed:', e);
+  }
+}
