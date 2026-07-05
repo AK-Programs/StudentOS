@@ -1481,7 +1481,7 @@ export default function App() {
       if (error) throw error;
       showNotification(`Redirecting to Google Sign-In via Supabase...`);
     } catch (error: any) {
-      console.error('[Supabase Auth Debug] Google Sign-In failed:', error);
+      console.error('[Auth] Google Sign-In failed:', error);
       const code = error?.code || 'unknown';
       const msg = error?.message || String(error);
       setAuthError({
@@ -1508,7 +1508,7 @@ export default function App() {
       if (error) throw error;
       showNotification(`Redirecting to Google Sign-In with options via Supabase...`);
     } catch (error: any) {
-      console.error('[Supabase Auth Debug] Google Sign-In with select_account failed:', error);
+      console.error('[Auth] Google Sign-In with select_account failed:', error);
       const code = error?.code || 'unknown';
       const msg = error?.message || String(error);
       setAuthError({
@@ -1550,7 +1550,7 @@ export default function App() {
       if (error) throw error;
       showNotification(`Redirecting to link Google account via Supabase...`);
     } catch (error: any) {
-      console.error('[Supabase Auth Debug] Link Google failed:', error);
+      console.error('[Auth] Link Google failed:', error);
       const code = error?.code || 'unknown';
       const msg = error?.message || String(error);
       setAuthError({
@@ -1617,7 +1617,7 @@ export default function App() {
       if (error) throw error;
       showNotification(`Redirecting to authenticate as ${acc.name} via Supabase...`);
     } catch (error: any) {
-      console.error('[Supabase Auth Debug] Recent account Google authentication failed:', error);
+      console.error('[Auth] Recent account Google sign-in failed:', error);
       const code = error?.code || 'unknown';
       const msg = error?.message || String(error);
       setAuthError({
@@ -3864,11 +3864,8 @@ export default function App() {
                       <div className="flex gap-2.5 items-start">
                         <span className="text-lg">⚠️</span>
                         <div>
-                          <h4 className="text-xs font-extrabold text-rose-400 uppercase tracking-wide">Authentication Diagnostic</h4>
-                          <p className="text-[11px] text-rose-200/90 leading-relaxed font-mono bg-rose-950/25 p-1.5 rounded-lg border border-rose-500/10 mt-1 break-all">
-                            Error Code: {authError.code}
-                          </p>
-                          <p className="text-[11px] text-slate-300 mt-1.5 leading-relaxed">
+                          <h4 className="text-xs font-extrabold text-rose-400 uppercase tracking-wide">Sign-In Error</h4>
+                          <p className="text-[11px] text-slate-300 mt-1 leading-relaxed">
                             {authError.message}
                           </p>
                         </div>
