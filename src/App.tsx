@@ -802,55 +802,57 @@ export default function App() {
           setDataLoading(false);
         });
     } else if (hasHashParams) {
-      console.log("[SUPABASE OAUTH] Hash params found on mount. Manually parsing and setting session...");
+      // The Supabase SDK (detectSessionInUrl: true + flowType: 'implicit') already
+      // parsed the hash and stored the session locally before this code runs.
+      // We just need to read it back with getSession() — no server call needed.
+      // DO NOT call setSession() here: it makes a server round-trip that requires
+      // the anon key and will fail with 401 if the key is misconfigured.
+      console.log("[SUPABASE OAUTH] Hash params found on mount. Reading SDK-parsed session...");
       setFirebaseLoading(true);
       setDataLoading(true);
-      
+
       const hash = window.location.hash.substring(1);
       const params = new URLSearchParams(hash);
       const accessToken = params.get('access_token');
       const refreshToken = params.get('refresh_token');
-      
-      console.log("[SUPABASE OAUTH] Parsed from hash - accessToken length:", accessToken ? accessToken.length : 0, "refreshToken length:", refreshToken ? refreshToken.length : 0);
+
+      console.log("[SUPABASE OAUTH] Hash tokens present — accessToken:", !!accessToken, "refreshToken:", !!refreshToken);
 
       const debugObj = (window as any).__STUDENTOS_AUTH_DEBUG__ || { events: [] };
-      debugObj.events.push({ 
-        event: 'MANUAL_PARSING_HASH', 
-        hasAccessToken: !!accessToken, 
-        hasRefreshToken: !!refreshToken, 
-        timestamp: new Date().toISOString() 
+      debugObj.events.push({
+        event: 'MANUAL_PARSING_HASH',
+        hasAccessToken: !!accessToken,
+        hasRefreshToken: !!refreshToken,
+        timestamp: new Date().toISOString()
       });
       (window as any).__STUDENTOS_AUTH_DEBUG__ = debugObj;
 
-      let sessionPromise;
-      if (accessToken && refreshToken) {
-        console.log("[SUPABASE OAUTH] Calling manual setSession with parsed tokens...");
-        sessionPromise = supabase.auth.setSession({
-          access_token: accessToken,
-          refresh_token: refreshToken
-        });
-      } else {
-        console.log("[SUPABASE OAUTH] Falling back to standard getSession...");
-        sessionPromise = supabase.auth.getSession();
-      }
+      // Always use getSession() — the SDK already processed the hash
+      Promise.resolve(supabase.auth.getSession()).then(({ data, error }) => {
+        console.log("[SUPABASE OAUTH] getSession after hash result:", { hasSession: !!data?.session, error });
 
-      sessionPromise.then(({ data, error }) => {
-        console.log("[SUPABASE OAUTH] Forced getSession result:", { data, error });
-        
-        const debugObj = (window as any).__STUDENTOS_AUTH_DEBUG__ || { events: [] };
-        debugObj.events.push({ event: 'MANUAL_GET_SESSION', data, error, timestamp: new Date().toISOString() });
-        (window as any).__STUDENTOS_AUTH_DEBUG__ = debugObj;
+        const dObj = (window as any).__STUDENTOS_AUTH_DEBUG__ || { events: [] };
+        dObj.events.push({ event: 'MANUAL_GET_SESSION', data, error, timestamp: new Date().toISOString() });
+        (window as any).__STUDENTOS_AUTH_DEBUG__ = dObj;
 
-        if (data.session) {
-           console.log("[SUPABASE OAUTH] Session successfully parsed from hash!");
-           try {
-             window.history.replaceState({}, document.title, window.location.pathname);
-           } catch(e) {}
-        } else if (error) {
-           console.error("[SUPABASE OAUTH] Error parsing session from hash:", error);
+        if (data?.session) {
+          console.log("[SUPABASE OAUTH] Session confirmed from hash — onAuthStateChange will handle profile load.");
+          try { window.history.replaceState({}, document.title, window.location.pathname); } catch(e) {}
+        } else {
+          // Session not available (e.g. invalid anon key or SDK couldn't process hash).
+          // Clear loading so the sign-in screen is shown rather than hanging forever.
+          console.error("[SUPABASE OAUTH] No session after hash — possible invalid VITE_SUPABASE_ANON_KEY.", error);
+          if (error) {
+            showNotification(`⚠️ Sign-in failed: ${error.message}. Check VITE_SUPABASE_ANON_KEY in Secrets.`);
+          }
+          try { window.history.replaceState({}, document.title, window.location.pathname); } catch(e) {}
+          setFirebaseLoading(false);
+          setDataLoading(false);
         }
       }).catch(err => {
-        console.error("[SUPABASE OAUTH] Exception during getSession:", err);
+        console.error("[SUPABASE OAUTH] Exception reading session after hash:", err);
+        setFirebaseLoading(false);
+        setDataLoading(false);
       });
     }
 
