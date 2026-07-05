@@ -420,15 +420,6 @@ export default function App() {
   });
   const [securityVerificationAcc, setSecurityVerificationAcc] = useState<RecentAccount | null>(null);
   const [pinVerificationError, setPinVerificationError] = useState<string>('');
-  const [debugState, setDebugState] = useState<any>(null);
-
-  useEffect(() => {
-    // Polling to update debug state in UI
-    const interval = setInterval(() => {
-      setDebugState(JSON.parse(JSON.stringify((window as any).__STUDENTOS_AUTH_DEBUG__ || null)));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, []);
   const [enteredVerificationPin, setEnteredVerificationPin] = useState<string>('');
   const [isPinModalOpen, setIsPinModalOpen] = useState<boolean>(false);
 
@@ -762,42 +753,24 @@ export default function App() {
     const code = urlParams.get('code');
     const hasHashParams = window.location.hash.includes('access_token=') || window.location.hash.includes('id_token=');
 
-    console.log("[SUPABASE OAUTH DETECT] URL query code present:", !!code, "URL hash params present:", hasHashParams);
-
     if (code && !hasExchanged) {
       hasExchanged = true;
-      console.log("[SUPABASE OAUTH] Code found in URL query on mount. Manually exchanging code for session...");
       setFirebaseLoading(true);
       setDataLoading(true);
-      
+
       supabase.auth.exchangeCodeForSession(code)
         .then(({ data, error }) => {
+          try { window.history.replaceState({}, document.title, window.location.pathname); } catch (e) {}
           if (error) {
-            console.error("[SUPABASE OAUTH] Manual code exchange failed:", error);
-            // Strip the code parameter from the URL immediately so it doesn't try to exchange again on refresh
-            try {
-              window.history.replaceState({}, document.title, window.location.pathname);
-            } catch (e) {
-              console.error(e);
-            }
+            console.error('[Auth] Code exchange failed:', error);
             setFirebaseLoading(false);
             setDataLoading(false);
-            showNotification(`⚠️ Google Sign-In exchange failed: ${error.message}`);
-          } else {
-            console.log("[SUPABASE OAUTH] Manual code exchange succeeded! Session created:", data.session);
-            // Strip the code parameter from the URL immediately so it doesn't try to exchange again on refresh
-            try {
-              window.history.replaceState({}, document.title, window.location.pathname);
-            } catch (e) {
-              console.error(e);
-            }
+            showNotification(`⚠️ Google Sign-In failed: ${error.message}`);
           }
         })
         .catch(err => {
-          console.error("[SUPABASE OAUTH] Unexpected error in manual code exchange:", err);
-          try {
-            window.history.replaceState({}, document.title, window.location.pathname);
-          } catch (e) {}
+          console.error('[Auth] Unexpected error in code exchange:', err);
+          try { window.history.replaceState({}, document.title, window.location.pathname); } catch (e) {}
           setFirebaseLoading(false);
           setDataLoading(false);
         });
@@ -807,7 +780,6 @@ export default function App() {
       // We just need to read it back with getSession() — no server call needed.
       // DO NOT call setSession() here: it makes a server round-trip that requires
       // the anon key and will fail with 401 if the key is misconfigured.
-      console.log("[SUPABASE OAUTH] Hash params found on mount. Reading SDK-parsed session...");
       setFirebaseLoading(true);
       setDataLoading(true);
 
@@ -816,41 +788,19 @@ export default function App() {
       const accessToken = params.get('access_token');
       const refreshToken = params.get('refresh_token');
 
-      console.log("[SUPABASE OAUTH] Hash tokens present — accessToken:", !!accessToken, "refreshToken:", !!refreshToken);
-
-      const debugObj = (window as any).__STUDENTOS_AUTH_DEBUG__ || { events: [] };
-      debugObj.events.push({
-        event: 'MANUAL_PARSING_HASH',
-        hasAccessToken: !!accessToken,
-        hasRefreshToken: !!refreshToken,
-        timestamp: new Date().toISOString()
-      });
-      (window as any).__STUDENTOS_AUTH_DEBUG__ = debugObj;
-
-      // Always use getSession() — the SDK already processed the hash
+      // Always use getSession() — the SDK already processed the hash automatically
       Promise.resolve(supabase.auth.getSession()).then(({ data, error }) => {
-        console.log("[SUPABASE OAUTH] getSession after hash result:", { hasSession: !!data?.session, error });
-
-        const dObj = (window as any).__STUDENTOS_AUTH_DEBUG__ || { events: [] };
-        dObj.events.push({ event: 'MANUAL_GET_SESSION', data, error, timestamp: new Date().toISOString() });
-        (window as any).__STUDENTOS_AUTH_DEBUG__ = dObj;
-
         if (data?.session) {
-          console.log("[SUPABASE OAUTH] Session confirmed from hash — onAuthStateChange will handle profile load.");
           try { window.history.replaceState({}, document.title, window.location.pathname); } catch(e) {}
         } else {
-          // Session not available (e.g. invalid anon key or SDK couldn't process hash).
-          // Clear loading so the sign-in screen is shown rather than hanging forever.
-          console.error("[SUPABASE OAUTH] No session after hash — possible invalid VITE_SUPABASE_ANON_KEY.", error);
-          if (error) {
-            showNotification(`⚠️ Sign-in failed: ${error.message}. Check VITE_SUPABASE_ANON_KEY in Secrets.`);
-          }
+          console.error('[Auth] No session after hash redirect:', error);
+          if (error) showNotification(`⚠️ Sign-in failed: ${error.message}`);
           try { window.history.replaceState({}, document.title, window.location.pathname); } catch(e) {}
           setFirebaseLoading(false);
           setDataLoading(false);
         }
       }).catch(err => {
-        console.error("[SUPABASE OAUTH] Exception reading session after hash:", err);
+        console.error('[Auth] Exception reading session after hash:', err);
         setFirebaseLoading(false);
         setDataLoading(false);
       });
@@ -863,36 +813,11 @@ export default function App() {
       
       setFirebaseLoading(true);
 
-      console.log("=========================================================");
-      console.log("================= [SUPABASE AUTH EVENT] =================");
-      console.log(`[EVENT]: ${event}`);
-      console.log(`[SESSION_FOUND]: ${!!session}`);
-      console.log(`[AUTH_IN_PROGRESS_URL]: ${isAuthInProgress}`);
-      console.log("=========================================================");
-
-      // Initialize or update the global debug object for user diagnostic reporting
-      const debugObj = (window as any).__STUDENTOS_AUTH_DEBUG__ || {
-        events: [],
-        session: null,
-        user: null,
-        profileLookup: null,
-        redirectReason: null,
-        fileCausingRedirect: null,
-        filesModified: ["/src/lib/supabaseUsers.ts", "/src/App.tsx"]
-      };
-      
-      debugObj.events.push({ event, sessionFound: !!session, timestamp: new Date().toISOString() });
-      (window as any).__STUDENTOS_AUTH_DEBUG__ = debugObj;
-
       // Handle active OAuth redirect in progress before session is parsed
       if (isAuthInProgress && !session) {
-        console.log("[SUPABASE AUTH] Active URL auth redirect is currently in progress, but session is temporarily null. Skipping state clearance, keeping loading screen visible, and waiting for the SIGNED_IN event.");
         setFirebaseLoading(true);
-        
-        // Schedule a safety fallback timeout to clear loading state and stale parameters if they fail to resolve within 8 seconds
         if (!(window as any).__studentos_auth_timeout__) {
           (window as any).__studentos_auth_timeout__ = setTimeout(() => {
-            console.warn("[SUPABASE AUTH] OAuth redirect exchange timed out (possibly stale token in URL). Cleaning up loading state, but leaving URL intact.");
             setFirebaseLoading(false);
             setDataLoading(false);
             delete (window as any).__studentos_auth_timeout__;
@@ -909,50 +834,19 @@ export default function App() {
 
       // If auth parameters were present and we now have a session, strip them immediately to prevent re-exchange on page reload.
       if (isAuthInProgress && session) {
-        console.log("[SUPABASE AUTH] OAuth exchange succeeded. (DEBUG: Not stripping URL so we can inspect it).");
-        // try {
-        //   window.history.replaceState({}, document.title, window.location.pathname);
-        // } catch (err) {
-        //   console.error("[SUPABASE AUTH] Failed to clear URL credentials:", err);
-        // }
-      }
-
-      if (session) {
-        debugObj.session = {
-          access_token_present: !!session.access_token,
-          expires_at: session.expires_at,
-          token_type: session.token_type
-        };
-        debugObj.user = {
-          id: session.user?.id,
-          email: session.user?.email,
-          user_metadata: session.user?.user_metadata
-        };
-        
-        console.log("================= [SESSION DIAGNOSTICS] =================");
-        console.log("SESSION:", JSON.stringify(debugObj.session, null, 2));
-        console.log("USER:", JSON.stringify(debugObj.user, null, 2));
-        console.log("=========================================================");
-      } else {
-        debugObj.session = null;
-        debugObj.user = null;
-        console.log("================= [SESSION DIAGNOSTICS] =================");
-        console.log("SESSION: null");
-        console.log("USER: null");
-        console.log("=========================================================");
+        try {
+          window.history.replaceState({}, document.title, window.location.pathname);
+        } catch (err) {
+          console.error('[Auth] Failed to clear URL credentials:', err);
+        }
       }
 
       const supabaseUser = session?.user;
 
       if (supabaseUser) {
-        console.log("[AUTH_SUCCESS] via Supabase for user:", supabaseUser.email);
         setFirebaseOnboardingUser(supabaseUser as any);
-        
+
         try {
-          console.log("ENVIRONMENT DIAGNOSTICS (SUPABASE):");
-          console.log("VITE_SUPABASE_URL loaded:", !!import.meta.env.VITE_SUPABASE_URL);
-          
-          console.log("LOADING SUPABASE USER PROFILE for uid:", supabaseUser.id);
           
           const isWhitelisted = supabaseUser.email && [
             'naitik.kashyap0015@gmail.com',
@@ -964,50 +858,28 @@ export default function App() {
 
           try {
             profile = await getSupabaseUserProfile(supabaseUser.id, supabaseUser.email);
-            debugObj.profileLookup = profile ? { status: "Found", data: profile } : { status: "No Profile in DB", data: null };
-            console.log("[PROFILE_FOUND] Profile lookup result:", profile ? "Found profile" : "No profile found (null)");
           } catch (sbErr: any) {
-            console.error('[Supabase Auth] Failed to fetch user profile:', sbErr);
-            debugObj.profileLookup = { status: "Error", error: sbErr.message || String(sbErr) };
-            // Treat PGRST205, 404, 42P01 (table missing), or RLS issues as table-missing or fall-back to prevent lock-out!
-            if (sbErr.code === 'PGRST205' || sbErr.status === 404 || sbErr.code === '42P01' || sbErr.code === '42501') {
-              isTableMissing = true;
-              console.warn('[Supabase Auth] Table "users" does not exist or has RLS restrictions. Running with local fallback.');
-            } else {
-              console.warn('[Supabase Auth] Query error, but continuing to auto-create or fall back instead of hard crash:', sbErr);
-              isTableMissing = true;
-            }
+            console.error('[Auth] Failed to fetch user profile:', sbErr);
+            isTableMissing = true;
           }
 
           if (profile) {
-            console.log("[ROLE_FOUND] from Supabase:", profile.role);
             if (isWhitelisted && (profile.role !== 'super_admin' || profile.accountStatus !== 'approved')) {
               profile.role = 'super_admin';
               profile.accountStatus = 'approved';
               try {
                 profile = await saveSupabaseUserProfile(profile);
               } catch (e) {
-                console.error('Failed to update whitelisted user role in Supabase:', e);
+                console.error('[Auth] Failed to update whitelisted user role:', e);
               }
             }
-            
-            console.log("================= [SUCCESS PROFILE DIAGNOSTICS] =================");
-            console.log("SESSION:", JSON.stringify(session, null, 2));
-            console.log("USER:", JSON.stringify(supabaseUser, null, 2));
-            console.log("PROFILE:", JSON.stringify(profile, null, 2));
-            console.log("ROLE:", profile?.role);
-            console.log("PERMISSIONS:", JSON.stringify(profile?.permissions || [], null, 2));
-            console.log("REDIRECT_REASON: None (Success)");
-            console.log("=================================================================");
 
             setCurrentUser(profile);
             localStorage.setItem('s_os_user', JSON.stringify(profile));
             updateRecentAccounts(profile);
-            console.log("DASHBOARD_READY");
             setDataLoading(false);
-            showNotification(`Access credentials validated via Supabase. Welcome back, ${profile.name}!`);
+            showNotification(`Welcome back, ${profile.name}! ✅`);
           } else {
-            console.log("SUPABASE PROFILE MISSING - AUTO-CREATING");
             const newProfile: UserProfile = {
               uid: supabaseUser.id,
               name: supabaseUser.user_metadata?.full_name || supabaseUser.user_metadata?.name || (isWhitelisted ? 'Super Admin' : 'Student'),
@@ -1024,56 +896,25 @@ export default function App() {
 
             if (isTableMissing) {
               profile = newProfile;
-              debugObj.profileLookup = { status: "Table Missing Fallback", data: newProfile };
-              console.log("[PROFILE_FOUND] Not found (running in local/offline fallback mode)");
-              showNotification('⚠️ Supabase "users" table not found or inaccessible. Running in offline/demo user profile mode.');
+              showNotification('⚠️ Supabase "users" table not found or inaccessible. Running in offline/demo mode.');
             } else {
               try {
                 profile = await saveSupabaseUserProfile(newProfile);
-                debugObj.profileLookup = { status: "Created Successfully", data: profile };
-                console.log("[PROFILE_FOUND] Created in Supabase: ", JSON.stringify(profile));
-                showNotification(`Profile auto-created in Supabase. Welcome to StudentOS, ${profile.name}!`);
+                showNotification(`Welcome to StudentOS, ${profile.name}! 🎉`);
               } catch (sbCreateErr: any) {
-                console.error('[Supabase Auth] Failed to auto-create user profile:', sbCreateErr);
+                console.error('[Auth] Failed to auto-create user profile:', sbCreateErr);
                 profile = newProfile;
-                debugObj.profileLookup = { status: "Creation Failed Fallback", data: newProfile, error: sbCreateErr.message || String(sbCreateErr) };
-                console.log("[PROFILE_FOUND] Failed to create in db (running in offline fallback mode)");
                 showNotification('⚠️ Database save failed. Running with offline user profile.');
               }
             }
 
-            console.log("[ROLE_FOUND] assigned:", profile.role);
-            console.log("================= [AUTO-CREATED PROFILE DIAGNOSTICS] =================");
-            console.log("SESSION:", JSON.stringify(session, null, 2));
-            console.log("USER:", JSON.stringify(supabaseUser, null, 2));
-            console.log("PROFILE:", JSON.stringify(profile, null, 2));
-            console.log("ROLE:", profile?.role);
-            console.log("PERMISSIONS:", JSON.stringify(profile?.permissions || [], null, 2));
-            console.log("REDIRECT_REASON: None (Success - Auto Created)");
-            console.log("======================================================================");
-
             setCurrentUser(profile);
             localStorage.setItem('s_os_user', JSON.stringify(profile));
             updateRecentAccounts(profile);
-            console.log("DASHBOARD_READY");
             setDataLoading(false);
           }
         } catch (err: any) {
-          console.error('[Supabase Auth] Outer try-catch error:', err);
-          const redirectReason = "Authentication / Profile parsing crashed: " + (err.message || String(err));
-          debugObj.redirectReason = redirectReason;
-          debugObj.fileCausingRedirect = "/src/App.tsx inside onAuthStateChange outer catch block";
-          
-          console.log("================= [CRITICAL REDIRECT DIAGNOSTICS] =================");
-          console.log("SESSION:", JSON.stringify(session, null, 2));
-          console.log("USER:", JSON.stringify(session?.user || null, null, 2));
-          console.log("PROFILE: null");
-          console.log("ROLE: null");
-          console.log("PERMISSIONS: null");
-          console.log("REDIRECT_REASON:", redirectReason);
-          console.log("[FILE_CAUSING_REDIRECT]:", debugObj.fileCausingRedirect);
-          console.log("===================================================================");
-          
+          console.error('[Auth] Profile load error:', err);
           setAuthError({
             code: err.code || 'supabase/read-error',
             message: 'Role Load Failed: ' + (err.message || String(err)),
@@ -1089,33 +930,18 @@ export default function App() {
           setDataLoading(false);
         }
       } else {
-        const redirectReason = `No session or user found in authStateChange (Event: ${event})`;
-        
-        console.log("================= [CRITICAL REDIRECT DIAGNOSTICS] =================");
-        console.log("SESSION: null");
-        console.log("USER: null");
-        console.log("PROFILE: null");
-        console.log("ROLE: null");
-        console.log("PERMISSIONS: null");
-        console.log("REDIRECT_REASON:", redirectReason);
-        console.log("===================================================================");
-        
         if (!isAuthInProgress) {
           setFirebaseOnboardingUser(null);
           setCurrentUser(null);
           localStorage.removeItem('s_os_user');
           setDataLoading(false);
         } else {
-          console.log("[SUPABASE AUTH] Auth redirect is currently in progress, skipping user/session clearance.");
         }
       }
       
       if (!isAuthInProgress || session) {
         setFirebaseLoading(false);
-      } else {
-        console.log("[SUPABASE AUTH] Keeping firebaseLoading = true during active URL auth redirect.");
       }
-      console.log("===============================================================");
     });
 
     return () => {
@@ -3808,9 +3634,9 @@ export default function App() {
       } catch (apiErr: any) {
         console.log("Server API failed, falling back to client-side AI:", apiErr);
         const { clientSideGemini } = await import('./lib/clientAiFallback');
-        const historyText = (currentThread?.messages || []).map(m => `${m.role === 'user' ? 'Student' : 'Tutor'}: ${m.content}`).join('\n');
-        const prompt = `System: You are an AI tutor. Mode: ${aiMode}. Grade: ${currentUser?.grade}. History:\n${historyText}\n\nStudent: ${promptWithContext}`;
-        answer = await clientSideGemini(prompt);
+        // Pass only the user's message — the mock doesn't use system context
+        // and including history text caused false keyword matches (e.g. "workspace" → "work")
+        answer = await clientSideGemini(promptWithContext);
       }
       
       setAiThreads(prev => prev.map(t => {
@@ -3890,42 +3716,6 @@ export default function App() {
 
   return (
     <div className={`min-h-screen transition-colors duration-300 font-sans ${lightMode ? 'bg-slate-50 text-slate-800' : 'bg-slate-950 text-slate-100'}`}>
-      
-      {/* 🚨 DEBUG DASHBOARD FOR SUPABASE OAUTH 🚨 */}
-      <div className="fixed top-0 left-0 right-0 z-[9999] bg-black border-b-4 border-red-500 p-4 font-mono text-[10px] text-green-400 overflow-y-auto max-h-[40vh] shadow-2xl">
-        <div className="flex justify-between items-center mb-2 pb-2 border-b border-white/20">
-          <h2 className="text-xl font-bold text-white uppercase tracking-widest">🚨 OAUTH DIAGNOSTIC LAYER 🚨</h2>
-          <button 
-            onClick={() => window.location.reload()} 
-            className="bg-white/10 px-3 py-1 rounded text-white"
-          >
-            Force Reload
-          </button>
-        </div>
-        <div className="grid grid-cols-3 gap-4">
-          <div>
-            <h3 className="text-yellow-400 mb-1">State:</h3>
-            <p><strong>currentUser:</strong> {currentUser ? "PRESENT ✅" : "NULL ❌"}</p>
-            <p><strong>firebaseLoading:</strong> {firebaseLoading ? "TRUE ⏳" : "FALSE ✅"}</p>
-            <p><strong>dataLoading:</strong> {dataLoading ? "TRUE ⏳" : "FALSE ✅"}</p>
-            <p><strong>URL Hash:</strong> {window.location.hash || "EMPTY"}</p>
-            <p><strong>URL Query:</strong> {window.location.search || "EMPTY"}</p>
-          </div>
-          <div>
-            <h3 className="text-yellow-400 mb-1">Supabase Client Config:</h3>
-            <p><strong>Active URL:</strong> {((window as any).__SUPABASE_CONFIG__?.url) || "MISSING ❌"}</p>
-            <p><strong>Key Length:</strong> {((window as any).__SUPABASE_CONFIG__?.anonKey?.length) || 0} chars</p>
-            <p><strong>Key Start (30):</strong> <span className="text-white select-all">{((window as any).__SUPABASE_CONFIG__?.anonKey?.substring(0, 30)) || "N/A"}</span></p>
-            <p><strong>Key End (20):</strong> <span className="text-white select-all">{((window as any).__SUPABASE_CONFIG__?.anonKey ? (window as any).__SUPABASE_CONFIG__.anonKey.substring((window as any).__SUPABASE_CONFIG__.anonKey.length - 20) : "N/A")}</span></p>
-            <p><strong>Is JWT Format:</strong> {((window as any).__SUPABASE_CONFIG__?.anonKey?.startsWith('eyJ')) ? "YES (JWT) ✅" : "NO ❌"}</p>
-            <p><strong>Is Service Role?:</strong> {((window as any).__SUPABASE_CONFIG__?.anonKey?.includes('service_role')) ? "YES (DO NOT USE!) ⚠️" : "NO (Probably Anon Key) ✅"}</p>
-          </div>
-          <div>
-            <h3 className="text-yellow-400 mb-1">onAuthStateChange Last Event:</h3>
-            <p className="whitespace-pre-wrap">{debugState ? JSON.stringify(debugState, null, 2) : "No auth event recorded yet."}</p>
-          </div>
-        </div>
-      </div>
       
       {/* Startup Screen */}
       {showStartup && (
