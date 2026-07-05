@@ -106,11 +106,15 @@ async function safeExecuteWithRetry(operation: (payload: any) => Promise<any>, i
 }
 
 /**
- * Fetches a user profile from Supabase by uid and optionally email
+ * Fetches a user profile from Supabase by uid and optionally email.
+ * After locating the user, always returns the profile with uid set to the
+ * Supabase auth UUID (the `uid` parameter) so the app always uses the
+ * correct identifier regardless of what is stored in firebase_uid.
  */
 export async function getSupabaseUserProfile(uid: string, email?: string): Promise<UserProfile | null> {
   console.log('[SUPABASE-USERS] Fetching profile for uid:', uid, 'email:', email);
-  let data = null;
+  let data: any = null;
+  let foundByEmail = false;
 
   // 1. Try querying by id if it is a valid UUID
   if (isValidUUID(uid)) {
@@ -122,13 +126,17 @@ export async function getSupabaseUserProfile(uid: string, email?: string): Promi
         .maybeSingle();
       if (!err && res) {
         data = res;
+        console.log('[SUPABASE-USERS] Found profile by id (UUID match)');
+      } else if (err) {
+        console.warn('[SUPABASE-USERS] Query by id error:', err.message || err);
       }
     } catch (e) {
-      console.warn('[SUPABASE-USERS] Query by id threw exception (UUID mismatch?):', e);
+      console.warn('[SUPABASE-USERS] Query by id threw exception:', e);
     }
   }
 
-  // 2. Try querying by firebase_uid
+  // 2. Try querying by firebase_uid (covers the case where firebase_uid was
+  //    previously linked to the Supabase auth UUID by a prior sign-in)
   if (!data) {
     try {
       const { data: res, error: err } = await supabase
@@ -138,13 +146,19 @@ export async function getSupabaseUserProfile(uid: string, email?: string): Promi
         .maybeSingle();
       if (!err && res) {
         data = res;
+        console.log('[SUPABASE-USERS] Found profile by firebase_uid');
+      } else if (err) {
+        console.warn('[SUPABASE-USERS] Query by firebase_uid error:', err.message || err);
       }
     } catch (e) {
       console.warn('[SUPABASE-USERS] Query by firebase_uid failed:', e);
     }
   }
 
-  // 3. Try querying by email (normalized to lowercase)
+  // 3. Try querying by email — this is the critical fallback when an admin
+  //    manually added the user to the table before they ever signed in via OAuth.
+  //    After finding by email we asynchronously link firebase_uid = uid so
+  //    future logins hit steps 1 or 2 instead.
   if (!data && email) {
     try {
       const normalized = email.toLowerCase();
@@ -155,6 +169,10 @@ export async function getSupabaseUserProfile(uid: string, email?: string): Promi
         .maybeSingle();
       if (!err && res) {
         data = res;
+        foundByEmail = true;
+        console.log('[SUPABASE-USERS] Found profile by email (admin-added user)');
+      } else if (err) {
+        console.warn('[SUPABASE-USERS] Query by email error:', err.message || err);
       }
     } catch (e) {
       console.warn('[SUPABASE-USERS] Query by email failed:', e);
@@ -162,7 +180,36 @@ export async function getSupabaseUserProfile(uid: string, email?: string): Promi
   }
 
   if (!data) return null;
-  return mapSupabaseUserToProfile(data);
+
+  const profile = mapSupabaseUserToProfile(data);
+
+  // Always override uid with the Supabase auth UUID so every part of the app
+  // uses the same identifier that Supabase session.user.id returns.
+  if (uid && isValidUUID(uid)) {
+    profile.uid = uid;
+  }
+
+  // If we only found this user by email it means firebase_uid in the row does
+  // NOT equal the Supabase auth UUID yet.  Update it now (fire-and-forget) so
+  // subsequent sign-ins are resolved by step 2 and the uid stays consistent.
+  if (foundByEmail && uid && isValidUUID(uid) && data.firebase_uid !== uid) {
+    console.log('[SUPABASE-USERS] Linking Supabase auth UUID to user row found by email…');
+    // Wrap in Promise.resolve so we can use .catch — Supabase returns PromiseLike, not Promise.
+    Promise.resolve(
+      supabase
+        .from('users')
+        .update({ firebase_uid: uid })
+        .eq('id', data.id)
+    ).then(({ error }: { error: any }) => {
+      if (error) {
+        console.warn('[SUPABASE-USERS] Could not link firebase_uid (non-blocking):', error.message || error);
+      } else {
+        console.log('[SUPABASE-USERS] firebase_uid linked successfully — future logins will be faster');
+      }
+    }).catch((e: any) => console.warn('[SUPABASE-USERS] firebase_uid link threw (non-blocking):', e));
+  }
+
+  return profile;
 }
 
 /**
@@ -208,9 +255,13 @@ export async function saveSupabaseUserProfile(profile: UserProfile): Promise<Use
     } catch (e) {}
   }
 
-  // Construct initial full payload representing all possible database column shapes
-  const initialPayload: any = {
-    firebase_uid: profile.uid,
+  // Single shared payload used by safeExecuteWithRetry for both UPDATE and INSERT.
+  // `id` is intentionally excluded here — it is injected at execution time:
+  //   • UPDATE: `id` must never be in the SET clause (can't mutate a primary key)
+  //   • INSERT: `id` is added fresh at the moment of insertion so it is not subject
+  //             to column-stripping by safeExecuteWithRetry (which works on this payload)
+  const sharedPayload: any = {
+    firebase_uid: profile.uid,   // links / sets the Supabase auth UUID
     email: profile.email?.toLowerCase(),
     name: profile.name,
     full_name: profile.name,
@@ -226,28 +277,32 @@ export async function saveSupabaseUserProfile(profile: UserProfile): Promise<Use
     accountStatus: profile.accountStatus || 'approved'
   };
 
-  // If uid is a valid UUID, we can pass it as the Primary Key id
-  if (isValidUUID(profile.uid)) {
-    initialPayload.id = profile.uid;
-  }
-
-  const executeOperation = async (payload: any) => {
+  // executeOperation receives the progressively-stripped payload from safeExecuteWithRetry.
+  // For INSERT, `id` is added at this point so it is never part of the strippable payload
+  // and therefore survives all retry iterations.
+  const executeOperation = async (pl: any) => {
     if (existing) {
       console.log('[SUPABASE-USERS] Updating existing row in users:', existing.id || existing.firebase_uid);
-      const query = supabase.from('users').update(payload);
+      // IMPORTANT: Supabase query builder returns a NEW object on each chain call.
+      // The .eq() filter MUST be chained directly — never assigned as a side-effect.
+      // pl never contains `id`, so the primary key is never mutated.
+      let updateQuery;
       if (existing.id) {
-        query.eq('id', existing.id);
+        updateQuery = supabase.from('users').update(pl).eq('id', existing.id).select().single();
       } else {
-        query.eq('firebase_uid', profile.uid);
+        updateQuery = supabase.from('users').update(pl).eq('firebase_uid', profile.uid).select().single();
       }
-      const { data, error } = await query.select().single();
+      const { data, error } = await updateQuery;
       if (error) throw error;
       return data;
     } else {
       console.log('[SUPABASE-USERS] Inserting new row in users');
+      // Add `id` here so it is always present for inserts regardless of which
+      // columns were stripped from `pl` by the retry loop.
+      const insertData = isValidUUID(profile.uid) ? { ...pl, id: profile.uid } : pl;
       const { data, error } = await supabase
         .from('users')
-        .insert([payload])
+        .insert([insertData])
         .select()
         .single();
       if (error) throw error;
@@ -256,8 +311,13 @@ export async function saveSupabaseUserProfile(profile: UserProfile): Promise<Use
   };
 
   try {
-    const result = await safeExecuteWithRetry(executeOperation, initialPayload);
-    return mapSupabaseUserToProfile(result);
+    const result = await safeExecuteWithRetry(executeOperation, sharedPayload);
+    const savedProfile = mapSupabaseUserToProfile(result);
+    // Ensure returned uid always reflects the Supabase auth UUID
+    if (profile.uid && isValidUUID(profile.uid)) {
+      savedProfile.uid = profile.uid;
+    }
+    return savedProfile;
   } catch (error) {
     console.error('[SUPABASE-USERS] Failed to save user profile after column retries:', error);
     throw error;

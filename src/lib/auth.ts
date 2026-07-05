@@ -111,7 +111,15 @@ async function handleSession(user: any, setProfile: (p: UserProfile | null) => v
 
 export async function signInWithGoogle(): Promise<any> {
   try {
-    return await supabase.auth.signInWithOAuth({ provider: 'google' });
+    return await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        // Must match the URL added in Supabase Auth → URL Configuration → Redirect URLs.
+        // Using window.location.origin means this works in both dev and deployed environments
+        // without needing separate configurations.
+        redirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
+      },
+    });
   } catch (e) {
     console.error('[AUTH] signInWithGoogle failed:', e);
     throw e;
