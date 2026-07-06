@@ -25,6 +25,7 @@ import {
   getPeerMessages, savePeerMessage, getChatRooms, saveChatRoom 
 } from './lib/supabaseChat';
 import { saveSupabaseMaterial, getSupabaseMaterials } from './lib/supabaseResources';
+import { apiFetch } from './lib/apiFetch';
 import { PdfCanvasViewer } from './components/PdfCanvasViewer';
 import { StudentOSJarvis } from './components/StudentOSJarvis';
 import AttendanceManager from './components/AttendanceManager';
@@ -1345,7 +1346,7 @@ export default function App() {
     try {
       let resultText = '';
       try {
-        const response = await fetch('/api/ai/notes', {
+        const response = await apiFetch('/api/ai/notes', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -2638,7 +2639,7 @@ export default function App() {
     try {
       let resultText = '';
       try {
-        const response = await fetch('/api/ai/material-action', {
+        const response = await apiFetch('/api/ai/material-action', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -3612,7 +3613,7 @@ export default function App() {
           content: m.content
         }));
 
-        const res = await fetch('/api/ai/chat', {
+        const res = await apiFetch('/api/ai/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

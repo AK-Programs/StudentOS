@@ -9,6 +9,7 @@ import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 import { WebSocketServer, WebSocket as WSWebSocket } from 'ws';
+import { createClient } from '@supabase/supabase-js';
 
 dotenv.config();
 
@@ -16,6 +17,32 @@ const app = express();
 const PORT = 3000;
 
 app.use(express.json({ limit: '10mb' }));
+
+// --- Authentication Middleware ---
+// Verifies the Supabase JWT from the Authorization header.
+const supabaseUrl = process.env.VITE_SUPABASE_URL || 'https://zwpoutanhsujezglbson.supabase.co';
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || '';
+
+async function requireAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Missing or invalid Authorization header' });
+  }
+
+  const token = authHeader.slice(7);
+  try {
+    const verifyClient = createClient(supabaseUrl, supabaseServiceKey || supabaseAnonKey);
+    const { data, error } = await verifyClient.auth.getUser(token);
+    if (error || !data.user) {
+      return res.status(401).json({ error: 'Invalid or expired token' });
+    }
+    (req as any).user = data.user;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: 'Authentication failed' });
+  }
+}
 
 // Shared Gemini SDK Client setup
 let ai: GoogleGenAI | null = null;
@@ -149,7 +176,7 @@ app.get('/api/health', (req, res) => {
 
 
 // Secure API endpoint for AI Teacher and Buddy conversations
-app.post('/api/ai/chat', async (req, res) => {
+app.post('/api/ai/chat', requireAuth, rateLimit, async (req, res) => {
   const { prompt, history, persona, level, subject, mode } = req.body;
 
   if (!prompt) {
@@ -210,15 +237,14 @@ app.post('/api/ai/chat', async (req, res) => {
 
     console.error('AI chat completions error:', apiErr);
     return res.status(500).json({ 
-      error: 'Engine error', 
-      details: apiErr.message,
-      text: `[AI Connection Issue] I'm sorry, I hit a snag: ${apiErr.message}. Let me answer manually: Let's focus on studying ${subject || 'your course materials'} step-by-step. What specific question do you have?`
+      error: 'AI service temporarily unavailable',
+      text: `[AI Connection Issue] I'm sorry, I hit a snag. Let me answer manually: Let's focus on studying ${subject || 'your course materials'} step-by-step. What specific question do you have?`
     });
   }
 });
 
 // Secure API endpoint for Notion-like AI Notes generator
-app.post('/api/ai/generate-notes', async (req, res) => {
+app.post('/api/ai/generate-notes', requireAuth, rateLimit, async (req, res) => {
   const { topic, format, customPrompt } = req.body;
 
   if (!topic) {
@@ -270,15 +296,14 @@ Imagine ${topic} like an orchestra. Each instrument (sub-component) must tune to
 
     console.error('AI generate notes error:', apiErr);
     return res.status(500).json({ 
-      error: 'Engine error', 
-      details: apiErr.message,
-      text: `# Cellular Respiration Core Notes\n\n*Error generating real-time transcription from AI: ${apiErr.message}*\n\n## 1. Quick Summary\nAll cellular systems require ATP as the primary transportable unit of free energy. Respiration involves glycolysis, the citric acid cycle, and oxidative phosphorylation.\n\n## 📚 Active Recall Quiz\n1. What is the net yield of ATP produced in Glycolysis?\n2. Where in the mitochondria does the citric acid cycle occur?\n3. Which complex delivers hydrogen ions to create the electrochemical gradient?`
+      error: 'AI service temporarily unavailable',
+      text: `# Study Notes\n\n*AI generation is temporarily unavailable. Please try again later.*`
     });
   }
 });
 
 // Secure API endpoint for in-editor study block transforms (inline summaries, check lists, quizes etc)
-app.post('/api/ai/notes', async (req, res) => {
+app.post('/api/ai/notes', requireAuth, rateLimit, async (req, res) => {
   const { content, action, instruction } = req.body;
 
   if (!content) {
@@ -333,15 +358,14 @@ app.post('/api/ai/notes', async (req, res) => {
 
     console.error('AI notes transform error:', apiErr);
     return res.status(500).json({
-      error: 'Engine transformation error',
-      details: apiErr.message,
-      text: `*Offline Fallback Note Transformation*\n\n**Processed Action**: ${action.toUpperCase()}\n\nHere is a clean summary of your key text segment regarding this topic: We identified critical learning objectives, formula constraints, and student evaluations.`
+      error: 'AI service temporarily unavailable',
+      text: `*Note transformation is temporarily unavailable. Please try again later.*`
     });
   }
 });
 
 // Secure API endpoint for Material Hub AI actions
-app.post('/api/ai/material-action', async (req, res) => {
+app.post('/api/ai/material-action', requireAuth, rateLimit, async (req, res) => {
   const { title, description, content, action, userQuestion } = req.body;
 
   if (!title) {
@@ -445,9 +469,8 @@ How do visibility target constraints (restricted grades, sections, or houses) pr
 
     console.error('AI material action error:', apiErr);
     return res.status(500).json({
-      error: 'Engine error during material analysis',
-      details: apiErr.message,
-      text: `### ⚠️ [AI Engine Offline] fallback simulation\n\n*Unable to complete real-time processing: ${apiErr.message}*\n\nHere is a simulated educational output for your material: **${title}**.\n\nPlease check your API_KEY settings to activate production-grade responses.`
+      error: 'AI service temporarily unavailable',
+      text: `### ⚠️ AI Processing Unavailable\n\nAI analysis is temporarily unavailable. Please try again later.`
     });
   }
 });
@@ -455,8 +478,15 @@ How do visibility target constraints (restricted grades, sections, or houses) pr
 // ============================================================
 // Database Setup Endpoint — returns the setup SQL file content
 // Admins can copy-paste this into the Supabase SQL Editor (one-time setup)
+// Protected: requires authenticated admin user
 // ============================================================
-app.get('/api/admin/setup-sql', (req, res) => {
+const ADMIN_EMAILS = ['naitik.kashyap0015@gmail.com', 'naitik.kashyap5205@gmail.com'];
+
+app.get('/api/admin/setup-sql', requireAuth, (req, res) => {
+  const user = (req as any).user;
+  if (!user?.email || !ADMIN_EMAILS.includes(user.email.toLowerCase())) {
+    return res.status(403).json({ error: 'Forbidden: admin access required' });
+  }
   try {
     const fs = require('fs');
     const path = require('path');
@@ -464,9 +494,33 @@ app.get('/api/admin/setup-sql', (req, res) => {
     const sql = fs.readFileSync(sqlPath, 'utf-8');
     res.type('text/plain').send(sql);
   } catch (err: any) {
-    res.status(500).json({ error: 'Could not read setup SQL: ' + err.message });
+    res.status(500).json({ error: 'Could not read setup SQL file' });
   }
 });
+
+// --- Simple in-memory rate limiter for AI endpoints ---
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute
+const RATE_LIMIT_MAX_REQUESTS = 20; // max 20 AI requests per minute per user
+
+function rateLimit(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const user = (req as any).user;
+  const key = user?.id || req.ip || 'anonymous';
+  const now = Date.now();
+
+  const entry = rateLimitMap.get(key);
+  if (!entry || now > entry.resetAt) {
+    rateLimitMap.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return next();
+  }
+
+  if (entry.count >= RATE_LIMIT_MAX_REQUESTS) {
+    return res.status(429).json({ error: 'Too many requests. Please try again later.' });
+  }
+
+  entry.count++;
+  return next();
+}
 
 let globalChatsState: any[] = [];
 let globalAnnouncementsState: any[] = [];
@@ -492,7 +546,8 @@ async function startServer() {
     console.log(`StudentOS Back-end Server running on port ${PORT}`);
   });
 
-  const wss = new WebSocketServer({ server });
+  const MAX_WS_MESSAGE_SIZE = 64 * 1024; // 64 KB max per WebSocket message
+  const wss = new WebSocketServer({ server, maxPayload: MAX_WS_MESSAGE_SIZE });
 
   wss.on('connection', (ws) => {
     console.log('[WS Server] New client linked!');
@@ -511,6 +566,7 @@ async function startServer() {
       try {
         const rawMessage = messageBuffer.toString();
         if (!rawMessage || rawMessage === 'undefined') return;
+        if (rawMessage.length > MAX_WS_MESSAGE_SIZE) return;
         const payload = JSON.parse(rawMessage);
         
         switch (payload.type) {

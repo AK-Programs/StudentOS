@@ -47,7 +47,14 @@ CREATE TABLE IF NOT EXISTS public.materials (
 
 ALTER TABLE public.materials ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "allow_all_materials" ON public.materials;
-CREATE POLICY "allow_all_materials" ON public.materials FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "materials_select" ON public.materials;
+DROP POLICY IF EXISTS "materials_insert" ON public.materials;
+DROP POLICY IF EXISTS "materials_update" ON public.materials;
+DROP POLICY IF EXISTS "materials_delete" ON public.materials;
+CREATE POLICY "materials_select" ON public.materials FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "materials_insert" ON public.materials FOR INSERT WITH CHECK (auth.role() = 'authenticated' AND uploader_uid = auth.uid()::text);
+CREATE POLICY "materials_update" ON public.materials FOR UPDATE USING (auth.role() = 'authenticated' AND uploader_uid = auth.uid()::text);
+CREATE POLICY "materials_delete" ON public.materials FOR DELETE USING (auth.role() = 'authenticated' AND uploader_uid = auth.uid()::text);
 
 -- ==================== ASSIGNMENTS TABLE ====================
 CREATE TABLE IF NOT EXISTS public.assignments (
@@ -74,7 +81,12 @@ CREATE TABLE IF NOT EXISTS public.assignments (
 
 ALTER TABLE public.assignments ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "allow_all_assignments" ON public.assignments;
-CREATE POLICY "allow_all_assignments" ON public.assignments FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "assignments_select" ON public.assignments;
+DROP POLICY IF EXISTS "assignments_insert" ON public.assignments;
+DROP POLICY IF EXISTS "assignments_update_delete" ON public.assignments;
+CREATE POLICY "assignments_select" ON public.assignments FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "assignments_insert" ON public.assignments FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+CREATE POLICY "assignments_update_delete" ON public.assignments FOR ALL USING (auth.role() = 'authenticated' AND author = auth.uid()::text) WITH CHECK (auth.role() = 'authenticated');
 
 -- ==================== SCHOOL RESOURCES TABLE ====================
 CREATE TABLE IF NOT EXISTS public.school_resources (
@@ -101,7 +113,10 @@ CREATE TABLE IF NOT EXISTS public.school_resources (
 
 ALTER TABLE public.school_resources ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "allow_all_school_resources" ON public.school_resources;
-CREATE POLICY "allow_all_school_resources" ON public.school_resources FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "school_resources_select" ON public.school_resources;
+DROP POLICY IF EXISTS "school_resources_modify" ON public.school_resources;
+CREATE POLICY "school_resources_select" ON public.school_resources FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "school_resources_modify" ON public.school_resources FOR ALL USING (auth.role() = 'authenticated' AND author = auth.uid()::text) WITH CHECK (auth.role() = 'authenticated');
 
 -- ==================== AI BUDDY CHATS TABLE ====================
 CREATE TABLE IF NOT EXISTS public.ai_buddy_chats (
@@ -117,7 +132,8 @@ CREATE TABLE IF NOT EXISTS public.ai_buddy_chats (
 
 ALTER TABLE public.ai_buddy_chats ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "allow_all_ai_buddy_chats" ON public.ai_buddy_chats;
-CREATE POLICY "allow_all_ai_buddy_chats" ON public.ai_buddy_chats FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "ai_buddy_chats_owner" ON public.ai_buddy_chats;
+CREATE POLICY "ai_buddy_chats_owner" ON public.ai_buddy_chats FOR ALL USING (auth.role() = 'authenticated' AND user_id = auth.uid()::text) WITH CHECK (auth.role() = 'authenticated' AND user_id = auth.uid()::text);
 
 -- ==================== MESSAGES TABLE (Global Chat) ====================
 CREATE TABLE IF NOT EXISTS public.messages (
@@ -134,7 +150,12 @@ CREATE TABLE IF NOT EXISTS public.messages (
 
 ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "allow_all_messages" ON public.messages;
-CREATE POLICY "allow_all_messages" ON public.messages FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "messages_select" ON public.messages;
+DROP POLICY IF EXISTS "messages_insert" ON public.messages;
+DROP POLICY IF EXISTS "messages_delete" ON public.messages;
+CREATE POLICY "messages_select" ON public.messages FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "messages_insert" ON public.messages FOR INSERT WITH CHECK (auth.role() = 'authenticated' AND owner_uid = auth.uid()::text);
+CREATE POLICY "messages_delete" ON public.messages FOR DELETE USING (auth.role() = 'authenticated' AND owner_uid = auth.uid()::text);
 
 -- ==================== CHAT ROOMS TABLE ====================
 CREATE TABLE IF NOT EXISTS public.chat_rooms (
@@ -145,7 +166,10 @@ CREATE TABLE IF NOT EXISTS public.chat_rooms (
 
 ALTER TABLE public.chat_rooms ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "allow_all_chat_rooms" ON public.chat_rooms;
-CREATE POLICY "allow_all_chat_rooms" ON public.chat_rooms FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "chat_rooms_select" ON public.chat_rooms;
+DROP POLICY IF EXISTS "chat_rooms_modify" ON public.chat_rooms;
+CREATE POLICY "chat_rooms_select" ON public.chat_rooms FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "chat_rooms_modify" ON public.chat_rooms FOR ALL USING (auth.role() = 'authenticated') WITH CHECK (auth.role() = 'authenticated');
 
 -- ==================== USER PROFILES TABLE ====================
 CREATE TABLE IF NOT EXISTS public.user_profiles (
@@ -174,7 +198,10 @@ CREATE TABLE IF NOT EXISTS public.user_profiles (
 
 ALTER TABLE public.user_profiles ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "allow_all_user_profiles" ON public.user_profiles;
-CREATE POLICY "allow_all_user_profiles" ON public.user_profiles FOR ALL USING (true) WITH CHECK (true);
+DROP POLICY IF EXISTS "user_profiles_select" ON public.user_profiles;
+DROP POLICY IF EXISTS "user_profiles_own" ON public.user_profiles;
+CREATE POLICY "user_profiles_select" ON public.user_profiles FOR SELECT USING (auth.role() = 'authenticated');
+CREATE POLICY "user_profiles_own" ON public.user_profiles FOR ALL USING (auth.role() = 'authenticated' AND uid = auth.uid()::text) WITH CHECK (auth.role() = 'authenticated' AND uid = auth.uid()::text);
 
 -- ==================== STORAGE BUCKET ====================
 -- Ensure the StudentOS bucket exists and is public
@@ -182,6 +209,11 @@ INSERT INTO storage.buckets (id, name, public)
 VALUES ('StudentOS', 'StudentOS', true)
 ON CONFLICT (id) DO UPDATE SET public = true;
 
--- Allow all storage operations on the bucket
+-- Allow authenticated users to upload and read from the bucket
 DROP POLICY IF EXISTS "allow_all_uploads" ON storage.objects;
-CREATE POLICY "allow_all_uploads" ON storage.objects FOR ALL USING (bucket_id = 'StudentOS') WITH CHECK (bucket_id = 'StudentOS');
+DROP POLICY IF EXISTS "storage_authenticated_read" ON storage.objects;
+DROP POLICY IF EXISTS "storage_authenticated_insert" ON storage.objects;
+DROP POLICY IF EXISTS "storage_owner_update_delete" ON storage.objects;
+CREATE POLICY "storage_authenticated_read" ON storage.objects FOR SELECT USING (bucket_id = 'StudentOS' AND auth.role() = 'authenticated');
+CREATE POLICY "storage_authenticated_insert" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'StudentOS' AND auth.role() = 'authenticated');
+CREATE POLICY "storage_owner_update_delete" ON storage.objects FOR DELETE USING (bucket_id = 'StudentOS' AND auth.role() = 'authenticated' AND (storage.foldername(name))[1] = auth.uid()::text);
