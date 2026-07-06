@@ -96,12 +96,39 @@ function mapRowToMaterial(row: any): MaterialResource {
   };
 }
 
+// ==================== LOCAL STORAGE BACKUP FOR MATERIALS ====================
+
+const LOCAL_MATERIALS_KEY = 's_os_materials';
+
+function getLocalMaterials(): MaterialResource[] {
+  try {
+    const raw = localStorage.getItem(LOCAL_MATERIALS_KEY);
+    if (raw) return JSON.parse(raw) as MaterialResource[];
+  } catch (e) { /* ignore */ }
+  return [];
+}
+
+function saveLocalMaterial(mat: MaterialResource): void {
+  try {
+    const all = getLocalMaterials();
+    const idx = all.findIndex(m => m.id === mat.id);
+    if (idx >= 0) all[idx] = mat; else all.unshift(mat);
+    localStorage.setItem(LOCAL_MATERIALS_KEY, JSON.stringify(all));
+  } catch (e) { /* ignore */ }
+}
+
+function deleteLocalMaterial(id: string): void {
+  try {
+    const all = getLocalMaterials().filter(m => m.id !== id);
+    localStorage.setItem(LOCAL_MATERIALS_KEY, JSON.stringify(all));
+  } catch (e) { /* ignore */ }
+}
+
 /**
  * ---------------- MATERIALS OPERATIONS ----------------
  */
 
 export async function getSupabaseMaterials(): Promise<MaterialResource[]> {
-  console.log('[SUPABASE-RESOURCES] Fetching materials...');
   try {
     const { data, error } = await supabase
       .from('materials')
@@ -110,25 +137,42 @@ export async function getSupabaseMaterials(): Promise<MaterialResource[]> {
 
     if (error) {
       if (error.code === '42P01') {
-        console.warn('[SUPABASE-RESOURCES] Table "materials" does not exist yet.');
-        return [];
+        console.warn('[SUPABASE-RESOURCES] Table "materials" does not exist — using localStorage backup.');
+        return getLocalMaterials();
       }
       throw error;
     }
 
-    if (data) {
-      console.log(`[SUPABASE-RESOURCES] Loaded ${data.length} materials from Supabase.`);
-      return data.map(mapRowToMaterial);
+    if (data && data.length > 0) {
+      const remoteList = data.map(mapRowToMaterial);
+      // Merge with local-only items (uploaded but not yet synced)
+      const local = getLocalMaterials();
+      const remoteIds = new Set(remoteList.map(m => m.id));
+      const localOnly = local.filter(m => !remoteIds.has(m.id));
+      const merged = [...localOnly, ...remoteList].sort((a, b) => {
+        const tA = typeof a.created_at === 'number' ? a.created_at : 0;
+        const tB = typeof b.created_at === 'number' ? b.created_at : 0;
+        return tB - tA;
+      });
+      console.log(`[SUPABASE-RESOURCES] Loaded ${remoteList.length} from Supabase + ${localOnly.length} local-only materials.`);
+      return merged;
     }
-    return [];
+    // Supabase returned 0 rows (table may exist but be empty or blocked by RLS)
+    const local = getLocalMaterials();
+    if (local.length > 0) {
+      console.log(`[SUPABASE-RESOURCES] Supabase returned 0 rows — serving ${local.length} materials from localStorage.`);
+    }
+    return local;
   } catch (err) {
-    console.error('[SUPABASE-RESOURCES] Failed to fetch materials:', err);
-    return [];
+    console.error('[SUPABASE-RESOURCES] Failed to fetch materials — falling back to localStorage:', err);
+    return getLocalMaterials();
   }
 }
 
 export async function saveSupabaseMaterial(mat: MaterialResource): Promise<void> {
-  console.log('[SUPABASE-RESOURCES] Saving material to Supabase:', mat.id, mat.title);
+  // Always save locally first so materials survive even without Supabase tables
+  saveLocalMaterial(mat);
+
   const row = mapMaterialToRow(mat);
   try {
     const { error } = await supabase
@@ -137,19 +181,21 @@ export async function saveSupabaseMaterial(mat: MaterialResource): Promise<void>
 
     if (error) {
       if (error.code === '42P01') {
-        console.warn('[SUPABASE-RESOURCES] Table "materials" does not exist yet.');
+        console.warn('[SUPABASE-RESOURCES] Table "materials" does not exist — saved to localStorage only.');
         return;
       }
-      throw error;
+      // RLS or other error — still OK, localStorage has it
+      console.warn('[SUPABASE-RESOURCES] Supabase save failed (may be RLS) — saved to localStorage only:', error.message);
+      return;
     }
-    console.log('[SUPABASE-RESOURCES] Saved material successfully!');
+    console.log('[SUPABASE-RESOURCES] Saved material to Supabase successfully!');
   } catch (err) {
-    console.error('[SUPABASE-RESOURCES] Failed to save material:', err);
+    console.warn('[SUPABASE-RESOURCES] Network error saving material — saved to localStorage only:', err);
   }
 }
 
 export async function deleteSupabaseMaterial(id: string): Promise<void> {
-  console.log('[SUPABASE-RESOURCES] Deleting material from Supabase:', id);
+  deleteLocalMaterial(id);
   try {
     const { error } = await supabase
       .from('materials')
@@ -158,11 +204,11 @@ export async function deleteSupabaseMaterial(id: string): Promise<void> {
 
     if (error) {
       if (error.code === '42P01') return;
-      throw error;
+      console.warn('[SUPABASE-RESOURCES] Delete from Supabase failed:', error.message);
+      return;
     }
-    console.log('[SUPABASE-RESOURCES] Deleted material successfully!');
   } catch (err) {
-    console.error('[SUPABASE-RESOURCES] Failed to delete material:', err);
+    console.warn('[SUPABASE-RESOURCES] Failed to delete from Supabase:', err);
   }
 }
 

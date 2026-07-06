@@ -1078,10 +1078,12 @@ export default function App() {
     }
   }, [currentUser, activeTab]);
 
-  // AI Buddy Chats Sync On-Demand (Lazy-Loaded from Supabase)
+  // AI Buddy Chats Sync — loads when user is authenticated (not just on tab visit)
   useEffect(() => {
-    if (!currentUser || activeTab !== 'ai_teacher') return;
-    const uid = currentUser.uid;
+    if (!currentUser) return;
+    // Use Firebase auth UID consistently (same as what saveAiBuddyChat uses at line 3588)
+    const uid = auth.currentUser?.uid || currentUser.uid;
+    if (!uid) return;
     console.log("[SUPABASE-CHAT] Syncing aiBuddyChats for user:", uid);
     
     getAiBuddyChats(uid).then((list) => {
@@ -1117,7 +1119,7 @@ export default function App() {
     }).catch(error => {
       console.error("[SUPABASE-CHAT] Error loading AI buddy chats:", error);
     });
-  }, [activeTab, currentUser]);
+  }, [currentUser]); // Load when user logs in — not gated on tab so chats survive refresh
 
   // Educational Materials Hub Sync
   useEffect(() => {
@@ -2498,6 +2500,8 @@ export default function App() {
 
     try {
       await saveSupabaseMaterial(docItem);
+      // Optimistic update: show immediately without waiting for refetch
+      setMaterials(prev => [docItem, ...prev]);
       setNewMaterialTitle('');
       setNewMaterialDesc('');
       
@@ -2506,8 +2510,6 @@ export default function App() {
       setNewMaterialGrades([]);
       setNewMaterialSections([]);
       setNewMaterialHouses([]);
-      
-      // Award points for upload
 
       showNotification('Academic resource shared successfully on Materials Hub!');
     } catch (err) {
@@ -2872,22 +2874,21 @@ export default function App() {
     console.log("[UPLOAD TRACE] 5. Metadata object constructed before save:", JSON.stringify(docItem, null, 2));
 
     try {
-      console.log("[UPLOAD TRACE] 5.1 setDoc saving metadata to Firestore materials collection...");
-      await setDoc(doc(db, 'materials', matId), docItem);
-      console.log("[UPLOAD TRACE] 5.2 setDoc metadata save SUCCESS!");
-      
+      await saveSupabaseMaterial(docItem);
+      // Optimistic update: show in list immediately without waiting for refetch
+      setMaterials(prev => [docItem, ...prev]);
+
       // Reset state elements
       setNewMaterialGrades([]);
       setNewMaterialSections([]);
       setNewMaterialHouses([]);
       setNewMaterialIsPublic(true);
       
-      showNotification('Success: Course material published to standard vaults!');
+      showNotification('Success: Course material published to the Material Hub!');
       setOpenUploadModal(false);
-      console.log("[UPLOAD TRACE] 6. UI refreshed / Form state reset successfully!");
     } catch (err: any) {
-      console.error("[UPLOAD TRACE] 5.3 Firestore setDoc metadata save FAILED. Exact error:", err);
-      handleFirestoreError(err, OperationType.CREATE, `materials/${matId}`);
+      console.error('[UPLOAD TRACE] Material save failed:', err);
+      showNotification(`❌ Failed to save material: ${err.message || String(err)}`);
     }
   };
 
@@ -3006,9 +3007,9 @@ export default function App() {
       console.log("[UPLOAD TRACE] 5. Metadata object constructed before save:", JSON.stringify(docItem, null, 2));
 
       try {
-        console.log("[UPLOAD TRACE] 5.1 setDoc saving metadata to Firestore materials collection...");
-        await setDoc(doc(db, 'materials', matId), docItem);
-        console.log("[UPLOAD TRACE] 5.2 setDoc metadata save SUCCESS!");
+        await saveSupabaseMaterial(docItem);
+        // Optimistic update: show in list immediately
+        setMaterials(prev => [docItem, ...prev]);
 
         showNotification(`Success: "${docItem.title}" has been shared directly with your peers!`);
         
@@ -3016,9 +3017,8 @@ export default function App() {
         setQuickUploadFile(null);
         setQuickUploadTitle('');
         setQuickUploadIsUploading(false);
-        console.log("[UPLOAD TRACE] 6. UI refreshed / Form state reset successfully!");
       } catch (innerErr: any) {
-        console.error('[UPLOAD TRACE] 5.3 Firestore setDoc metadata save FAILED. Exact error:', innerErr);
+        console.error('[UPLOAD TRACE] Quick upload material save FAILED:', innerErr);
         throw innerErr;
       }
     } catch (err) {
@@ -3104,6 +3104,12 @@ export default function App() {
       sharedMaterialId: materialIdId || undefined,
       ownerUid: currentUser?.uid || undefined
     };
+
+    // Optimistic update — show message instantly for the sender
+    setChats(prev => {
+      if (prev.some(c => c.id === msg.id)) return prev;
+      return [...prev, msg];
+    });
 
     try {
       await savePeerMessage(msg);

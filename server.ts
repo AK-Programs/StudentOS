@@ -452,6 +452,22 @@ How do visibility target constraints (restricted grades, sections, or houses) pr
   }
 });
 
+// ============================================================
+// Database Setup Endpoint — returns the setup SQL file content
+// Admins can copy-paste this into the Supabase SQL Editor (one-time setup)
+// ============================================================
+app.get('/api/admin/setup-sql', (req, res) => {
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const sqlPath = path.join(process.cwd(), 'supabase', 'setup.sql');
+    const sql = fs.readFileSync(sqlPath, 'utf-8');
+    res.type('text/plain').send(sql);
+  } catch (err: any) {
+    res.status(500).json({ error: 'Could not read setup SQL: ' + err.message });
+  }
+});
+
 let globalChatsState: any[] = [];
 let globalAnnouncementsState: any[] = [];
 let globalHomeworkState: any[] = [];

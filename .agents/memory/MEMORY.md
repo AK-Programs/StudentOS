@@ -1,0 +1,3 @@
+- [Supabase anon key](supabase-anon-key.md) — hardcoded in supabase.ts as fallback; secret env var is validated for truncation before use.
+- [AI buddy keyword bug](ai-buddy-keyword-bug.md) — clientAiFallback.ts must use word-boundary regex; partial matches like "workspace"→"work" triggered wrong physics response.
+- [OAuth implicit flow](oauth-implicit-flow.md) — use getSession() not setSession() after hash redirect; setSession makes a server call requiring the anon key.

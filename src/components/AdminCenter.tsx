@@ -8,6 +8,7 @@ export default function AdminCenter({ currentUser, showNotification, profileTab 
   const [loading, setLoading] = useState(false);
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
   const [adminSubTab, setAdminSubTab] = useState<'users' | 'requests'>('users');
+  const [setupSql, setSetupSql] = useState<string | null>(null);
 
   useEffect(() => {
     fetchUsers();
@@ -210,17 +211,74 @@ export default function AdminCenter({ currentUser, showNotification, profileTab 
     }
   };
 
+  const setupDatabase = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('/api/admin/setup-sql');
+      if (!res.ok) throw new Error('Could not load setup SQL');
+      const sql = await res.text();
+      setSetupSql(sql);
+    } catch(err: any) {
+      showNotification(`❌ Could not load setup SQL: ${err.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const pendingRequests = users.filter(u => u.accountStatus && u.accountStatus !== 'approved' && u.accountStatus !== 'rejected');
   const isSuperAdmin = currentUser.role === 'super_admin';
 
   return (
     <div className="smart-glass p-6 md:p-8 rounded-3xl space-y-6 max-w-5xl mx-auto animate-fadeIn w-full">
+
+      {/* Database Setup SQL Modal */}
+      {setupSql && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={() => setSetupSql(null)}>
+          <div className="bg-slate-900 border border-emerald-500/30 rounded-3xl p-6 max-w-3xl w-full max-h-[85vh] flex flex-col gap-4" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-between items-start">
+              <div>
+                <h4 className="text-lg font-black text-white">🗄️ Supabase Database Setup</h4>
+                <p className="text-xs text-slate-400 mt-1">Copy this SQL and paste it into your <a href="https://supabase.com/dashboard" target="_blank" rel="noopener noreferrer" className="text-emerald-400 underline">Supabase Dashboard</a> → SQL Editor → Run. Do this once.</p>
+              </div>
+              <button onClick={() => setSetupSql(null)} className="text-slate-400 hover:text-white text-xl leading-none">✕</button>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => { navigator.clipboard.writeText(setupSql); showNotification('✅ SQL copied to clipboard!'); }}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all"
+              >
+                📋 Copy SQL
+              </button>
+              <a
+                href="https://supabase.com/dashboard"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="bg-slate-700 hover:bg-slate-600 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all"
+              >
+                🔗 Open Supabase Dashboard
+              </a>
+            </div>
+            <pre className="flex-1 overflow-auto bg-black/50 text-emerald-300 text-[10px] leading-relaxed p-4 rounded-2xl border border-white/5 font-mono whitespace-pre-wrap">
+              {setupSql}
+            </pre>
+          </div>
+        </div>
+      )}
+
       <div className="flex justify-between items-center flex-wrap gap-4 border-b border-white/5 pb-5">
         <div className="space-y-1">
           <h3 className="text-2xl font-black font-display text-white">Admin Center</h3>
           <p className="text-xs text-slate-400 font-medium">Verify credentials, approve roles, and manage school placements.</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 flex-wrap">
+          <button 
+            onClick={setupDatabase}
+            disabled={loading}
+            className="bg-emerald-600/10 hover:bg-emerald-600 text-emerald-400 hover:text-white border border-emerald-500/20 px-4 py-2 rounded-xl text-xs font-bold transition-all disabled:opacity-50 cursor-pointer"
+            title="Creates all required Supabase tables + RLS policies. Run once."
+          >
+            🗄️ Setup Database
+          </button>
           <button 
             onClick={clearLegacyAiChats}
             disabled={loading}
