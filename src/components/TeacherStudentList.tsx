@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { UserProfile } from '../types';
-import { fetchAllSupabaseUsers } from '../lib/supabaseUsers';
+import { UserProfile, HouseType } from '../types';
+import { fetchStudentUsers } from '../lib/studentFilters';
+import { filterStudentsByTeacherAssignment } from '../lib/utils';
+import { HOUSE_COLORS } from '../lib/constants';
 
 export default function TeacherStudentList({ currentUser }: { currentUser: UserProfile }) {
   const [students, setStudents] = useState<UserProfile[]>([]);
@@ -14,23 +16,12 @@ export default function TeacherStudentList({ currentUser }: { currentUser: UserP
   const fetchStudents = async () => {
     setLoading(true);
     try {
-      let list: UserProfile[] = [];
-      try {
-        const allUsers = await fetchAllSupabaseUsers();
-        list = allUsers.filter(u => u.role === 'student');
-      } catch (sbErr) {
-        console.error('[Supabase] Failed to fetch students from Supabase:', sbErr);
-        throw sbErr;
-      }
-      
-      const teacherGrades = currentUser.assignedGrades || [];
-      const teacherSections = currentUser.assignedSections || [];
-      
-      const filtered = list.filter(s => {
-         const gradeMatch = teacherGrades.includes('All Grades') || teacherGrades.includes(s.grade || '');
-         const sectionMatch = teacherSections.includes('All Sections') || teacherSections.includes(s.section || '');
-         return gradeMatch && sectionMatch;
-      });
+      const list = await fetchStudentUsers();
+      const filtered = filterStudentsByTeacherAssignment(
+        list,
+        currentUser.assignedGrades || [],
+        currentUser.assignedSections || [],
+      );
       setStudents(filtered);
     } catch(err) {
       console.error(err);
@@ -84,7 +75,9 @@ export default function TeacherStudentList({ currentUser }: { currentUser: UserP
                        <td className="px-4 py-3 text-slate-400 text-xs">{s.email}</td>
                        <td className="px-4 py-3 text-xs">{s.section || 'Unassigned'}</td>
                        <td className="px-4 py-3">
-                         <span className={`text-[10px] px-2 py-1 rounded-full font-bold uppercase ${s.house === 'Ruby' ? 'bg-red-500/20 text-red-400' : s.house === 'Emerald' ? 'bg-emerald-500/20 text-emerald-400' : s.house === 'Sapphire' ? 'bg-indigo-500/20 text-indigo-400' : 'bg-amber-500/20 text-amber-400'}`}>{s.house || 'Unassigned'}</span>
+                         {(() => { const colors = HOUSE_COLORS[(s.house || 'Topaz') as HouseType]; return (
+                           <span className={`text-[10px] px-2 py-1 rounded-full font-bold uppercase ${colors.bg} ${colors.text}`}>{s.house || 'Unassigned'}</span>
+                         ); })()}
                        </td>
                      </tr>
                    ))

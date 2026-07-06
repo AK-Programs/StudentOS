@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { HouseAnalytics as HouseAnalyticsType } from '../types';
+import { HouseAnalytics as HouseAnalyticsType, HouseType } from '../types';
+import { canEditContent } from '../lib/utils';
+import { HOUSE_COLORS } from '../lib/constants';
 
 export default function HouseChampionship({ currentUser, effectiveRole, showNotification }: any) {
   const [houses, setHouses] = useState<any[]>([]);
@@ -11,7 +13,7 @@ export default function HouseChampionship({ currentUser, effectiveRole, showNoti
   const [viceCaptainName, setViceCaptainName] = useState('');
   const [viceCaptainGrade, setViceCaptainGrade] = useState('');
 
-  const canEdit = ['teacher', 'coordinator', 'admin', 'super_admin'].includes(effectiveRole);
+  const canEdit = canEditContent(effectiveRole);
 
   useEffect(() => {
     // Placeholder for Supabase migration
@@ -44,19 +46,9 @@ export default function HouseChampionship({ currentUser, effectiveRole, showNoti
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
         {houses.map((h, i) => (
-          <div key={h.id} className={`p-5 rounded-3xl border w-full text-center relative overflow-hidden flex flex-col ${
-             h.id === 'Ruby' ? 'border-red-500/30 bg-red-500/10' :
-             h.id === 'Emerald' ? 'border-emerald-500/30 bg-emerald-500/10' :
-             h.id === 'Sapphire' ? 'border-indigo-500/30 bg-indigo-500/10' :
-             'border-amber-500/30 bg-amber-500/10'
-          }`}>
+          <div key={h.id} className={`p-5 rounded-3xl border w-full text-center relative overflow-hidden flex flex-col ${HOUSE_COLORS[h.id as HouseType].border} ${HOUSE_COLORS[h.id as HouseType].bg.replace('/20', '/10')}`}>
              {i === 0 && <div className="absolute top-0 right-0 bg-yellow-500 text-black text-[10px] font-black uppercase tracking-widest px-3 py-1 rounded-bl-xl z-20 shadow-md">1st Place</div>}
-             <div className={`text-4xl font-black font-display uppercase tracking-wider mb-2 ${
-               h.id === 'Ruby' ? 'text-red-400' :
-               h.id === 'Emerald' ? 'text-emerald-400' :
-               h.id === 'Sapphire' ? 'text-indigo-400' :
-               'text-amber-400'
-             }`}>{h.id}</div>
+             <div className={`text-4xl font-black font-display uppercase tracking-wider mb-2 ${HOUSE_COLORS[h.id as HouseType].text}`}>{h.id}</div>
              <div className="text-3xl font-mono font-bold text-white mb-6 bg-slate-950/40 inline-block px-4 py-2 rounded-2xl mx-auto border border-white/5 shadow-inner">
                {h.points || 0} <span className="text-[10px] text-slate-400 tracking-widest">PTS</span>
              </div>

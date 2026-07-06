@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { uploadFileToStorage } from '../lib/storageHelper';
 import { saveSupabaseResource } from '../lib/supabaseResources';
 import { ResourceCategory } from '../types';
+import { buildResourcePayload, getResourceTableName } from '../lib/resourcePayload';
 
 interface Props {
   category: ResourceCategory;
@@ -36,34 +37,22 @@ export const AssignmentUploadForm: React.FC<Props> = ({ category, onSuccess }) =
         storagePath = path;
       }
       
-      const matId = Math.random().toString(36).substring(7);
-      
-      const dataToSave = {
-        id: matId,
-        title: title || '',
-        content: description || '',
-        description: description || '',
-        type: category || 'resource',
-        resourceType: category || 'resource',
-        targetGrade: classGrade || 'All Grades',
-        class: classGrade || 'All Grades',
-        targetSection: classSection || 'All Sections',
-        section: classSection || 'All Sections',
-        url: fileUrl || null,
-        fileUrl: fileUrl || null,
-        fileData: fileUrl || null,
-        storagePath: storagePath || null,
+      const dataToSave = buildResourcePayload({
+        type: category,
+        title,
+        content: description,
+        fileUrl: fileUrl || undefined,
+        storagePath: storagePath || undefined,
         galleryUrls: finalGalleryUrls,
-        fileName: file?.name || null,
-        createdAt: Date.now(),
-        created_at: Date.now(),
-        author: 'Teacher'
-      };
+        fileName: file?.name,
+        targetGrade: classGrade || undefined,
+        targetSection: classSection,
+      });
 
       console.log("MODULE DATA", dataToSave);
 
-      const tableName = category === 'assignment' ? 'assignments' : 'school_resources';
-      await saveSupabaseResource(tableName as any, dataToSave);
+      const tableName = getResourceTableName(category);
+      await saveSupabaseResource(tableName, dataToSave);
       onSuccess();
     } catch (err: any) {
       console.error(

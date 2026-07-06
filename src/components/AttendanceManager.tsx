@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { UserProfile, AttendanceRecord, AttendanceStatus, UserRole } from '../types';
-import { fetchAllSupabaseUsers } from '../lib/supabaseUsers';
+import { fetchStudentsByGradeSection } from '../lib/studentFilters';
+import { computeAttendanceStats } from '../lib/utils';
+import { GRADES, SECTIONS } from '../lib/constants';
 import { supabase } from '../lib/supabase';
 
 export default function AttendanceManager({ currentUser, effectiveRole }: { currentUser: UserProfile; effectiveRole: UserRole | undefined }) {
@@ -20,13 +22,7 @@ export default function AttendanceManager({ currentUser, effectiveRole }: { curr
     setLoading(true);
     try {
       // 1. Fetch Students
-      const allStudents: UserProfile[] = [];
-      const allUsers = await fetchAllSupabaseUsers();
-      allUsers.forEach(u => {
-        if (u.role === 'student' && u.grade === selectedGrade && u.section === selectedSection) {
-          allStudents.push(u);
-        }
-      });
+      const allStudents = await fetchStudentsByGradeSection(selectedGrade, selectedSection);
       setStudents(allStudents);
 
       // 2. Fetch Attendance
@@ -94,10 +90,7 @@ export default function AttendanceManager({ currentUser, effectiveRole }: { curr
   // Stats
   const total = students.length;
   const attVals = Object.values(attendance) as AttendanceRecord[];
-  const presentCount = attVals.filter(a => a.status === 'present').length;
-  const absentCount = attVals.filter(a => a.status === 'absent').length;
-  const lateCount = attVals.filter(a => a.status === 'late').length;
-  const markedCount = presentCount + absentCount + lateCount;
+  const { presentCount, absentCount, lateCount, markedCount } = computeAttendanceStats(attVals);
   const percentage = total > 0 ? Math.round((presentCount / total) * 100) : 0;
 
   return (
@@ -115,10 +108,10 @@ export default function AttendanceManager({ currentUser, effectiveRole }: { curr
             className="px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-sm"
           />
           <select value={selectedGrade} onChange={e => setSelectedGrade(e.target.value)} className="px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-sm">
-            {['Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'].map(g => <option key={g} value={g}>{g}</option>)}
+            {GRADES.map(g => <option key={g} value={g}>{g}</option>)}
           </select>
           <select value={selectedSection} onChange={e => setSelectedSection(e.target.value)} className="px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-sm">
-            {['Astra', 'Elera', 'Solara', 'Vega'].map(s => <option key={s} value={s}>{s}</option>)}
+            {SECTIONS.map(s => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
       </div>
