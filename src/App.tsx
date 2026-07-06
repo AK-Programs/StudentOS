@@ -24,7 +24,7 @@ import {
   getAiBuddyChats, saveAiBuddyChat, deleteAiBuddyChat, 
   getPeerMessages, savePeerMessage, getChatRooms, saveChatRoom 
 } from './lib/supabaseChat';
-import { saveSupabaseMaterial, getSupabaseMaterials } from './lib/supabaseResources';
+import { saveSupabaseMaterial, getSupabaseMaterials, deleteSupabaseMaterial, getSupabaseResources, saveSupabaseResource, deleteSupabaseResource } from './lib/supabaseResources';
 import { PdfCanvasViewer } from './components/PdfCanvasViewer';
 import { StudentOSJarvis } from './components/StudentOSJarvis';
 import AttendanceManager from './components/AttendanceManager';
@@ -236,7 +236,10 @@ export default function App() {
     return localStorage.getItem('s_os_active_tab') || 'dashboard';
   });
   const [assignmentSearchQuery, setAssignmentSearchQuery] = useState<string>('');
-  const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') return window.innerWidth >= 1024;
+    return true;
+  });
   const [clock, setClock] = useState<string>('');
   
   // Homework filter states
@@ -348,7 +351,7 @@ export default function App() {
   const [aiActionResultText, setAiActionResultText] = useState<string>('');
   const [aiActionType, setAiActionType] = useState<string>('');
   const [aiUserQuestion, setAiUserQuestion] = useState<string>('');
-  const [activeMaterialSubTab, setActiveMaterialSubTab] = useState<'feed' | 'papers' | 'library' | 'saved'>('feed');
+  const [activeMaterialSubTab, setActiveMaterialSubTab] = useState<'feed' | 'my_uploads' | 'verified' | 'teacher_vault' | 'saved' | 'papers' | 'library'>('feed');
   const [materialsGradeFilter, setMaterialsGradeFilter] = useState<string>('All');
   const [materialsTypeFilter, setMaterialsTypeFilter] = useState<string>('All');
   const [materialsSortBy, setMaterialsSortBy] = useState<string>('Newest');
@@ -366,6 +369,7 @@ export default function App() {
 
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [materials, setMaterials] = useState<MaterialResource[]>([]);
+  const [materialsLoading, setMaterialsLoading] = useState<boolean>(false);
   const [feedbackPosts, setFeedbackPosts] = useState<FeedbackPost[]>([]);
   const [students, setStudents] = useState<UserProfile[]>([]);
   const [chats, setChats] = useState<ChatMessage[]>([]);
@@ -1032,8 +1036,8 @@ export default function App() {
     ]);
     setActiveThreadId(demoThreadId);
     setHomeworkList([
-      { id: 'hw-1', title: 'Physics Worksheets Chapter 4', subject: 'Physics', description: 'Solve problems 1-15 regarding circular friction.', deadline: 'Tomorrow', submitted: false },
-      { id: 'hw-2', title: 'C++ BST balancing questions', subject: 'Computer Science', description: 'Design pseudo-code for rotation of tree node structures.', deadline: 'Friday', submitted: true }
+      { id: 'hw-1', title: 'Physics Worksheets Chapter 4', subject: 'Physics', content: 'Solve problems 1-15 regarding circular friction.', classGrade: 'Grade 10', classSection: 'All Sections', dueDate: new Date(Date.now() + 86400000).toISOString().split('T')[0], createdAt: new Date().toISOString().split('T')[0], completedList: [], givenBy: 'Demo Teacher' },
+      { id: 'hw-2', title: 'C++ BST balancing questions', subject: 'Computer Science', content: 'Design pseudo-code for rotation of tree node structures.', classGrade: 'Grade 10', classSection: 'All Sections', dueDate: new Date(Date.now() + 4 * 86400000).toISOString().split('T')[0], createdAt: new Date().toISOString().split('T')[0], completedList: ['naitik.kashyap0015@gmail.com'], givenBy: 'Demo Teacher' }
     ]);
     setSchedules(MOCK_SCHEDULES);
     setDataLoading(false);
@@ -1081,8 +1085,8 @@ export default function App() {
   // AI Buddy Chats Sync — loads when user is authenticated (not just on tab visit)
   useEffect(() => {
     if (!currentUser) return;
-    // Use Firebase auth UID consistently (same as what saveAiBuddyChat uses at line 3588)
-    const uid = auth.currentUser?.uid || currentUser.uid;
+    // Use Supabase user UID for chat persistence
+    const uid = currentUser.uid;
     if (!uid) return;
     console.log("[SUPABASE-CHAT] Syncing aiBuddyChats for user:", uid);
     
@@ -1125,10 +1129,13 @@ export default function App() {
   useEffect(() => {
     if (!currentUser || activeTab !== 'materials') return;
     console.log("[SUPABASE] Fetching materials for materials hub tab");
+    setMaterialsLoading(true);
     getSupabaseMaterials().then(list => {
       setMaterials(list);
     }).catch(err => {
       console.error('Failed to load materials from Supabase:', err);
+    }).finally(() => {
+      setMaterialsLoading(false);
     });
   }, [currentUser, activeTab]);
 
@@ -1152,6 +1159,40 @@ export default function App() {
     } else {
       setAnnouncements(INITIAL_ANNOUNCEMENTS);
     }
+  }, [currentUser, activeTab]);
+
+  // Homework Sync — loads from Supabase with localStorage fallback
+  useEffect(() => {
+    if (!currentUser || (activeTab !== 'homework' && activeTab !== 'assignments')) return;
+    const LOCAL_HW_KEY = `s_os_homework_${currentUser.uid || 'anon'}`;
+
+    getSupabaseResources('school_resources').then(list => {
+      const hwItems = list.filter((r: any) => r.type === 'homework' || r.resourceType === 'homework');
+      if (hwItems.length > 0) {
+        const mapped: Homework[] = hwItems.map((r: any) => ({
+          id: r.id,
+          title: r.title || '',
+          subject: r.description || r.content || '',
+          content: r.content || r.description || '',
+          classGrade: r.targetGrade || r.class || 'Grade 10',
+          classSection: r.targetSection || r.section || 'All Sections',
+          dueDate: r.dueDate || new Date().toISOString().split('T')[0],
+          createdAt: r.createdAt ? new Date(r.createdAt).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+          completedList: r.completedList || [],
+          givenBy: r.author || 'Teacher'
+        }));
+        setHomeworkList(mapped);
+        localStorage.setItem(LOCAL_HW_KEY, JSON.stringify(mapped));
+      } else {
+        const local = localStorage.getItem(LOCAL_HW_KEY);
+        if (local) {
+          setHomeworkList(JSON.parse(local));
+        }
+      }
+    }).catch(() => {
+      const local = localStorage.getItem(LOCAL_HW_KEY);
+      if (local) setHomeworkList(JSON.parse(local));
+    });
   }, [currentUser, activeTab]);
 
   // Chats Sync On-Demand (Lazy-Loaded from Supabase)
@@ -2481,7 +2522,7 @@ export default function App() {
       type: newMaterialType,
       description: finalDesc.trim(),
       uploadedBy: currentUser?.name || 'Academic Faculty',
-      uploaderUid: auth.currentUser?.uid || '',
+      uploaderUid: currentUser?.uid || '',
       uploaderHouse: currentUser?.house || '',
       uploaderSection: currentUser?.section || '',
       createdAt: new Date().toISOString().split('T')[0],
@@ -2519,25 +2560,25 @@ export default function App() {
 
   // Toggle Like Material
   const toggleLikeMaterial = async (mat: MaterialResource) => {
-    if (!currentUser || !auth.currentUser) return;
-    const myUid = auth.currentUser.uid;
+    if (!currentUser || !currentUser.uid) return;
+    const myUid = currentUser.uid;
     const isLiked = mat.likedBy?.includes(myUid);
     const updatedLikedBy = isLiked
       ? (mat.likedBy || []).filter(u => u !== myUid)
       : [...(mat.likedBy || []), myUid];
     const updatedLikesCount = updatedLikedBy.length;
     
-    // popular award threshold
     const becamePopular = !isLiked && updatedLikesCount === 5;
     
     const nextMat = { ...mat, likes: updatedLikesCount, likedBy: updatedLikedBy };
+    setMaterials(prev => prev.map(m => m.id === mat.id ? nextMat : m));
     try {
-      await setDoc(doc(db, 'materials', mat.id), nextMat);
+      await saveSupabaseMaterial(nextMat);
       if (becamePopular && mat.uploaderHouse) {
         showNotification(`❤️ Popular Item! "${mat.title}" crossed 5 likes.`);
       }
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `materials/${mat.id}`);
+      console.error('Failed to toggle like:', err);
     }
   };
 
@@ -2546,31 +2587,22 @@ export default function App() {
     const finalUrl = mat.url || mat.fileUrl || mat.file_url || mat.attachment_url;
     if (finalUrl) {
       window.open(finalUrl, '_blank', 'noopener,noreferrer');
-      // Increment downloads
       const updatedDownloads = (mat.downloads || 0) + 1;
       const nextMat = { ...mat, downloads: updatedDownloads };
-      try {
-        await setDoc(doc(db, 'materials', mat.id), nextMat);
-      } catch (err) {
-        console.error("Failed to update download count", err);
-      }
+      setMaterials(prev => prev.map(m => m.id === mat.id ? nextMat : m));
+      saveSupabaseMaterial(nextMat).catch(err => console.error("Failed to update download count", err));
     } else {
       showNotification('Link not available for this material.');
     }
   };
 
-  // Increment view counter
   const incrementViewsMaterial = async (mat: MaterialResource) => {
     const updatedViews = (mat.views || 0) + 1;
     const nextMat = { ...mat, views: updatedViews };
-    try {
-      await setDoc(doc(db, 'materials', mat.id), nextMat);
-    } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `materials/${mat.id}`);
-    }
+    setMaterials(prev => prev.map(m => m.id === mat.id ? nextMat : m));
+    saveSupabaseMaterial(nextMat).catch(err => console.error("Failed to update view count", err));
   };
 
-  // Add Comment on Material
   const handleAddComment = async (mat: MaterialResource) => {
     if (!newCommentText.trim()) return;
     const commentId = generateUniqueId();
@@ -2583,22 +2615,23 @@ export default function App() {
     };
     const updatedComments = [...(mat.comments || []), newComment];
     const nextMat = { ...mat, comments: updatedComments };
+    setMaterials(prev => prev.map(m => m.id === mat.id ? nextMat : m));
     try {
-      await setDoc(doc(db, 'materials', mat.id), nextMat);
+      await saveSupabaseMaterial(nextMat);
       setNewCommentText('');
       showNotification('Comment registered successfully in peer discussion threads!');
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `materials/${mat.id}`);
+      console.error('Failed to save comment:', err);
     }
   };
 
-  // Verify Material (Teacher action)
   const handleVerifyMaterial = async (mat: MaterialResource) => {
     if (effectiveRole !== 'teacher') return;
     const nextState = !mat.isVerified;
     const nextMat = { ...mat, isVerified: nextState };
+    setMaterials(prev => prev.map(m => m.id === mat.id ? nextMat : m));
     try {
-      await setDoc(doc(db, 'materials', mat.id), nextMat);
+      await saveSupabaseMaterial(nextMat);
       if (nextState) {
         const houseOfUploader = mat.uploaderHouse as HouseType;
         if (houseOfUploader) {
@@ -2610,7 +2643,7 @@ export default function App() {
         showNotification('Verification removed.');
       }
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `materials/${mat.id}`);
+      console.error('Failed to update material verification:', err);
     }
   };
 
@@ -2852,7 +2885,7 @@ export default function App() {
       fileSize: fSize,
       description: descInput.trim(),
       uploadedBy: currentUser?.name || 'Faculty Representative',
-      uploaderUid: auth.currentUser?.uid || '',
+      uploaderUid: currentUser?.uid || '',
       uploaderHouse: currentUser?.house || '',
       uploaderSection: currentUser?.section || '',
       createdAt: new Date().toISOString().split('T')[0],
@@ -2991,7 +3024,7 @@ export default function App() {
         fileSize: quickUploadFile.size,
         description: `Direct share upload: "${quickUploadTitle.trim()}" in ${quickUploadSubject}.`,
         uploadedBy: currentUser?.name || 'Class Peer',
-        uploaderUid: auth.currentUser?.uid || '',
+        uploaderUid: currentUser?.uid || '',
         uploaderHouse: currentUser?.house || '',
         uploaderSection: currentUser?.section || '',
         createdAt: new Date().toISOString().split('T')[0],
@@ -3209,32 +3242,46 @@ export default function App() {
     };
 
     try {
-      await setDoc(doc(db, 'feedbacks', postId), post);
+      setFeedbackPosts(prev => [post, ...prev]);
+      await saveSupabaseResource('school_resources', {
+        id: postId, type: 'feedback', resourceType: 'feedback',
+        title: post.text.substring(0, 80), content: post.text,
+        author: post.author, createdAt: Date.now(), created_at: Date.now(),
+        description: post.category, raw_data: post
+      });
       setNewFeedbackText('');
       showNotification('Feedback posted directly to faculty bulletin boards.');
     } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, `feedbacks/${postId}`);
+      console.error('Failed to save feedback:', error);
     }
   };
 
   const upvoteFeedback = async (id: string) => {
     const found = feedbackPosts.find(p => p.id === id);
     if (!found) return;
-    try {
-      showNotification('Upvoted successfully!');
-      await updateDoc(doc(db, 'feedbacks', id), { votes: found.votes + 1 });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `feedbacks/${id}`);
-    }
+    const updated = { ...found, votes: found.votes + 1 };
+    setFeedbackPosts(prev => prev.map(p => p.id === id ? updated : p));
+    showNotification('Upvoted successfully!');
+    saveSupabaseResource('school_resources', {
+      id, type: 'feedback', resourceType: 'feedback',
+      title: updated.text.substring(0, 80), content: updated.text,
+      author: updated.author, createdAt: Date.now(), created_at: Date.now(),
+      description: updated.category, raw_data: updated
+    }).catch(err => console.error('Failed to save upvote:', err));
   };
 
   const handleFacultyStatusUpdate = async (id: string, nextStatus: 'in-progress' | 'solved' | 'planned') => {
-    try {
-      showNotification(`Feedback status updated to: ${nextStatus.toUpperCase()}`);
-      await updateDoc(doc(db, 'feedbacks', id), { status: nextStatus });
-    } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `feedbacks/${id}`);
-    }
+    const found = feedbackPosts.find(p => p.id === id);
+    if (!found) return;
+    const updated = { ...found, status: nextStatus };
+    setFeedbackPosts(prev => prev.map(p => p.id === id ? updated : p));
+    showNotification(`Feedback status updated to: ${nextStatus.toUpperCase()}`);
+    saveSupabaseResource('school_resources', {
+      id, type: 'feedback', resourceType: 'feedback',
+      title: updated.text.substring(0, 80), content: updated.text,
+      author: updated.author, createdAt: Date.now(), created_at: Date.now(),
+      description: updated.category, raw_data: updated
+    }).catch(err => console.error('Failed to update status:', err));
   };
 
   // Extract text from PDF in exact page order
@@ -3390,10 +3437,10 @@ export default function App() {
       ],
       attachedFile: null,
       attachedFiles: [],
-      userId: auth.currentUser?.uid || '',
+      userId: currentUser?.uid || '',
       createdAt: Date.now()
     };
-    if (auth.currentUser?.uid && !isDemoMode) {
+    if (currentUser?.uid && !isDemoMode) {
       saveAiBuddyChat(newThread as any).catch(error => {
         console.error("Error saving AI buddy chat:", error);
       });
@@ -3406,14 +3453,14 @@ export default function App() {
 
   const handleSwitchPersona = (personaId: string) => {
     setSelectedPersona(personaId);
-    if (auth.currentUser?.uid && !isDemoMode) {
+    if (currentUser?.uid && !isDemoMode) {
        const t = aiThreads.find(t => t.id === activeThreadId);
        if (t) {
          saveAiBuddyChat({ 
            ...t, 
            personaId, 
            title: `Study with ${AI_PERSONAS.find(p => p.id === personaId)?.name || 'Tutor'}`,
-           userId: auth.currentUser.uid 
+           userId: currentUser.uid 
          } as any).catch(error => {
            console.error("Error saving AI buddy chat persona:", error);
          });
@@ -3424,13 +3471,13 @@ export default function App() {
 
   const handleSwitchMode = (mode: 'explanatory' | 'socratic' | 'coder' | 'quiz_gen') => {
     setAiMode(mode);
-    if (auth.currentUser?.uid && !isDemoMode) {
+    if (currentUser?.uid && !isDemoMode) {
        const t = aiThreads.find(t => t.id === activeThreadId);
        if (t) {
          saveAiBuddyChat({ 
            ...t, 
            mode,
-           userId: auth.currentUser.uid 
+           userId: currentUser.uid 
          } as any).catch(error => {
            console.error("Error saving AI buddy chat mode:", error);
          });
@@ -3445,8 +3492,8 @@ export default function App() {
       showNotification('At least one chat sequence must remain intact.');
       return;
     }
-    if (auth.currentUser?.uid && !isDemoMode) {
-      deleteAiBuddyChat(threadId, auth.currentUser.uid).catch(error => {
+    if (currentUser?.uid && !isDemoMode) {
+      deleteAiBuddyChat(threadId, currentUser.uid).catch(error => {
         console.error("Error deleting AI buddy chat:", error);
       });
     }
@@ -3587,11 +3634,11 @@ export default function App() {
       return t;
     }));
 
-    if (auth.currentUser?.uid && !isDemoMode) {
+    if (currentUser?.uid && !isDemoMode) {
        saveAiBuddyChat({ 
          ...currentThread, 
          id: targetThreadId,
-         userId: auth.currentUser.uid,
+         userId: currentUser.uid,
          title: newTitle,
          messages: updatedMessages,
          attachedFiles: []
@@ -3652,11 +3699,11 @@ export default function App() {
         return t;
       }));
 
-      if (auth.currentUser?.uid && !isDemoMode) {
+      if (currentUser?.uid && !isDemoMode) {
          saveAiBuddyChat({ 
            ...currentThread, 
            id: targetThreadId,
-           userId: auth.currentUser.uid,
+           userId: currentUser.uid,
            title: currentThread.title.startsWith('Study Session #') || currentThread.title.startsWith('Introductory Study') || currentThread.title.startsWith('Study with')
             ? (userQuery.length > 25 ? userQuery.substring(0, 25) + '...' : userQuery)
             : currentThread.title,
@@ -4337,6 +4384,11 @@ export default function App() {
       {currentUser && (
         <div className="flex min-h-screen relative">
           
+          {/* Mobile sidebar backdrop */}
+          {sidebarOpen && (
+            <div className="fixed inset-0 bg-black/50 z-40 lg:hidden" onClick={() => setSidebarOpen(false)} />
+          )}
+
           {/* Main Workspace Sidebar */}
           <aside className={`fixed top-0 left-0 h-full bg-slate-900/95 dark:bg-slate-950/80 backdrop-blur-xl border-r border-white/5 z-50 flex flex-col justify-between transition-all duration-300 p-6 ${sidebarOpen ? 'w-64 translate-x-0' : 'w-0 -translate-x-full md:w-20 md:translate-x-0'}`}>
             <div className="space-y-8 overflow-y-auto max-h-[calc(100vh-140px)] pr-1">
@@ -5507,12 +5559,12 @@ export default function App() {
 
                         // Helpers to update fields dynamically with instant local storage saving
                         const updateActiveNote = async (updates: Partial<VaultNote>) => {
-                          setVaultNotes(prev => prev.map(n => n.id === activeNote.id ? { ...n, ...updates } : n));
-                          try {
-                            await updateDoc(doc(db, 'notes', activeNote.id), updates);
-                          } catch (err) {
-                            console.error('[Vault Notes] Firestore update failed:', err);
-                          }
+                          setVaultNotes(prev => {
+                            const updated = prev.map(n => n.id === activeNote.id ? { ...n, ...updates } : n);
+                            const uid = currentUser?.uid || 'anon';
+                            localStorage.setItem(`s_os_notes_${uid}`, JSON.stringify(updated));
+                            return updated;
+                          });
                         };
 
                         const handleToolbarInject = (prefix: string, suffix = '') => {
@@ -6166,7 +6218,7 @@ export default function App() {
                                         const file = e.target.files[0];
                                         try {
                                           showNotification('Uploading profile picture to storage...');
-                                          const { url } = await uploadFileToStorage(file, 'users', `profile_${auth.currentUser?.uid}`);
+                                          const { url } = await uploadFileToStorage(file, 'users', `profile_${currentUser?.uid}`);
                                           setProfileAvatar(url);
                                           showNotification('✓ Profile image selected! Click save below to sync changes.');
                                         } catch (err: any) {
@@ -6428,7 +6480,7 @@ export default function App() {
 
                   {currentUser && profileTab === 'overview' && effectiveRole !== 'admin' && (
                     (() => {
-                      const userMaterials = materials.filter(m => m.uploadedBy === currentUser.name || m.uploaderUid === auth.currentUser?.uid);
+                      const userMaterials = materials.filter(m => m.uploadedBy === currentUser.name || m.uploaderUid === currentUser?.uid);
                       const totalUploads = userMaterials.length;
                       const totalDownloads = userMaterials.reduce((acc, curr) => acc + (curr.downloads || 0), 0);
                       const totalLikes = userMaterials.reduce((acc, curr) => acc + (curr.likes || 0), 0);
@@ -7140,9 +7192,28 @@ export default function App() {
                           };
                           
                           setHomeworkList(prev => {
-                            if (hwEditId) return prev.map(h => h.id === hwEditId ? newHw : h);
-                            return [newHw, ...prev];
+                            const updated = hwEditId ? prev.map(h => h.id === hwEditId ? newHw : h) : [newHw, ...prev];
+                            const LOCAL_HW_KEY = `s_os_homework_${currentUser?.uid || 'anon'}`;
+                            localStorage.setItem(LOCAL_HW_KEY, JSON.stringify(updated));
+                            return updated;
                           });
+
+                          // Persist to Supabase
+                          saveSupabaseResource('school_resources', {
+                            id: newHw.id,
+                            type: 'homework',
+                            resourceType: 'homework',
+                            title: newHw.title,
+                            content: newHw.content,
+                            description: newHw.subject,
+                            targetGrade: newHw.classGrade,
+                            targetSection: newHw.classSection,
+                            dueDate: newHw.dueDate,
+                            createdAt: Date.now(),
+                            created_at: Date.now(),
+                            author: newHw.givenBy,
+                            completedList: newHw.completedList
+                          }).catch(e => console.error('Failed to save homework to Supabase:', e));
 
                           if (!hwEditId) {
                             sendNotificationToUsers({
@@ -7252,16 +7323,40 @@ export default function App() {
                             showNotification(`⚠️ Mismatch: This homework is assigned to ${hw.classGrade}. Your profile level is ${currentUser.grade}!`);
                             return;
                           }
-                          setHomeworkList(prev => prev.map(item => {
-                            if (item.id === hw.id) {
-                              const list = item.completedList || [];
-                              const updatedList = list.includes(userEmail)
-                                ? list.filter(m => m !== userEmail)
-                                : [...list, userEmail];
-                              return { ...item, completedList: updatedList };
+                          setHomeworkList(prev => {
+                            const updated = prev.map(item => {
+                              if (item.id === hw.id) {
+                                const list = item.completedList || [];
+                                const updatedList = list.includes(userEmail)
+                                  ? list.filter(m => m !== userEmail)
+                                  : [...list, userEmail];
+                                return { ...item, completedList: updatedList };
+                              }
+                              return item;
+                            });
+                            const LOCAL_HW_KEY = `s_os_homework_${currentUser?.uid || 'anon'}`;
+                            localStorage.setItem(LOCAL_HW_KEY, JSON.stringify(updated));
+                            // Persist completion status to Supabase
+                            const updatedHw = updated.find(h => h.id === hw.id);
+                            if (updatedHw) {
+                              saveSupabaseResource('school_resources', {
+                                id: updatedHw.id,
+                                type: 'homework',
+                                resourceType: 'homework',
+                                title: updatedHw.title,
+                                content: updatedHw.content,
+                                description: updatedHw.subject,
+                                targetGrade: updatedHw.classGrade,
+                                targetSection: updatedHw.classSection,
+                                dueDate: updatedHw.dueDate,
+                                createdAt: Date.now(),
+                                created_at: Date.now(),
+                                author: updatedHw.givenBy,
+                                completedList: updatedHw.completedList
+                              }).catch(e => console.error('Failed to save homework completion:', e));
                             }
-                            return item;
-                          }));
+                            return updated;
+                          });
                           showNotification(isDone ? 'Marked assignment incomplete.' : 'Excellent work! Assignment marked complete.');
                         };
 
@@ -7360,7 +7455,13 @@ export default function App() {
                                     <button
                                       onClick={() => {
                                         if (confirm(`Remove custom assigned homework "${hw.title}" for ${hw.classGrade}?`)) {
-                                          setHomeworkList(prev => prev.filter(item => item.id !== hw.id));
+                                          setHomeworkList(prev => {
+                                            const updated = prev.filter(item => item.id !== hw.id);
+                                            const LOCAL_HW_KEY = `s_os_homework_${currentUser?.uid || 'anon'}`;
+                                            localStorage.setItem(LOCAL_HW_KEY, JSON.stringify(updated));
+                                            return updated;
+                                          });
+                                          deleteSupabaseResource('school_resources', hw.id).catch(e => console.error('Failed to delete homework from Supabase:', e));
                                           showNotification('Class homework removed from databases.');
                                         }
                                       }}
@@ -7416,7 +7517,7 @@ export default function App() {
                                     try {
                                       const { data } = supabase.storage.from('StudentOS').getPublicUrl(path);
                                       const newUrl = data.publicUrl;
-                                      await setDoc(doc(db, 'materials', mat.id), { ...mat, url: newUrl, storagePath: path });
+                                      await saveSupabaseMaterial({ ...mat, url: newUrl, storagePath: path });
                                       repairCount++;
                                     } catch (err) {
                                       console.error("Failed to repair:", mat.title, err);
@@ -7431,7 +7532,7 @@ export default function App() {
                                   const sorted = theFunMaterials.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
                                   for (let i = 1; i < sorted.length; i++) {
                                     try {
-                                      await deleteDoc(doc(db, 'materials', sorted[i].id));
+                                      await deleteSupabaseMaterial(sorted[i].id);
                                       dedupCount++;
                                     } catch (err) {
                                       console.error("Failed to delete duplicate:", sorted[i].title, err);
@@ -7446,7 +7547,7 @@ export default function App() {
                                   const key = mat.title.toLowerCase().trim();
                                   if (titleMap.has(key)) {
                                     try {
-                                      await deleteDoc(doc(db, 'materials', mat.id));
+                                      await deleteSupabaseMaterial(mat.id);
                                       dedupCount++;
                                     } catch(e) { }
                                   } else {
@@ -7596,6 +7697,12 @@ export default function App() {
                       </div>
 
                       {/* Materials List Generator */}
+                      {materialsLoading ? (
+                        <div className="text-center py-12 text-slate-400">
+                          <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500 mb-3"></div>
+                          <p className="text-xs font-bold">Loading materials from database...</p>
+                        </div>
+                      ) : (
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                         {(() => {
                           let displayList = materials;
@@ -7609,7 +7716,7 @@ export default function App() {
                           } else if (activeMaterialSubTab === 'saved') {
                             displayList = displayList.filter(m => savedMaterialIds.includes(m.id));
                           } else if (activeMaterialSubTab === 'my_uploads') {
-                            displayList = displayList.filter(m => m.uploaderUid === auth.currentUser?.uid);
+                            displayList = displayList.filter(m => m.uploaderUid === currentUser?.uid);
                           } else if (activeMaterialSubTab === 'verified') {
                             displayList = displayList.filter(m => m.isVerified);
                           } else if (activeMaterialSubTab === 'teacher_vault') {
@@ -7624,7 +7731,7 @@ export default function App() {
                           const roleFiltered = displayList.length;
 
                           // Private resources are only visible to their uploader
-                          displayList = displayList.filter(m => m.visibility !== 'private' || m.uploaderUid === auth.currentUser?.uid);
+                          displayList = displayList.filter(m => m.visibility !== 'private' || m.uploaderUid === currentUser?.uid);
                           const privateFiltered = displayList.length;
 
                           // Subject specialized filter
@@ -7695,7 +7802,7 @@ export default function App() {
                           }
 
                           return displayList.map(mat => {
-                            const isLiked = mat.likedBy?.includes(auth.currentUser?.uid || '');
+                            const isLiked = mat.likedBy?.includes(currentUser?.uid || '');
                             const isSaved = savedMaterialIds.includes(mat.id);
                             
                             // Style matching subject
@@ -7881,11 +7988,12 @@ export default function App() {
                                         onClick={async () => {
                                           if (confirm(`Revoke / delete resource "${mat.title}" from vault databases permanently?`)) {
                                             try {
-                                              const { deleteDoc, doc } = await import('firebase/firestore');
-                                              await deleteDoc(doc(db, 'materials', mat.id));
+                                              await deleteSupabaseMaterial(mat.id);
+                                              setMaterials(prev => prev.filter(m => m.id !== mat.id));
                                               showNotification('Resource removed from academic hub.');
                                             } catch (err) {
-                                              handleFirestoreError(err, OperationType.DELETE, `materials/${mat.id}`);
+                                              console.error('Failed to delete material:', err);
+                                              showNotification('Failed to delete resource.');
                                             }
                                           }
                                         }}
@@ -8121,6 +8229,7 @@ export default function App() {
                           });
                         })()}
                       </div>
+                      )}
                     </div>
 
                     {/* Left Column: Easy Quick Share & Leaderboard */}
@@ -9570,7 +9679,7 @@ export default function App() {
 
                       {/* Filtered Active Messages */}
                       {chats.filter(c => c.targetId === activeChatTargetId || (!c.targetId && activeChatTargetId === 'group-all')).map(c => {
-                        const isMine = c.ownerUid === auth.currentUser?.uid;
+                        const isMine = c.ownerUid === currentUser?.uid;
                         return (
                           <div key={c.id} className={`p-4 rounded-2xl border max-w-[85%] space-y-1 animate-fadeIn flex flex-col gap-1 ${isMine ? 'ml-auto bg-indigo-500/10 border-indigo-500/20' : 'mr-auto bg-white/5 border-white/5'}`}>
                             <span className={`text-xs font-bold block pb-0.5 ${c.role === 'teacher' ? 'text-amber-400' : 'text-blue-400'}`}>
