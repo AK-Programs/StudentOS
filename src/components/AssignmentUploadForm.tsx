@@ -6,9 +6,10 @@ import { ResourceCategory } from '../types';
 interface Props {
   category: ResourceCategory;
   onSuccess: () => void;
+  onError?: (message: string) => void;
 }
 
-export const AssignmentUploadForm: React.FC<Props> = ({ category, onSuccess }) => {
+export const AssignmentUploadForm: React.FC<Props> = ({ category, onSuccess, onError }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [classGrade, setClassGrade] = useState('');
@@ -27,11 +28,11 @@ export const AssignmentUploadForm: React.FC<Props> = ({ category, onSuccess }) =
       
       if (category === 'gallery' && files.length > 0) {
         for (const f of files) {
-          const { url, path } = await uploadFileToStorage(f, 'materials');
+          const { url } = await uploadFileToStorage(f, 'StudentOS', `${category}/${classGrade || 'all-grades'}`);
           finalGalleryUrls.push({ url, name: f.name });
         }
       } else if (file) {
-        const { url, path } = await uploadFileToStorage(file, 'materials');
+        const { url, path } = await uploadFileToStorage(file, 'StudentOS', `${category}/${classGrade || 'all-grades'}`);
         fileUrl = url;
         storagePath = path;
       }
@@ -72,6 +73,7 @@ export const AssignmentUploadForm: React.FC<Props> = ({ category, onSuccess }) =
         err.message,
         err.stack
       );
+      onError?.(err.message || 'Upload failed. Please verify storage configuration and try again.');
     } finally {
       setIsUploading(false);
     }

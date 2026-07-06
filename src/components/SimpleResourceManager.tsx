@@ -115,16 +115,16 @@ export default function SimpleResourceManager({
         showNotification(`Uploading ${selectedFiles.length} photos securely...`);
         for (const file of selectedFiles) {
           console.log("FILE OBJECT", file, file?.name, file?.size, file?.type);
-          const { url, path } = await uploadFileToStorage(file, 'materials');
+          const { url, path } = await uploadFileToStorage(file, 'StudentOS', `${type}/${fTargetGrade || 'all-grades'}`);
           finalGalleryUrls.push({ url, name: file.name });
         }
         showNotification(`✓ ${selectedFiles.length} photos uploaded successfully!`);
       } else if (selectedFile) {
         console.log("FILE OBJECT", selectedFile, selectedFile?.name, selectedFile?.size, selectedFile?.type);
         console.log("UPLOAD FUNCTION", uploadFileToStorage);
-        console.log("bucket", "materials", "path", `uploads/${selectedFile.name}`, "supabaseUrl", (import.meta as any).env.VITE_SUPABASE_URL);
+        console.log("bucket", "StudentOS", "path", `${type}/${fTargetGrade || 'all-grades'}/${selectedFile.name}`, "supabaseUrl", (import.meta as any).env.VITE_SUPABASE_URL);
 
-        const { url, path } = await uploadFileToStorage(selectedFile, 'materials');
+        const { url, path } = await uploadFileToStorage(selectedFile, 'StudentOS', `${type}/${fTargetGrade || 'all-grades'}`);
         fileUrl = url;
         storagePath = path;
       }

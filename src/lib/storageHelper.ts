@@ -1,12 +1,16 @@
 import { supabase } from './supabase';
 
 export const uploadFileToStorage = async (file: File, bucketOverride?: string, pathPrefix: string = 'uploads'): Promise<{ url: string, path: string }> => {
-  const bucketName = 'StudentOS'; // Exact Supabase storage bucket name
+  const bucketName = bucketOverride || 'StudentOS';
   console.log(`UPLOAD STEP 2: uploadFileToStorage called for file "${file.name}" to bucket "${bucketName}"`);
   
-  const fileExt = file.name.split('.').pop() || 'bin';
   const cleanName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-  const filePath = `${pathPrefix}/${Math.random()}_${cleanName}`;
+  const safePrefix = (pathPrefix.replace(/^\/+|\/+$/g, '') || 'uploads')
+    .split('/')
+    .map(segment => segment.replace(/[^a-zA-Z0-9._-]/g, '_'))
+    .join('/');
+  const uniqueId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  const filePath = `${safePrefix}/${uniqueId}_${cleanName}`;
   
   try {
     console.log(
