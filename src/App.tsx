@@ -3753,7 +3753,7 @@ export default function App() {
                 ></div>
               </div>
               <div className="flex justify-between items-center text-[10px] font-mono text-slate-500">
-                <span>BUILD TEST 3-JULY-2026</span>
+                <span>BUILD TEST 6-JULY-2026</span>
                 <span>{loadingProgress}%</span>
               </div>
             </div>

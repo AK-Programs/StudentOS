@@ -25,6 +25,13 @@ interface StudentOSJarvisProps {
   effectiveRole: string;
 }
 
+interface OrionDiscoveryResult {
+  title: string;
+  description: string;
+  url: string;
+  source: string;
+}
+
 export const StudentOSJarvis: React.FC<StudentOSJarvisProps> = ({
   onClose,
   activeTab,
@@ -50,6 +57,8 @@ export const StudentOSJarvis: React.FC<StudentOSJarvisProps> = ({
   const [jarvisFeedback, setJarvisFeedback] = useState<string>('Greetings, Professor. StudentOS Orion is ready. Speak or type a command to control the smart classroom.');
   const [showDiagnostics, setShowDiagnostics] = useState<boolean>(false);
   const [diagnosticError, setDiagnosticError] = useState<{name: string, message: string} | null>(null);
+  const [orionDiscoveryResults, setOrionDiscoveryResults] = useState<OrionDiscoveryResult[]>([]);
+  const [orionGeneratedArtifact, setOrionGeneratedArtifact] = useState<string>('');
 
   
   // Data list states fetched from Firestore
@@ -152,6 +161,104 @@ export const StudentOSJarvis: React.FC<StudentOSJarvisProps> = ({
       utterance.pitch = 1.0;
       window.speechSynthesis.speak(utterance);
     }
+  };
+
+  const cleanOrionTopic = (command: string): string => {
+    return command
+      .replace(/find|search|look up|show|open|prepare|create|generate|make/gi, '')
+      .replace(/video|worksheet|notes|note|lesson plan|40 minute|forty minute|about|for|on/gi, '')
+      .replace(/\s+/g, ' ')
+      .trim() || 'classroom topic';
+  };
+
+  const buildEducationSearchResults = (topic: string, intent: 'video' | 'worksheet' | 'research' | 'lesson'): OrionDiscoveryResult[] => {
+    const encoded = encodeURIComponent(topic);
+    const common = [
+      {
+        title: `${topic} — Khan Academy search`,
+        description: 'Standards-aligned explanations and practice resources.',
+        url: `https://www.khanacademy.org/search?page_search_query=${encoded}`,
+        source: 'Khan Academy'
+      },
+      {
+        title: `${topic} — CK-12 FlexBooks`,
+        description: 'Teacher-friendly reading, examples, and class resources.',
+        url: `https://www.ck12.org/search/?q=${encoded}`,
+        source: 'CK-12'
+      },
+      {
+        title: `${topic} — Google education results`,
+        description: 'Broader web search filtered toward classroom resources.',
+        url: `https://www.google.com/search?q=${encoded}+education+classroom+resources`,
+        source: 'Web'
+      }
+    ];
+
+    if (intent === 'video') {
+      return [
+        {
+          title: `${topic} — educational videos`,
+          description: 'Video results for classroom explanation and smart-board playback.',
+          url: `https://www.youtube.com/results?search_query=${encoded}+education`,
+          source: 'YouTube'
+        },
+        ...common
+      ];
+    }
+
+    if (intent === 'worksheet') {
+      return [
+        {
+          title: `${topic} — printable worksheets`,
+          description: 'Worksheet-focused web results for teacher resource discovery.',
+          url: `https://www.google.com/search?q=${encoded}+worksheet+pdf`,
+          source: 'Web'
+        },
+        ...common
+      ];
+    }
+
+    return common;
+  };
+
+  const createResearchArtifact = (topic: string): string => {
+    return `Research Mode Draft: ${topic}
+
+Summary:
+- Introduce the concept with one real-life example students already understand.
+- Define the key terms clearly before moving to formulas, diagrams, or applications.
+- Use one guided question after every major explanation to check understanding.
+
+Class Notes:
+1. Starter: Ask students what they already know about ${topic}.
+2. Explanation: Break ${topic} into 3 core ideas and connect each idea to a classroom example.
+3. Practice: Give students one easy, one medium, and one challenge question.
+
+Quick Quiz:
+1. What is the main idea behind ${topic}?
+2. Give one real-world example of ${topic}.
+3. Explain one common mistake students make while learning ${topic}.`;
+  };
+
+  const createLessonPlanArtifact = (topic: string): string => {
+    return `40 Minute Lesson Plan: ${topic}
+
+Objectives:
+- Students can explain the main idea of ${topic}.
+- Students can apply ${topic} to one classroom problem or example.
+- Students can answer a short exit-ticket question independently.
+
+Flow:
+- 0–5 min: Hook question and prior-knowledge check.
+- 5–15 min: Teacher explanation with board examples.
+- 15–25 min: Guided practice in pairs.
+- 25–35 min: Independent task or mini worksheet.
+- 35–40 min: Exit ticket and recap.
+
+Assessment:
+- Oral questioning during guided practice.
+- One written exit ticket.
+- Review misconceptions in the next class starter.`;
   };
 
   // Perform AI parsing fallback with Gemini/OpenRouter using our robust Express server
@@ -261,8 +368,51 @@ export const StudentOSJarvis: React.FC<StudentOSJarvisProps> = ({
     let actionTriggered = 'unknown';
     let targetParam = '';
 
+    const wantsAcademicVideo = (textLow.includes('find') || textLow.includes('search')) && textLow.includes('video');
+    const wantsWorksheetDiscovery = (textLow.includes('find') || textLow.includes('search')) && textLow.includes('worksheet');
+    const wantsResearchMode = (textLow.includes('prepare') || textLow.includes('research')) && (textLow.includes('notes') || textLow.includes('chapter'));
+    const wantsLessonPlanner = (textLow.includes('lesson plan') || (textLow.includes('40') && textLow.includes('lesson')) || (textLow.includes('forty') && textLow.includes('lesson')));
+
     // Direct routing definitions
-    if (textLow.includes('assignment')) {
+    if (wantsAcademicVideo) {
+      const topic = cleanOrionTopic(textToParse);
+      const results = buildEducationSearchResults(topic, 'video');
+      setOrionDiscoveryResults(results);
+      setOrionGeneratedArtifact('');
+      resolvedFeedback = `Phase 2 Academic Search is ready. I found educational video and source links for ${topic}. Open any result from the Orion discovery panel.`;
+      actionTriggered = 'academic_search';
+      targetParam = topic;
+    }
+    else if (wantsWorksheetDiscovery) {
+      const topic = cleanOrionTopic(textToParse);
+      const results = buildEducationSearchResults(topic, 'worksheet');
+      setActiveTab('materials');
+      if (setSearchMaterialsQuery) setSearchMaterialsQuery(topic);
+      setOrionDiscoveryResults(results);
+      setOrionGeneratedArtifact('');
+      resolvedFeedback = `Phase 2 Resource Discovery is ready. I searched Material Hub for ${topic} and prepared worksheet web sources.`;
+      actionTriggered = 'smart_resource_discovery';
+      targetParam = topic;
+    }
+    else if (wantsResearchMode) {
+      const topic = cleanOrionTopic(textToParse);
+      setActiveTab('notes');
+      setOrionDiscoveryResults(buildEducationSearchResults(topic, 'research'));
+      setOrionGeneratedArtifact(createResearchArtifact(topic));
+      resolvedFeedback = `Research Mode prepared draft notes and a quick quiz for ${topic}. Review the generated artifact in Orion.`;
+      actionTriggered = 'research_mode';
+      targetParam = topic;
+    }
+    else if (wantsLessonPlanner) {
+      const topic = cleanOrionTopic(textToParse);
+      setActiveTab('planner');
+      setOrionDiscoveryResults(buildEducationSearchResults(topic, 'lesson'));
+      setOrionGeneratedArtifact(createLessonPlanArtifact(topic));
+      resolvedFeedback = `Lesson Planner created a 40 minute class plan for ${topic}, including objectives, activities, and assessment.`;
+      actionTriggered = 'lesson_planner';
+      targetParam = topic;
+    }
+    else if (textLow.includes('assignment')) {
       setActiveTab('assignments');
       resolvedFeedback = 'Opening the Assignment Center.';
       actionTriggered = 'navigate_tab';
@@ -713,6 +863,60 @@ export const StudentOSJarvis: React.FC<StudentOSJarvisProps> = ({
             )}
           </div>
         </div>
+
+        {(orionDiscoveryResults.length > 0 || orionGeneratedArtifact) && (
+          <div className="smart-glass p-4 rounded-2xl bg-emerald-950/10 border border-emerald-500/20 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest font-mono">Phase 2 Orion AI Ecosystem</span>
+                <p className="text-xs text-slate-300 mt-1">Academic search, resource discovery, research mode, and lesson planning outputs.</p>
+              </div>
+              <button
+                onClick={() => {
+                  setOrionDiscoveryResults([]);
+                  setOrionGeneratedArtifact('');
+                }}
+                className="px-2.5 py-1 rounded-lg bg-slate-950/50 border border-white/5 text-[10px] text-slate-400 hover:text-white font-bold"
+              >
+                Clear
+              </button>
+            </div>
+
+            {orionGeneratedArtifact && (
+              <div className="p-3 rounded-xl bg-slate-950/60 border border-white/5">
+                <div className="flex items-center gap-2 mb-2">
+                  <FileText className="w-4 h-4 text-emerald-400" />
+                  <span className="text-[10px] text-emerald-300 font-black uppercase tracking-wider">Generated Teaching Artifact</span>
+                </div>
+                <pre className="whitespace-pre-wrap text-[11px] leading-relaxed text-slate-300 font-sans">{orionGeneratedArtifact}</pre>
+              </div>
+            )}
+
+            {orionDiscoveryResults.length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {orionDiscoveryResults.map((result, idx) => (
+                  <a
+                    key={`${result.source}-${idx}`}
+                    href={result.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-3 rounded-xl bg-slate-950/60 border border-white/5 hover:border-emerald-500/30 transition-all group"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-xs text-white font-bold group-hover:text-emerald-200">{result.title}</p>
+                        <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">{result.description}</p>
+                      </div>
+                      <span className="text-[8px] shrink-0 bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 px-1.5 py-0.5 rounded uppercase font-black">
+                        {result.source}
+                      </span>
+                    </div>
+                  </a>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* DIAGNOSTICS PANEL (New feature) */}
         {showDiagnostics && (
