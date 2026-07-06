@@ -49,10 +49,7 @@ import {
   setDoc, updateDoc, deleteDoc
 } from './firebase';
 import { uploadFileToStorage } from './lib/storageHelper';
-
-const generateUniqueId = () => {
-  return `${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
-};
+import { generateUniqueId } from './lib/utils';
 
 const CodeBlock = ({ code, language }: { code: string; language: string; key?: any }) => {
   const [copied, setCopied] = useState(false);

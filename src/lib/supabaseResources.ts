@@ -1,5 +1,7 @@
 import { supabase } from './supabase';
 import { MaterialResource } from '../types';
+import { isMissingTableError } from './supabaseHelpers';
+import { getLocalArray, setLocalArray } from './localStorageHelpers';
 
 /**
  * Maps a MaterialResource frontend object to a DB row for public.materials
@@ -101,27 +103,18 @@ function mapRowToMaterial(row: any): MaterialResource {
 const LOCAL_MATERIALS_KEY = 's_os_materials';
 
 function getLocalMaterials(): MaterialResource[] {
-  try {
-    const raw = localStorage.getItem(LOCAL_MATERIALS_KEY);
-    if (raw) return JSON.parse(raw) as MaterialResource[];
-  } catch (e) { /* ignore */ }
-  return [];
+  return getLocalArray<MaterialResource>(LOCAL_MATERIALS_KEY);
 }
 
 function saveLocalMaterial(mat: MaterialResource): void {
-  try {
-    const all = getLocalMaterials();
-    const idx = all.findIndex(m => m.id === mat.id);
-    if (idx >= 0) all[idx] = mat; else all.unshift(mat);
-    localStorage.setItem(LOCAL_MATERIALS_KEY, JSON.stringify(all));
-  } catch (e) { /* ignore */ }
+  const all = getLocalMaterials();
+  const idx = all.findIndex(m => m.id === mat.id);
+  if (idx >= 0) all[idx] = mat; else all.unshift(mat);
+  setLocalArray(LOCAL_MATERIALS_KEY, all);
 }
 
 function deleteLocalMaterial(id: string): void {
-  try {
-    const all = getLocalMaterials().filter(m => m.id !== id);
-    localStorage.setItem(LOCAL_MATERIALS_KEY, JSON.stringify(all));
-  } catch (e) { /* ignore */ }
+  setLocalArray(LOCAL_MATERIALS_KEY, getLocalMaterials().filter(m => m.id !== id));
 }
 
 /**
@@ -136,7 +129,7 @@ export async function getSupabaseMaterials(): Promise<MaterialResource[]> {
       .order('created_at', { ascending: false });
 
     if (error) {
-      if (error.code === '42P01') {
+      if (isMissingTableError(error)) {
         console.warn('[SUPABASE-RESOURCES] Table "materials" does not exist — using localStorage backup.');
         return getLocalMaterials();
       }
@@ -180,7 +173,7 @@ export async function saveSupabaseMaterial(mat: MaterialResource): Promise<void>
       .upsert(row, { onConflict: 'id' });
 
     if (error) {
-      if (error.code === '42P01') {
+      if (isMissingTableError(error)) {
         console.warn('[SUPABASE-RESOURCES] Table "materials" does not exist — saved to localStorage only.');
         return;
       }
@@ -203,7 +196,7 @@ export async function deleteSupabaseMaterial(id: string): Promise<void> {
       .eq('id', id);
 
     if (error) {
-      if (error.code === '42P01') return;
+      if (isMissingTableError(error)) return;
       console.warn('[SUPABASE-RESOURCES] Delete from Supabase failed:', error.message);
       return;
     }
@@ -278,7 +271,7 @@ export async function getSupabaseResources(tableName: 'assignments' | 'school_re
       .order('created_at', { ascending: false });
 
     if (error) {
-      if (error.code === '42P01') {
+      if (isMissingTableError(error)) {
         console.warn(`[SUPABASE-RESOURCES] Table "${tableName}" does not exist yet.`);
         return [];
       }
@@ -305,7 +298,7 @@ export async function saveSupabaseResource(tableName: 'assignments' | 'school_re
       .upsert(row, { onConflict: 'id' });
 
     if (error) {
-      if (error.code === '42P01') {
+      if (isMissingTableError(error)) {
         console.warn(`[SUPABASE-RESOURCES] Table "${tableName}" does not exist yet.`);
         return;
       }
@@ -326,7 +319,7 @@ export async function deleteSupabaseResource(tableName: 'assignments' | 'school_
       .eq('id', id);
 
     if (error) {
-      if (error.code === '42P01') return;
+      if (isMissingTableError(error)) return;
       throw error;
     }
     console.log(`[SUPABASE-RESOURCES] Deleted from ${tableName} successfully!`);
@@ -343,7 +336,7 @@ export async function getSupabaseTableData(tableName: string): Promise<any[]> {
       .select('*');
 
     if (error) {
-      if (error.code === '42P01') {
+      if (isMissingTableError(error)) {
         console.warn(`[SUPABASE-RESOURCES] Table "${tableName}" does not exist yet.`);
         return [];
       }

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { UserProfile } from '../types';
-import { fetchAllSupabaseUsers } from '../lib/supabaseUsers';
+import { fetchStudentsByGradeSection } from '../lib/studentFilters';
+import { GRADES, SECTIONS } from '../lib/constants';
 
 export default function StudentMarksCenter({ showNotification }: any) {
   const [selectedGrade, setSelectedGrade] = useState('');
@@ -17,8 +18,8 @@ export default function StudentMarksCenter({ showNotification }: any) {
   const [newSubject, setNewSubject] = useState('');
   const [marks, setMarks] = useState<Record<string, string>>({});
 
-  const gradeOptions = Array.from({ length: 12 }, (_, i) => `Grade ${i + 1}`);
-  const sectionOptions = ['Astra', 'Elera', 'Solara', 'Vega'];
+  const gradeOptions = GRADES;
+  const sectionOptions = SECTIONS;
   const examTypes = ['Unit Test', 'Periodic Test', 'Half Yearly', 'Final Exam'];
 
   useEffect(() => {
@@ -30,20 +31,7 @@ export default function StudentMarksCenter({ showNotification }: any) {
     const fetchStudents = async () => {
       setLoading(true);
       try {
-        let studs: UserProfile[] = [];
-        try {
-          const allUsers = await fetchAllSupabaseUsers();
-          studs = allUsers.filter(u => u.role === 'student');
-        } catch (sbErr) {
-          console.error('[Supabase] Failed to load student users:', sbErr);
-          throw sbErr;
-        }
-        
-        // Filter by grade and section
-        const filtered = studs.filter(s => 
-           s.grade === selectedGrade && s.section === selectedSection
-        );
-        
+        const filtered = await fetchStudentsByGradeSection(selectedGrade, selectedSection);
         setLoadedStudents(filtered);
       } catch (err) {
         console.error('Failed to fetch student data:', err);

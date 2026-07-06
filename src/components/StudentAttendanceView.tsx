@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { UserProfile, AttendanceRecord } from '../types';
 import { supabase } from '../lib/supabase';
+import { computeAttendanceStats } from '../lib/utils';
 
 export default function StudentAttendanceView({ currentUser }: { currentUser: UserProfile }) {
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
@@ -27,14 +28,9 @@ export default function StudentAttendanceView({ currentUser }: { currentUser: Us
     fetchMyAttendance();
   }, [currentUser]);
 
-  const presentCount = records.filter(r => r.status === 'present').length;
-  const absentCount = records.filter(r => r.status === 'absent').length;
-  const lateCount = records.filter(r => r.status === 'late').length;
-  const leaveCount = records.filter(r => r.status === 'leave').length;
-  const holidayCount = records.filter(r => r.status === 'holiday').length;
+  const { presentCount, absentCount, lateCount, leaveCount, holidayCount, markedCount } = computeAttendanceStats(records);
   
   // Percentage calculation excludes holidays
-  const markedCount = presentCount + absentCount + lateCount + leaveCount;
   const validPresent = presentCount + lateCount; // Late is considered present for percentage here, though sometimes partial
   const percentage = markedCount > 0 ? Math.round((validPresent / markedCount) * 100) : 0;
 

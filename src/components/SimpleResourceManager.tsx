@@ -4,6 +4,8 @@ import { uploadFileToStorage } from '../lib/storageHelper';
 import { Plus, Trash2, Edit2, Download, FileText, Image as ImageIcon, UploadCloud } from 'lucide-react';
 import { AssignmentUploadForm } from './AssignmentUploadForm';
 import { getSupabaseResources, saveSupabaseResource, deleteSupabaseResource } from '../lib/supabaseResources';
+import { canEditContent } from '../lib/utils';
+import { buildResourcePayload, getResourceTableName } from '../lib/resourcePayload';
 
 export default function SimpleResourceManager({ 
   type, title, emoji, currentUser, effectiveRole, showNotification, goBack 
@@ -29,7 +31,7 @@ export default function SimpleResourceManager({
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const canEdit = ['teacher', 'coordinator', 'admin', 'super_admin'].includes(effectiveRole);
+  const canEdit = canEditContent(effectiveRole);
 
   useEffect(() => {
     fetchItems();
@@ -38,7 +40,7 @@ export default function SimpleResourceManager({
   const fetchItems = async () => {
     setLoading(true);
     try {
-      const tableName = type === 'assignment' ? 'assignments' : 'school_resources';
+      const tableName = getResourceTableName(type);
       const fetched = await getSupabaseResources(tableName);
       console.log(`[DEBUG] Fetched ${fetched.length} items from ${tableName}:`, fetched);
       
@@ -129,34 +131,28 @@ export default function SimpleResourceManager({
         storagePath = path;
       }
 
-      const id = editingId || `res-${Date.now()}`;
+      const id = editingId || undefined;
+      const existingItem = editingId ? items.find(i => i.id === editingId) : null;
       
-      const dataToSave = {
-        id: id || '',
-        type: type || 'resource',
-        resourceType: type || 'resource',
-        title: fTitle || '',
-        content: fContent || '',
-        description: fContent || '',
-        url: fileUrl || null,
-        fileUrl: fileUrl || null,
-        fileData: fileUrl || null,
-        storagePath: storagePath || null,
-        galleryUrls: finalGalleryUrls || [],
-        fileName: fFileName || null,
-        dueDate: fDueDate || null,
-        targetGrade: fTargetGrade || 'All Grades',
-        class: fTargetGrade || 'All Grades',
-        targetSection: fTargetSection || 'All Sections',
-        section: fTargetSection || 'All Sections',
-        createdAt: editingId ? (items.find(i => i.id === id)?.createdAt || Date.now()) : Date.now(),
-        created_at: editingId ? (items.find(i => i.id === id)?.created_at || Date.now()) : Date.now(),
-        author: currentUser?.name || 'Teacher'
-      };
+      const dataToSave = buildResourcePayload({
+        id,
+        type,
+        title: fTitle,
+        content: fContent,
+        fileUrl,
+        storagePath,
+        galleryUrls: finalGalleryUrls,
+        fileName: fFileName || undefined,
+        dueDate: fDueDate || undefined,
+        targetGrade: fTargetGrade,
+        targetSection: fTargetSection,
+        author: currentUser?.name,
+        existingCreatedAt: existingItem?.created_at || existingItem?.createdAt,
+      });
 
       console.log("MODULE DATA", dataToSave);
 
-      const tableName = type === 'assignment' ? 'assignments' : 'school_resources';
+      const tableName = getResourceTableName(type);
       await saveSupabaseResource(tableName, dataToSave);
 
       if (!editingId) {
@@ -239,7 +235,7 @@ export default function SimpleResourceManager({
   const handleDelete = async (id: string) => {
     if (!confirm('Delete this item completely?')) return;
     try {
-      const tableName = type === 'assignment' ? 'assignments' : 'school_resources';
+      const tableName = getResourceTableName(type);
       await deleteSupabaseResource(tableName, id);
       showNotification('Deleted successfully.');
       fetchItems();

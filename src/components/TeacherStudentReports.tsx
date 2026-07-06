@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { UserProfile } from '../types';
-import { fetchAllSupabaseUsers } from '../lib/supabaseUsers';
+import { fetchStudentUsers } from '../lib/studentFilters';
+import { filterStudentsByTeacherAssignment } from '../lib/utils';
 
 export default function TeacherStudentReports({ currentUser }: { currentUser: UserProfile }) {
   const [students, setStudents] = useState<UserProfile[]>([]);
@@ -14,23 +15,12 @@ export default function TeacherStudentReports({ currentUser }: { currentUser: Us
   const fetchStudents = async () => {
     setLoading(true);
     try {
-      let list: UserProfile[] = [];
-      try {
-        const allUsers = await fetchAllSupabaseUsers();
-        list = allUsers.filter(u => u.role === 'student');
-      } catch (sbErr) {
-        console.error('[Supabase] Failed to fetch students from Supabase:', sbErr);
-        throw sbErr;
-      }
-      
-      const teacherGrades = currentUser.assignedGrades || [];
-      const teacherSections = currentUser.assignedSections || [];
-      
-      const filtered = list.filter(s => {
-         const gradeMatch = teacherGrades.includes('All Grades') || teacherGrades.includes(s.grade || '');
-         const sectionMatch = teacherSections.includes('All Sections') || teacherSections.includes(s.section || '');
-         return gradeMatch && sectionMatch;
-      });
+      const list = await fetchStudentUsers();
+      const filtered = filterStudentsByTeacherAssignment(
+        list,
+        currentUser.assignedGrades || [],
+        currentUser.assignedSections || [],
+      );
       setStudents(filtered);
     } catch(err) {
       console.error(err);

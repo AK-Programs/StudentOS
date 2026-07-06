@@ -1,5 +1,7 @@
 import { supabase } from './supabase';
 import { ChatMessage, ChatRoom } from '../types';
+import { isMissingTableError } from './supabaseHelpers';
+import { getLocalArray, setLocalArray, upsertLocalItem, removeLocalItems } from './localStorageHelpers';
 
 export interface AiBuddyThread {
   id: string;
@@ -29,8 +31,7 @@ export async function getAiBuddyChats(userId: string): Promise<AiBuddyThread[]> 
       .order('created_at', { ascending: false });
 
     if (error) {
-      // 42P01 is Postgres code for "relation does not exist" (missing table)
-      if (error.code === '42P01' || error.message?.includes('not found')) {
+      if (isMissingTableError(error)) {
         console.warn('[SUPABASE-CHAT] Table ai_buddy_chats does not exist in Supabase yet. Falling back to localStorage.');
         return getLocalAiBuddyChats(userId);
       }
@@ -84,7 +85,7 @@ export async function saveAiBuddyChat(thread: AiBuddyThread): Promise<void> {
       .upsert(dbRow);
 
     if (error) {
-      if (error.code === '42P01' || error.message?.includes('not found')) {
+      if (isMissingTableError(error)) {
         console.warn('[SUPABASE-CHAT] Table ai_buddy_chats does not exist yet. Saved to localStorage only.');
         return;
       }
@@ -110,7 +111,7 @@ export async function deleteAiBuddyChat(threadId: string, userId: string): Promi
       .eq('user_id', userId); // Security safeguard
 
     if (error) {
-      if (error.code === '42P01') return;
+      if (isMissingTableError(error)) return;
       throw error;
     }
   } catch (err) {
@@ -130,7 +131,7 @@ export async function getPeerMessages(): Promise<ChatMessage[]> {
       .order('created_at', { ascending: true });
 
     if (error) {
-      if (error.code === '42P01' || error.message?.includes('not found')) {
+      if (isMissingTableError(error)) {
         console.warn('[SUPABASE-CHAT] Table messages does not exist in Supabase yet. Falling back to localStorage.');
         return getLocalMessages();
       }
@@ -195,7 +196,7 @@ export async function savePeerMessage(message: ChatMessage): Promise<void> {
       .upsert(dbRow);
 
     if (error) {
-      if (error.code === '42P01' || error.message?.includes('not found')) {
+      if (isMissingTableError(error)) {
         console.warn('[SUPABASE-CHAT] Table messages does not exist yet. Saved to localStorage only.');
         return;
       }
@@ -217,7 +218,7 @@ export async function getChatRooms(): Promise<ChatRoom[]> {
       .select('*');
 
     if (error) {
-      if (error.code === '42P01' || error.message?.includes('not found')) {
+      if (isMissingTableError(error)) {
         console.warn('[SUPABASE-CHAT] Table chat_rooms does not exist in Supabase yet.');
         return getLocalChatRooms();
       }
@@ -255,7 +256,7 @@ export async function saveChatRoom(room: ChatRoom): Promise<void> {
       .upsert(dbRow);
 
     if (error) {
-      if (error.code === '42P01') return;
+      if (isMissingTableError(error)) return;
       throw error;
     }
   } catch (err) {
@@ -268,100 +269,46 @@ export async function saveChatRoom(room: ChatRoom): Promise<void> {
 // ==========================================
 
 function getLocalAiBuddyChats(userId: string): AiBuddyThread[] {
-  try {
-    const cached = localStorage.getItem('s_os_ai_threads');
-    if (cached) {
-      const all: AiBuddyThread[] = JSON.parse(cached);
-      // Ensure user privacy! Filter loaded local storage threads by the current user's UID
-      return all.filter(t => t.userId === userId);
-    }
-  } catch (e) {
-    console.error('[SUPABASE-CHAT] Local storage getLocalAiBuddyChats error:', e);
-  }
-  return [];
+  const all = getLocalArray<AiBuddyThread>('s_os_ai_threads');
+  return all.filter(t => t.userId === userId);
 }
 
 function saveLocalAiBuddyChat(thread: AiBuddyThread): void {
-  try {
-    const cached = localStorage.getItem('s_os_ai_threads');
-    let all: AiBuddyThread[] = [];
-    if (cached) {
-      all = JSON.parse(cached);
-    }
-    const idx = all.findIndex(t => t.id === thread.id);
-    if (idx >= 0) {
-      all[idx] = thread;
-    } else {
-      all.unshift(thread);
-    }
-    localStorage.setItem('s_os_ai_threads', JSON.stringify(all));
-  } catch (e) {
-    console.error('[SUPABASE-CHAT] Local storage saveLocalAiBuddyChat error:', e);
-  }
+  upsertLocalItem('s_os_ai_threads', thread, t => t.id === thread.id);
 }
 
 function deleteLocalAiBuddyChat(threadId: string, userId: string): void {
-  try {
-    const cached = localStorage.getItem('s_os_ai_threads');
-    if (cached) {
-      const all: AiBuddyThread[] = JSON.parse(cached);
-      const filtered = all.filter(t => t.id !== threadId || t.userId !== userId);
-      localStorage.setItem('s_os_ai_threads', JSON.stringify(filtered));
-    }
-  } catch (e) {
-    console.error('[SUPABASE-CHAT] Local storage deleteLocalAiBuddyChat error:', e);
-  }
+  removeLocalItems<AiBuddyThread>('s_os_ai_threads', t => t.id === threadId && t.userId === userId);
 }
 
 function getLocalMessages(): ChatMessage[] {
-  try {
-    const cached = localStorage.getItem('s_os_messages');
-    if (cached) {
-      return JSON.parse(cached);
-    }
-  } catch (e) {}
-  return [];
+  return getLocalArray<ChatMessage>('s_os_messages');
 }
 
 function saveLocalMessage(message: ChatMessage): void {
-  try {
-    const cached = localStorage.getItem('s_os_messages');
-    let all: ChatMessage[] = [];
-    if (cached) {
-      all = JSON.parse(cached);
-    }
-    if (!all.some(m => m.id === message.id)) {
-      all.push(message);
-      if (all.length > 200) all.shift();
-      localStorage.setItem('s_os_messages', JSON.stringify(all));
-    }
-  } catch (e) {}
+  const all = getLocalArray<ChatMessage>('s_os_messages');
+  if (!all.some(m => m.id === message.id)) {
+    all.push(message);
+    if (all.length > 200) all.shift();
+    setLocalArray('s_os_messages', all);
+  }
 }
 
+const DEFAULT_CHAT_ROOMS: ChatRoom[] = [
+  { id: 'general', name: 'General Announcements', type: 'channel', icon: '📢', description: 'General announcements channel for students' },
+  { id: 'maths', name: 'Mathematics Desk', type: 'channel', icon: '📐', description: 'Class discussion on maths formulas and logic' },
+  { id: 'physics', name: 'Physics Arena', type: 'channel', icon: '⚡', description: 'Interactive discussions on physics models' }
+];
+
 function getLocalChatRooms(): ChatRoom[] {
-  try {
-    const cached = localStorage.getItem('s_os_chat_rooms');
-    if (cached) {
-      return JSON.parse(cached);
-    }
-  } catch (e) {}
-  return [
-    { id: 'general', name: 'General Announcements', type: 'channel', icon: '📢', description: 'General announcements channel for students' },
-    { id: 'maths', name: 'Mathematics Desk', type: 'channel', icon: '📐', description: 'Class discussion on maths formulas and logic' },
-    { id: 'physics', name: 'Physics Arena', type: 'channel', icon: '⚡', description: 'Interactive discussions on physics models' }
-  ];
+  const rooms = getLocalArray<ChatRoom>('s_os_chat_rooms');
+  return rooms.length > 0 ? rooms : DEFAULT_CHAT_ROOMS;
 }
 
 function saveLocalChatRoom(room: ChatRoom): void {
-  try {
-    const cached = localStorage.getItem('s_os_chat_rooms');
-    let all: ChatRoom[] = [];
-    if (cached) {
-      all = JSON.parse(cached);
-    }
-    if (!all.some(r => r.id === room.id)) {
-      all.push(room);
-      localStorage.setItem('s_os_chat_rooms', JSON.stringify(all));
-    }
-  } catch (e) {}
+  const all = getLocalArray<ChatRoom>('s_os_chat_rooms');
+  if (!all.some(r => r.id === room.id)) {
+    all.push(room);
+    setLocalArray('s_os_chat_rooms', all);
+  }
 }
