@@ -20,17 +20,13 @@ service cloud.firestore {
     }
 
     function isFaculty() {
-      return isSignedIn() && (
-        (request.auth.token.email in ['naitik.kashyap0015@gmail.com', 'naitik.kashyap5205@gmail.com']) ||
-        true
-      );
+      return isSignedIn() &&
+        request.auth.token.email in ['naitik.kashyap0015@gmail.com', 'naitik.kashyap5205@gmail.com'];
     }
 
     function isAdmin() {
-      return isSignedIn() && (
-        (request.auth.token.email in ['naitik.kashyap0015@gmail.com', 'naitik.kashyap5205@gmail.com']) ||
-        true
-      );
+      return isSignedIn() &&
+        request.auth.token.email in ['naitik.kashyap0015@gmail.com', 'naitik.kashyap5205@gmail.com'];
     }
 
     // --- MATCH RULES ---

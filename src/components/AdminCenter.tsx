@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { sendNotificationToUsers } from '../firebase';
 import { UserProfile, UserRole, HouseType, SectionType } from '../types';
 import { fetchAllSupabaseUsers, saveSupabaseUserProfile, getSupabaseUserProfile } from '../lib/supabaseUsers';
+import { apiFetch } from '../lib/apiFetch';
 
 export default function AdminCenter({ currentUser, showNotification, profileTab }: { currentUser: UserProfile; showNotification: (msg: string) => void, profileTab?: string }) {
   const [users, setUsers] = useState<UserProfile[]>([]);
@@ -214,7 +215,7 @@ export default function AdminCenter({ currentUser, showNotification, profileTab 
   const setupDatabase = async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/admin/setup-sql');
+      const res = await apiFetch('/api/admin/setup-sql');
       if (!res.ok) throw new Error('Could not load setup SQL');
       const sql = await res.text();
       setSetupSql(sql);

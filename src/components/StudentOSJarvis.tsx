@@ -5,6 +5,7 @@ import {
   Layers, Plus, Trash2, CheckCircle, RefreshCw, X, Square, BookOpen, FileText, HelpCircle, Layout
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { apiFetch } from '../lib/apiFetch';
 import { 
   // TODO: Add Supabase imports
 } from '../lib/supabaseChat';
@@ -159,7 +160,7 @@ export const StudentOSJarvis: React.FC<StudentOSJarvisProps> = ({
     try {
       let aiText = '';
       try {
-        const response = await fetch('/api/ai/chat', {
+        const response = await apiFetch('/api/ai/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
