@@ -6,9 +6,10 @@ import { ResourceCategory } from '../types';
 interface Props {
   category: ResourceCategory;
   onSuccess: () => void;
+  onError?: (message: string) => void;
 }
 
-export const AssignmentUploadForm: React.FC<Props> = ({ category, onSuccess }) => {
+export const AssignmentUploadForm: React.FC<Props> = ({ category, onSuccess, onError }) => {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [classGrade, setClassGrade] = useState('');
@@ -16,10 +17,12 @@ export const AssignmentUploadForm: React.FC<Props> = ({ category, onSuccess }) =
   const [file, setFile] = useState<File | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsUploading(true);
+    setUploadError(null);
     try {
       let fileUrl = '';
       let storagePath = '';
@@ -66,12 +69,10 @@ export const AssignmentUploadForm: React.FC<Props> = ({ category, onSuccess }) =
       await saveSupabaseResource(tableName as any, dataToSave);
       onSuccess();
     } catch (err: any) {
-      console.error(
-        "UPLOAD EXCEPTION",
-        err,
-        err.message,
-        err.stack
-      );
+      const msg = `Upload failed: ${err?.message || 'Unknown error'}`;
+      console.error('[AssignmentUploadForm]', msg, err);
+      setUploadError(msg);
+      onError?.(msg);
     } finally {
       setIsUploading(false);
     }
@@ -79,6 +80,11 @@ export const AssignmentUploadForm: React.FC<Props> = ({ category, onSuccess }) =
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4 p-4 bg-slate-900 rounded-xl">
+      {uploadError && (
+        <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-2 text-red-400 text-xs">
+          {uploadError}
+        </div>
+      )}
       <input type="text" placeholder="Title" value={title} onChange={e => setTitle(e.target.value)} className="w-full p-2 bg-slate-800 rounded text-white" />
       <textarea placeholder="Description" value={description} onChange={e => setDescription(e.target.value)} className="w-full p-2 bg-slate-800 rounded text-white" />
       <div className="flex gap-4">

@@ -104,7 +104,9 @@ function getLocalMaterials(): MaterialResource[] {
   try {
     const raw = localStorage.getItem(LOCAL_MATERIALS_KEY);
     if (raw) return JSON.parse(raw) as MaterialResource[];
-  } catch (e) { /* ignore */ }
+  } catch (e) {
+    console.warn('[SUPABASE-RESOURCES] Failed to parse local materials cache:', e);
+  }
   return [];
 }
 
@@ -114,14 +116,18 @@ function saveLocalMaterial(mat: MaterialResource): void {
     const idx = all.findIndex(m => m.id === mat.id);
     if (idx >= 0) all[idx] = mat; else all.unshift(mat);
     localStorage.setItem(LOCAL_MATERIALS_KEY, JSON.stringify(all));
-  } catch (e) { /* ignore */ }
+  } catch (e) {
+    console.warn('[SUPABASE-RESOURCES] Failed to save material to localStorage:', e);
+  }
 }
 
 function deleteLocalMaterial(id: string): void {
   try {
     const all = getLocalMaterials().filter(m => m.id !== id);
     localStorage.setItem(LOCAL_MATERIALS_KEY, JSON.stringify(all));
-  } catch (e) { /* ignore */ }
+  } catch (e) {
+    console.warn('[SUPABASE-RESOURCES] Failed to delete material from localStorage:', e);
+  }
 }
 
 /**
@@ -314,6 +320,7 @@ export async function saveSupabaseResource(tableName: 'assignments' | 'school_re
     console.log(`[SUPABASE-RESOURCES] Saved resource to ${tableName} successfully!`);
   } catch (err) {
     console.error(`[SUPABASE-RESOURCES] Failed to save resource to ${tableName}:`, err);
+    throw err;
   }
 }
 
@@ -332,6 +339,7 @@ export async function deleteSupabaseResource(tableName: 'assignments' | 'school_
     console.log(`[SUPABASE-RESOURCES] Deleted from ${tableName} successfully!`);
   } catch (err) {
     console.error(`[SUPABASE-RESOURCES] Failed to delete from ${tableName}:`, err);
+    throw err;
   }
 }
 
@@ -368,5 +376,6 @@ export async function upsertSupabaseTableData(tableName: string, data: any): Pro
     }
   } catch (err) {
     console.error(`[SUPABASE-RESOURCES] Failed to save to ${tableName}:`, err);
+    throw err;
   }
 }

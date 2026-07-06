@@ -335,7 +335,7 @@ app.post('/api/ai/notes', async (req, res) => {
     return res.status(500).json({
       error: 'Engine transformation error',
       details: apiErr.message,
-      text: `*Offline Fallback Note Transformation*\n\n**Processed Action**: ${action.toUpperCase()}\n\nHere is a clean summary of your key text segment regarding this topic: We identified critical learning objectives, formula constraints, and student evaluations.`
+      text: `*Offline Fallback Note Transformation*\n\n**Processed Action**: ${(action || 'unknown').toUpperCase()}\n\nHere is a clean summary of your key text segment regarding this topic: We identified critical learning objectives, formula constraints, and student evaluations.`
     });
   }
 });
@@ -636,7 +636,19 @@ async function startServer() {
         }
       } catch (err) {
         console.error('[WS Server] Failed to process incoming message:', err);
+        try {
+          ws.send(JSON.stringify({
+            type: 'error',
+            message: 'Server failed to process your message. Please try again.'
+          }));
+        } catch (sendErr) {
+          console.error('[WS Server] Failed to send error response to client:', sendErr);
+        }
       }
+    });
+
+    ws.on('error', (err) => {
+      console.error('[WS Server] WebSocket client error:', err);
     });
 
     ws.on('close', () => {
@@ -645,4 +657,7 @@ async function startServer() {
   });
 }
 
-startServer();
+startServer().catch(err => {
+  console.error('[SERVER] Fatal error starting server:', err);
+  process.exit(1);
+});
