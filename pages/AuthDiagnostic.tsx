@@ -6,7 +6,7 @@ const supabase = createClient(
   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp3cG91dGFuaHN1amV6Z2xic29uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE2OTA2MDEsImV4cCI6MjA5NzI2NjYwMX0.Y48u9duD3WohxzDD6czXevPaG1mFRFS0rdRuu4840pQ"
 );
 
-export default function AuthDebug() {
+export default function AuthDiagnostic() {
   const [logs, setLogs] = useState<string[]>([]);
   const [sessionInfo, setSessionInfo] = useState<any>(null);
   const [userInfo, setUserInfo] = useState<any>(null);

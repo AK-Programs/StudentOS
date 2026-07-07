@@ -79,16 +79,21 @@ export async function saveAiBuddyChat(thread: AiBuddyThread): Promise<void> {
       created_at: thread.createdAt
     };
 
-    const { error } = await supabase
+    console.log('[SUPABASE-CHAT] AI UPSERT PAYLOAD', dbRow);
+    const result = await supabase
       .from('ai_buddy_chats')
-      .upsert(dbRow);
+      .upsert(dbRow, { onConflict: 'id' })
+      .select();
 
-    if (error) {
-      if (error.code === '42P01' || error.message?.includes('not found')) {
+    console.log('[SUPABASE-CHAT] AI UPSERT RESULT', result);
+    console.log('[SUPABASE-CHAT] AI UPSERT ERROR', result.error);
+
+    if (result.error) {
+      if (result.error.code === '42P01' || result.error.message?.includes('not found')) {
         console.warn('[SUPABASE-CHAT] Table ai_buddy_chats does not exist yet. Saved to localStorage only.');
         return;
       }
-      throw error;
+      throw result.error;
     }
   } catch (err) {
     console.error('[SUPABASE-CHAT] Failed to upsert ai_buddy_chat in Supabase:', err);

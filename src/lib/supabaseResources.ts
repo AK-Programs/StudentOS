@@ -124,6 +124,39 @@ function deleteLocalMaterial(id: string): void {
   } catch (e) { /* ignore */ }
 }
 
+function resourceToMaterial(res: any): MaterialResource {
+  const resourceType = res.resourceType || res.type || 'resource';
+  const fileUrl = res.url || res.fileUrl || res.fileData || null;
+  return {
+    id: res.id,
+    title: res.title || 'Untitled Resource',
+    subject: res.subject || res.class || res.targetGrade || 'General',
+    type: resourceType,
+    url: fileUrl,
+    fileUrl,
+    file_url: fileUrl,
+    attachment_url: fileUrl,
+    storagePath: res.storagePath || null,
+    fileName: res.fileName || null,
+    description: res.description || res.content || '',
+    uploadedBy: res.author || 'Teacher',
+    createdAt: res.createdAt
+      ? new Date(res.createdAt).toISOString().split('T')[0]
+      : new Date().toISOString().split('T')[0],
+    created_at: res.created_at || res.createdAt || Date.now(),
+    classGrade: res.targetGrade || res.class,
+    classSection: res.targetSection || res.section,
+    isPublic: true,
+    visibility: 'student',
+    downloads: 0,
+    likes: 0,
+    likedBy: [],
+    views: 1,
+    isVerified: false,
+    comments: []
+  };
+}
+
 /**
  * ---------------- MATERIALS OPERATIONS ----------------
  */
@@ -155,10 +188,27 @@ export async function getSupabaseMaterials(): Promise<MaterialResource[]> {
         return tB - tA;
       });
       console.log(`[SUPABASE-RESOURCES] Loaded ${remoteList.length} from Supabase + ${localOnly.length} local-only materials.`);
-      return merged;
+      const [schoolResources, assignmentResources] = await Promise.all([
+        getSupabaseResources('school_resources'),
+        getSupabaseResources('assignments')
+      ]);
+      const resourceMaterials = [...schoolResources, ...assignmentResources].map(resourceToMaterial);
+      const knownIds = new Set(merged.map(m => m.id));
+      const resourceOnly = resourceMaterials.filter(m => !knownIds.has(m.id));
+      return [...resourceOnly, ...merged].sort((a, b) => Number(b.created_at || 0) - Number(a.created_at || 0));
     }
     // Supabase returned 0 rows (table may exist but be empty or blocked by RLS)
     const local = getLocalMaterials();
+    const [schoolResources, assignmentResources] = await Promise.all([
+      getSupabaseResources('school_resources'),
+      getSupabaseResources('assignments')
+    ]);
+    const resourceMaterials = [...schoolResources, ...assignmentResources].map(resourceToMaterial);
+    if (resourceMaterials.length > 0) {
+      const localIds = new Set(local.map(m => m.id));
+      return [...resourceMaterials.filter(m => !localIds.has(m.id)), ...local]
+        .sort((a, b) => Number(b.created_at || 0) - Number(a.created_at || 0));
+    }
     if (local.length > 0) {
       console.log(`[SUPABASE-RESOURCES] Supabase returned 0 rows — serving ${local.length} materials from localStorage.`);
     }
@@ -174,18 +224,23 @@ export async function saveSupabaseMaterial(mat: MaterialResource): Promise<void>
   saveLocalMaterial(mat);
 
   const row = mapMaterialToRow(mat);
+  console.log("UPSERT PAYLOAD", row);
   try {
-    const { error } = await supabase
+    const result = await supabase
       .from('materials')
-      .upsert(row, { onConflict: 'id' });
+      .upsert(row, { onConflict: 'id' })
+      .select();
 
-    if (error) {
-      if (error.code === '42P01') {
+    console.log("UPSERT RESULT", result);
+    console.log("UPSERT ERROR", result.error);
+
+    if (result.error) {
+      if (result.error.code === '42P01') {
         console.warn('[SUPABASE-RESOURCES] Table "materials" does not exist — saved to localStorage only.');
         return;
       }
       // RLS or other error — still OK, localStorage has it
-      console.warn('[SUPABASE-RESOURCES] Supabase save failed (may be RLS) — saved to localStorage only:', error.message);
+      console.warn('[SUPABASE-RESOURCES] Supabase save failed (may be RLS) — saved to localStorage only:', result.error.message);
       return;
     }
     console.log('[SUPABASE-RESOURCES] Saved material to Supabase successfully!');
@@ -269,6 +324,42 @@ function mapRowToResource(row: any): any {
   };
 }
 
+const getLocalResourceKey = (tableName: 'assignments' | 'school_resources') => `s_os_${tableName}`;
+
+function getLocalResources(tableName: 'assignments' | 'school_resources'): any[] {
+  try {
+    const raw = localStorage.getItem(getLocalResourceKey(tableName));
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    console.warn(`[SUPABASE-RESOURCES] Failed reading ${tableName} local backup:`, e);
+    return [];
+  }
+}
+
+function saveLocalResource(tableName: 'assignments' | 'school_resources', res: any): void {
+  try {
+    const existing = getLocalResources(tableName);
+    const idx = existing.findIndex(item => item.id === res.id);
+    if (idx >= 0) {
+      existing[idx] = res;
+    } else {
+      existing.unshift(res);
+    }
+    localStorage.setItem(getLocalResourceKey(tableName), JSON.stringify(existing));
+  } catch (e) {
+    console.warn(`[SUPABASE-RESOURCES] Failed saving ${tableName} local backup:`, e);
+  }
+}
+
+function deleteLocalResource(tableName: 'assignments' | 'school_resources', id: string): void {
+  try {
+    const next = getLocalResources(tableName).filter(item => item.id !== id);
+    localStorage.setItem(getLocalResourceKey(tableName), JSON.stringify(next));
+  } catch (e) {
+    console.warn(`[SUPABASE-RESOURCES] Failed deleting ${tableName} local backup:`, e);
+  }
+}
+
 export async function getSupabaseResources(tableName: 'assignments' | 'school_resources'): Promise<any[]> {
   console.log(`[SUPABASE-RESOURCES] Fetching ${tableName}...`);
   try {
@@ -279,46 +370,56 @@ export async function getSupabaseResources(tableName: 'assignments' | 'school_re
 
     if (error) {
       if (error.code === '42P01') {
-        console.warn(`[SUPABASE-RESOURCES] Table "${tableName}" does not exist yet.`);
-        return [];
+        console.warn(`[SUPABASE-RESOURCES] Table "${tableName}" does not exist yet. Falling back to localStorage.`);
+        return getLocalResources(tableName);
       }
       throw error;
     }
 
     if (data) {
       console.log(`[SUPABASE-RESOURCES] Loaded ${data.length} records from ${tableName}.`);
-      return data.map(mapRowToResource);
+      const remote = data.map(mapRowToResource);
+      const remoteIds = new Set(remote.map(item => item.id));
+      const localOnly = getLocalResources(tableName).filter(item => !remoteIds.has(item.id));
+      return [...localOnly, ...remote].sort((a, b) => Number(b.created_at || b.createdAt || 0) - Number(a.created_at || a.createdAt || 0));
     }
-    return [];
+    return getLocalResources(tableName);
   } catch (err) {
-    console.error(`[SUPABASE-RESOURCES] Failed to fetch ${tableName}:`, err);
-    return [];
+    console.error(`[SUPABASE-RESOURCES] Failed to fetch ${tableName}; using localStorage fallback:`, err);
+    return getLocalResources(tableName);
   }
 }
 
 export async function saveSupabaseResource(tableName: 'assignments' | 'school_resources', res: any): Promise<void> {
   console.log(`[SUPABASE-RESOURCES] Saving to ${tableName}:`, res.id, res.title);
+  saveLocalResource(tableName, res);
   const row = mapResourceToRow(res);
+  console.log("UPSERT PAYLOAD", row);
   try {
-    const { error } = await supabase
+    const result = await supabase
       .from(tableName)
-      .upsert(row, { onConflict: 'id' });
+      .upsert(row, { onConflict: 'id' })
+      .select();
 
-    if (error) {
-      if (error.code === '42P01') {
-        console.warn(`[SUPABASE-RESOURCES] Table "${tableName}" does not exist yet.`);
+    console.log("UPSERT RESULT", result);
+    console.log("UPSERT ERROR", result.error);
+
+    if (result.error) {
+      if (result.error.code === '42P01') {
+        console.warn(`[SUPABASE-RESOURCES] Table "${tableName}" does not exist yet. Saved to localStorage only.`);
         return;
       }
-      throw error;
+      throw result.error;
     }
     console.log(`[SUPABASE-RESOURCES] Saved resource to ${tableName} successfully!`);
   } catch (err) {
-    console.error(`[SUPABASE-RESOURCES] Failed to save resource to ${tableName}:`, err);
+    console.error(`[SUPABASE-RESOURCES] Failed to save resource to ${tableName}; localStorage backup retained:`, err);
   }
 }
 
 export async function deleteSupabaseResource(tableName: 'assignments' | 'school_resources', id: string): Promise<void> {
   console.log(`[SUPABASE-RESOURCES] Deleting from ${tableName}:`, id);
+  deleteLocalResource(tableName, id);
   try {
     const { error } = await supabase
       .from(tableName)

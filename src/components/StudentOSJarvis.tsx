@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Mic, MicOff, Send, Volume2, Sparkles, Sliders, Users, 
   BarChart3, Award, Settings, Terminal, Play, RotateCcw, 
-  Layers, Plus, Trash2, CheckCircle, RefreshCw, X, Square, BookOpen, FileText, HelpCircle, Layout
+  Layers, Plus, Trash2, CheckCircle, RefreshCw, X, Square, BookOpen, FileText, HelpCircle, Layout, Search, Globe
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { 
@@ -40,7 +40,11 @@ export const StudentOSJarvis: React.FC<StudentOSJarvisProps> = ({
   effectiveRole
 }) => {
   // Navigation & Analytics Selection inside Jarvis
-  const [activeJarvisSection, setActiveJarvisSection] = useState<'home' | 'reports' | 'houses' | 'sections' | 'history'>('home');
+  const [activeJarvisSection, setActiveJarvisSection] = useState<'home' | 'reports' | 'houses' | 'sections' | 'history' | 'search'>('home');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [searchResults, setSearchResults] = useState<string>('');
+  const [localMaterials, setLocalMaterials] = useState<any[]>([]);
+  const [searching, setSearching] = useState<boolean>(false);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
 
   // Voice & Input State
@@ -147,10 +151,164 @@ export const StudentOSJarvis: React.FC<StudentOSJarvisProps> = ({
   const speakFeedback = (text: string) => {
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 1.0;
-      utterance.pitch = 1.0;
-      window.speechSynthesis.speak(utterance);
+      setTimeout(() => {
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 1.0;
+        utterance.pitch = 1.0;
+        window.speechSynthesis.speak(utterance);
+      }, 50);
+    }
+  };
+
+  // --- PHASE 2 CORE INTEGRATED ENGINES ---
+  const handleRunInternetSearch = async (query: string) => {
+    if (!query || !query.trim()) return;
+    setSearching(true);
+    setSearchQuery(query);
+    setActiveJarvisSection('search');
+    try {
+      // 1. Fetch search findings using AI chat endpoint
+      const response = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: `You are an elite academic search research assistant with real-time web access. Provide a highly detailed, clean academic summary about: "${query}". Include Key Findings, Bulleted facts, and Trusted Sources.`,
+          persona: 'study_buddy',
+          level: 'Secondary',
+          mode: 'explanatory'
+        })
+      });
+      const data = await response.json();
+      setSearchResults(data.text || "No results fetched. Please verify API configuration.");
+
+      // 2. Local material search / resource discovery
+      const { data: matchedMaterials, error } = await supabase
+        .from('materials')
+        .select('*')
+        .or(`title.ilike.%${query}%,description.ilike.%${query}%`)
+        .limit(5);
+
+      if (matchedMaterials && !error) {
+        setLocalMaterials(matchedMaterials);
+      } else {
+        setLocalMaterials([]);
+      }
+    } catch (err) {
+      console.error("Failed to execute internet search:", err);
+      setSearchResults("Offline Simulation Search: Connection could not be established. Real-time web access requires active keys.");
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const handleRunResourceDiscovery = async (query: string) => {
+    if (!query || !query.trim()) return;
+    setSearching(true);
+    setSearchQuery(query);
+    setActiveJarvisSection('search');
+    try {
+      // 1. Local database query
+      const { data: matchedMaterials, error } = await supabase
+        .from('materials')
+        .select('*')
+        .or(`title.ilike.%${query}%,description.ilike.%${query}%`)
+        .limit(10);
+
+      if (matchedMaterials && !error) {
+        setLocalMaterials(matchedMaterials);
+      } else {
+        setLocalMaterials([]);
+      }
+
+      // 2. AI Recommendation
+      const response = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: `You are an academic discovery engine. Based on the topic "${query}", list 4 highly recommended learning resources (e.g., active experiments, scientific papers, specific web articles) with bulleted descriptions.`,
+          persona: 'study_buddy',
+          level: 'Secondary',
+          mode: 'explanatory'
+        })
+      });
+      const data = await response.json();
+      setSearchResults(data.text || "No recommendations compiled.");
+    } catch (err) {
+      console.error("Resource discovery failed:", err);
+      setSearchResults("Connection offline. Simulated Resource Discovery: Check Material Hub for local copies.");
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const handleGenerateLessonPlan = async (topic: string) => {
+    if (!topic || !topic.trim()) return;
+    setSearching(true);
+    setSearchQuery(topic);
+    setActiveJarvisSection('search');
+    try {
+      const response = await fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: `You are an expert curriculum supervisor. Create a structured 1-hour study lesson plan block for: "${topic}". Include Timing, Activities, and Learning objectives.`,
+          persona: 'study_buddy',
+          level: 'Secondary',
+          mode: 'explanatory'
+        })
+      });
+      const data = await response.json();
+      setSearchResults(data.text || "No plan compiled.");
+      
+      // Dispatch a CustomEvent to automatically add to the study planner
+      const planEvent = new CustomEvent('s_os_add_schedule', {
+        detail: {
+          subject: topic.substring(0, 30),
+          day: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'][new Date().getDay() - 1] || 'Monday',
+          time: '14:00 - 15:00'
+        }
+      });
+      window.dispatchEvent(planEvent);
+    } catch (err) {
+      console.error("Lesson planner failed:", err);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const handleGenerateNotes = async (topic: string) => {
+    if (!topic || !topic.trim()) return;
+    setSearching(true);
+    setSearchQuery(topic);
+    setActiveJarvisSection('search');
+    try {
+      const response = await fetch('/api/ai/notes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: `Write complete structured student lecture study notes about: ${topic}`,
+          action: 'expand',
+          instruction: 'Write detailed educational sections with code snippets/analogies.'
+        })
+      });
+      const data = await response.json();
+      const content = data.text || `# Study Sheet: ${topic}\n\nNotes failed to generate.`;
+      
+      setSearchResults(content);
+
+      // Dispatch a CustomEvent to automatically instantiate this in the user's notes vault
+      const noteEvent = new CustomEvent('s_os_create_note', {
+        detail: {
+          title: topic.substring(0, 40),
+          content: content,
+          subject: 'AI Generated'
+        }
+      });
+      window.dispatchEvent(noteEvent);
+    } catch (err) {
+      console.error("Notes generation failed:", err);
+    } finally {
+      setSearching(false);
     }
   };
 
@@ -170,8 +328,8 @@ export const StudentOSJarvis: React.FC<StudentOSJarvisProps> = ({
             Your return message must start with a JSON bracket representing:
             {
               "responseText": "Speakable reply to teacher. Clean, audio-friendly, professional.",
-              "action": "one of: [navigate_tab, clear_whiteboard, save_whiteboard, search_materials, show_student_report, show_house_rankings, show_section_rankings, explain_concept, generate_quiz, write_on_whiteboard, draw_on_whiteboard]",
-              "targetValue": "Any extracted argument like subject, name, tab, exact text to write on whiteboard, or shape name to draw (circle, rect, triangle, arrow, star)"
+              "action": "one of: [navigate_tab, clear_whiteboard, save_whiteboard, search_materials, show_student_report, show_house_rankings, show_section_rankings, explain_concept, generate_quiz, write_on_whiteboard, draw_on_whiteboard, search_internet, discover_resources, generate_lesson_plan, generate_notes]",
+              "targetValue": "Any extracted argument like subject, topic, search query, name, tab, exact text to write on whiteboard, or shape name to draw (circle, rect, triangle, arrow, star)"
             }
             Give helpful context but keep the JSON format extremely perfect at the top or as the absolute response. Do not add raw markdown outside the JSON.`,
             persona: 'study_buddy',
@@ -204,8 +362,8 @@ export const StudentOSJarvis: React.FC<StudentOSJarvisProps> = ({
             Your return message must start with a JSON bracket representing:
             {
               "responseText": "Speakable reply to teacher. Clean, audio-friendly, professional.",
-              "action": "one of: [navigate_tab, clear_whiteboard, save_whiteboard, search_materials, show_student_report, show_house_rankings, show_section_rankings, explain_concept, generate_quiz, write_on_whiteboard, draw_on_whiteboard]",
-              "targetValue": "Any extracted argument like subject, name, tab, exact text to write on whiteboard, or shape name to draw (circle, rect, triangle, arrow, star)"
+              "action": "one of: [navigate_tab, clear_whiteboard, save_whiteboard, search_materials, show_student_report, show_house_rankings, show_section_rankings, explain_concept, generate_quiz, write_on_whiteboard, draw_on_whiteboard, search_internet, discover_resources, generate_lesson_plan, generate_notes]",
+              "targetValue": "Any extracted argument like subject, topic, search query, name, tab, exact text to write on whiteboard, or shape name to draw (circle, rect, triangle, arrow, star)"
             }
             Give helpful context but keep the JSON format extremely perfect at the top or as the absolute response. Do not add raw markdown outside the JSON.`;
         aiText = await clientSideGemini(prompt);
@@ -409,6 +567,30 @@ export const StudentOSJarvis: React.FC<StudentOSJarvisProps> = ({
         resolvedFeedback = 'Opening Student Classroom Report dashboard.';
       }
     }
+    else if (textLow.includes('search') && (textLow.includes('internet') || textLow.includes('web') || textLow.includes('google') || textLow.includes('online') || textLow.includes('lookup'))) {
+      const topic = textToParse.replace(/search the internet for/i, '').replace(/search the internet/i, '').replace(/web search for/i, '').replace(/web search/i, '').replace(/search/i, '').replace(/lookup/i, '').trim();
+      handleRunInternetSearch(topic || 'academic research trends');
+      resolvedFeedback = `Executing real-time web search grounding sequence for "${topic || 'academic research trends'}".`;
+      actionTriggered = 'search_internet';
+    }
+    else if (textLow.includes('discover') || textLow.includes('recommend') || textLow.includes('resource')) {
+      const topic = textToParse.replace(/discover resources for/i, '').replace(/discover resources/i, '').replace(/recommend resources/i, '').replace(/discover/i, '').trim();
+      handleRunResourceDiscovery(topic || 'stem worksheets');
+      resolvedFeedback = `Initiating academic resource discovery pipeline for "${topic || 'stem worksheets'}".`;
+      actionTriggered = 'discover_resources';
+    }
+    else if (textLow.includes('lesson plan') || textLow.includes('plan lesson') || textLow.includes('curriculum')) {
+      const topic = textToParse.replace(/generate lesson plan for/i, '').replace(/generate lesson plan/i, '').replace(/lesson plan for/i, '').replace(/create lesson plan/i, '').trim();
+      handleGenerateLessonPlan(topic || 'Physics mechanics introductory unit');
+      resolvedFeedback = `Synthesizing lesson planner schedule blocks for "${topic || 'Physics mechanics introductory unit'}".`;
+      actionTriggered = 'generate_lesson_plan';
+    }
+    else if (textLow.includes('generate notes') || textLow.includes('create notes') || textLow.includes('notes about') || textLow.includes('ai notes')) {
+      const topic = textToParse.replace(/generate notes about/i, '').replace(/generate notes/i, '').replace(/create notes about/i, '').replace(/notes about/i, '').replace(/ai notes/i, '').trim();
+      handleGenerateNotes(topic || 'Biology Cell Mitosis');
+      resolvedFeedback = `Assembling and saving AI lecture study sheets for "${topic || 'Biology Cell Mitosis'}".`;
+      actionTriggered = 'generate_notes';
+    }
     else if (textLow.includes('draw') && textLow.includes('circle')) {
       setActiveTab('whiteboard');
       if (drawShapeOnWhiteboard) drawShapeOnWhiteboard('circle');
@@ -521,6 +703,16 @@ export const StudentOSJarvis: React.FC<StudentOSJarvisProps> = ({
               drawShapeOnWhiteboard(aiVerdict.targetValue.toLowerCase());
             }
           }
+        } else if (actionTriggered === 'search_internet') {
+          handleRunInternetSearch(aiVerdict.targetValue || textToParse);
+        } else if (actionTriggered === 'discover_resources') {
+          handleRunResourceDiscovery(aiVerdict.targetValue || textToParse);
+        } else if (actionTriggered === 'generate_lesson_plan') {
+          setActiveTab('planner');
+          handleGenerateLessonPlan(aiVerdict.targetValue || textToParse);
+        } else if (actionTriggered === 'generate_notes') {
+          setActiveTab('notes');
+          handleGenerateNotes(aiVerdict.targetValue || textToParse);
         }
     }
 
@@ -661,6 +853,15 @@ export const StudentOSJarvis: React.FC<StudentOSJarvisProps> = ({
             }`}
           >
             <Terminal className="w-3 h-3" /> Voice Log
+          </button>
+          
+          <button 
+            onClick={() => setActiveJarvisSection('search')}
+            className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-1 border ${
+              activeJarvisSection === 'search' ? 'bg-indigo-600 text-white border-indigo-500' : 'bg-slate-950/60 text-slate-400 border-white/5 hover:text-white'
+            }`}
+          >
+            <Search className="w-3 h-3" /> Discovery Hub
           </button>
           
           <button 
@@ -1199,6 +1400,112 @@ export const StudentOSJarvis: React.FC<StudentOSJarvisProps> = ({
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* PHASE 2 SEARCH AND DISCOVERY PANEL */}
+        {activeJarvisSection === 'search' && (
+          <div className="space-y-4 animate-fadeIn select-text p-1">
+            {/* Search Input Controls */}
+            <div className="bg-slate-950/60 p-4 rounded-2xl border border-white/10 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] text-indigo-400 font-extrabold uppercase font-mono tracking-wider block">📡 Orion Web Grounding & Resource Discovery</span>
+                {searching && (
+                  <span className="text-[10px] text-teal-400 font-bold animate-pulse flex items-center gap-1 font-mono">
+                    <RefreshCw className="w-3 h-3 animate-spin" /> Querying Orion AI...
+                  </span>
+                )}
+              </div>
+              
+              <div className="flex gap-2">
+                <input 
+                  type="text"
+                  placeholder="Enter research topic, worksheet topic, or query..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="flex-1 bg-slate-900 border border-white/5 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-500 outline-none focus:border-indigo-500 font-mono"
+                />
+                <button 
+                  onClick={() => handleRunInternetSearch(searchQuery)}
+                  className="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1"
+                >
+                  <Globe className="w-3.5 h-3.5" /> Web Search
+                </button>
+                <button 
+                  onClick={() => handleRunResourceDiscovery(searchQuery)}
+                  className="px-3 py-2 bg-teal-600 hover:bg-teal-500 text-white rounded-xl text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-1"
+                >
+                  <BookOpen className="w-3.5 h-3.5" /> Discovery
+                </button>
+              </div>
+
+              {/* Quick Action Generators */}
+              {searchQuery.trim().length > 2 && (
+                <div className="flex flex-wrap gap-2 pt-1.5 border-t border-white/5">
+                  <button 
+                    onClick={() => handleGenerateNotes(searchQuery)}
+                    className="px-3 py-1 bg-violet-600/20 hover:bg-violet-600 text-violet-300 hover:text-white rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all flex items-center gap-1 border border-violet-500/30"
+                  >
+                    📝 Generate Vault Notes
+                  </button>
+                  <button 
+                    onClick={() => handleGenerateLessonPlan(searchQuery)}
+                    className="px-3 py-1 bg-emerald-600/20 hover:bg-emerald-600 text-emerald-300 hover:text-white rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all flex items-center gap-1 border border-emerald-500/30"
+                  >
+                    📅 Generate Study Plan Slot
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Results Render */}
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+              {/* AI Grounded Search Content: 8 cols */}
+              <div className="md:col-span-8 bg-slate-950/60 p-4 rounded-2xl border border-white/10 space-y-3 flex flex-col min-h-[320px]">
+                <span className="text-[10px] text-indigo-400 font-extrabold uppercase font-mono tracking-wider block">📑 AI Research Grounding Summary</span>
+                
+                <div className="flex-1 overflow-y-auto max-h-[350px] pr-1 scrollbar-thin text-xs text-slate-305 leading-relaxed font-sans whitespace-pre-wrap">
+                  {searchResults ? (
+                    searchResults
+                  ) : (
+                    <div className="h-full flex flex-col items-center justify-center text-center py-12 text-slate-500 space-y-2">
+                      <Sparkles className="w-8 h-8 text-slate-600 animate-pulse" />
+                      <p className="text-xs max-w-xs font-medium">Orion search engine is idle. Ask Orion or enter a query above to start Phase II real-time academic synthesis.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Discovered Materials List: 4 cols */}
+              <div className="md:col-span-4 bg-slate-950/60 p-4 rounded-2xl border border-white/10 space-y-3 flex flex-col">
+                <span className="text-[10px] text-teal-400 font-extrabold uppercase font-mono tracking-wider block">📂 Material Hub Discovered</span>
+                
+                <div className="flex-1 overflow-y-auto max-h-[350px] space-y-2 pr-1">
+                  {localMaterials && localMaterials.length > 0 ? (
+                    localMaterials.map((mat) => (
+                      <a 
+                        key={mat.id}
+                        href={mat.url || mat.file_url || '#'}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="block p-2.5 rounded-xl bg-slate-900 border border-white/5 hover:border-teal-500/30 hover:bg-teal-500/5 transition-all text-left space-y-1"
+                      >
+                        <div className="flex items-center gap-1 text-[10px] font-black text-teal-400 uppercase tracking-wider">
+                          📚 {mat.subject || 'Syllabus'}
+                        </div>
+                        <div className="text-[11px] font-bold text-white truncate">{mat.title}</div>
+                        <div className="text-[9px] text-slate-400 line-clamp-2">{mat.description || 'No description provided.'}</div>
+                      </a>
+                    ))
+                  ) : (
+                    <div className="h-full flex flex-col items-center justify-center text-center py-12 text-slate-500 space-y-1">
+                      <BookOpen className="w-6 h-6 text-slate-650" />
+                      <p className="text-[10px] font-mono leading-relaxed">No local materials found. Use Orion to discover worksheets on the web!</p>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         )}

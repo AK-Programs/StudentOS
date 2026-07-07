@@ -43,8 +43,14 @@ async function generateAICompletion(systemInstruction: string, prompt: string, h
 
   if (openRouterKey) {
     try {
-      const model = process.env.OPENROUTER_MODEL || "deepseek/deepseek-v4-flash";
-      console.log(`[AI Server] Directing API request to OpenRouter using model "${model}"...`);
+      const hasAttachments = prompt.includes('[Attached Document:') || prompt.includes('[Attached Diagram/Image:');
+      let model = process.env.OPENROUTER_MODEL || "deepseek/deepseek-v4-flash";
+      if (hasAttachments) {
+        model = "google/gemini-2.5-flash";
+        console.log(`[AI Server] Attachment detected. Overriding OpenRouter model to "${model}" for rich, high-context document understanding.`);
+      } else {
+        console.log(`[AI Server] Directing API request to OpenRouter using model "${model}"...`);
+      }
       
       const safeHistory = Array.isArray(history) ? history : [];
       const messages = [
@@ -466,6 +472,62 @@ app.get('/api/admin/setup-sql', (req, res) => {
   } catch (err: any) {
     res.status(500).json({ error: 'Could not read setup SQL: ' + err.message });
   }
+});
+
+// ============================================================
+// Auth Callback Endpoint for popup-based Google OAuth flow
+// ============================================================
+app.get(['/auth/callback', '/auth/callback/'], (req, res) => {
+  res.send(`
+    <html>
+      <head>
+        <title>Completing Authentication</title>
+        <style>
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #020617;
+            color: #f8fafc;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+          }
+          .box {
+            text-align: center;
+            padding: 2rem;
+            border-radius: 12px;
+            background-color: #0f172a;
+            border: 1px solid #1e293b;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+            max-width: 400px;
+          }
+          h1 { font-size: 1.5rem; margin-top: 0; margin-bottom: 0.5rem; color: #38bdf8; }
+          p { color: #94a3b8; font-size: 0.875rem; line-height: 1.5; }
+        </style>
+      </head>
+      <body>
+        <div class="box">
+          <h1>StudentOS Authenticating</h1>
+          <p>Writing session credentials... This window will close automatically.</p>
+        </div>
+        <script>
+          if (window.opener) {
+            window.opener.postMessage({
+              type: 'SUPABASE_AUTH_SUCCESS',
+              hash: window.location.hash,
+              search: window.location.search
+            }, '*');
+            setTimeout(() => {
+              window.close();
+            }, 1000);
+          } else {
+            window.location.href = '/';
+          }
+        </script>
+      </body>
+    </html>
+  `);
 });
 
 let globalChatsState: any[] = [];

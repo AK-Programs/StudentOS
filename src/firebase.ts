@@ -43,4 +43,6 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
 
 export const sendNotificationToUsers = async (data: any) => {
   console.log('[STUB] Send notification to users:', data);
+  const event = new CustomEvent('s_os_notification_created', { detail: data });
+  window.dispatchEvent(event);
 };
