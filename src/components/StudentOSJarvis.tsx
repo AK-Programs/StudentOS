@@ -368,18 +368,29 @@ Assessment:
     let actionTriggered = 'unknown';
     let targetParam = '';
 
+    const wantsMaterialHubSearch = textLow.includes('material hub') || textLow.includes('my materials') || textLow.includes('school materials');
     const wantsAcademicVideo = (textLow.includes('find') || textLow.includes('search')) && textLow.includes('video');
     const wantsWorksheetDiscovery = (textLow.includes('find') || textLow.includes('search')) && textLow.includes('worksheet');
+    const wantsInternetSearch = !wantsMaterialHubSearch && (
+      textLow.includes('search internet') ||
+      textLow.includes('search the internet') ||
+      textLow.includes('web search') ||
+      textLow.includes('look up online') ||
+      (textLow.startsWith('find ') && textLow.includes(' about '))
+    );
     const wantsResearchMode = (textLow.includes('prepare') || textLow.includes('research')) && (textLow.includes('notes') || textLow.includes('chapter'));
     const wantsLessonPlanner = (textLow.includes('lesson plan') || (textLow.includes('40') && textLow.includes('lesson')) || (textLow.includes('forty') && textLow.includes('lesson')));
 
     // Direct routing definitions
-    if (wantsAcademicVideo) {
+    if (wantsAcademicVideo || wantsInternetSearch) {
       const topic = cleanOrionTopic(textToParse);
-      const results = buildEducationSearchResults(topic, 'video');
+      const results = buildEducationSearchResults(topic, wantsAcademicVideo ? 'video' : 'research');
       setOrionDiscoveryResults(results);
       setOrionGeneratedArtifact('');
-      resolvedFeedback = `Phase 2 Academic Search is ready. I found educational video and source links for ${topic}. Open any result from the Orion discovery panel.`;
+      if (textLow.includes('open browser') || textLow.includes('open results')) {
+        window.open(results[0].url, '_blank', 'noopener,noreferrer');
+      }
+      resolvedFeedback = `Phase 2 Internet Search is ready. I found educational web sources for ${topic}. Open any result from the Orion discovery panel.`;
       actionTriggered = 'academic_search';
       targetParam = topic;
     }
@@ -465,7 +476,7 @@ Assessment:
         setActiveTab('whiteboard');
       }
     } 
-    else if (textLow.includes('material') || textLow.includes('physics') || textLow.includes('physics') || textLow.includes('math') || textLow.includes('pdf')) {
+    else if (wantsMaterialHubSearch || textLow.includes('material') || textLow.includes('physics') || textLow.includes('physics') || textLow.includes('math') || textLow.includes('pdf')) {
       setActiveTab('materials');
       actionTriggered = 'navigate_tab';
       targetParam = 'materials';

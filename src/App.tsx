@@ -24,7 +24,7 @@ import {
   getAiBuddyChats, saveAiBuddyChat, deleteAiBuddyChat, 
   getPeerMessages, savePeerMessage, getChatRooms, saveChatRoom 
 } from './lib/supabaseChat';
-import { saveSupabaseMaterial, getSupabaseMaterials } from './lib/supabaseResources';
+import { saveSupabaseMaterial, getSupabaseMaterials, saveSupabaseResource } from './lib/supabaseResources';
 import { PdfCanvasViewer } from './components/PdfCanvasViewer';
 import { StudentOSJarvis } from './components/StudentOSJarvis';
 import AttendanceManager from './components/AttendanceManager';
@@ -488,6 +488,8 @@ export default function App() {
     attachedFile: null
   };
 
+  const getAiPersistenceUserId = () => auth.currentUser?.uid || currentUser?.uid || currentUser?.email || '';
+
   const [attachedFiles, setAttachedFiles] = useState<{ name: string; content: string; size: number; type: string }[]>([]);
   const [speakingMsgIdx, setSpeakingMsgIdx] = useState<string | null>(null);
 
@@ -503,6 +505,21 @@ export default function App() {
       localStorage.setItem(`s_os_ai_active_id_${currentUser.uid}`, activeThreadId);
     }
   }, [activeThreadId, currentUser]);
+
+  // Keep AI Buddy conversations available after refresh even when Supabase is unavailable.
+  useEffect(() => {
+    const uid = getAiPersistenceUserId();
+    if (!uid || aiThreads.length === 0) return;
+    try {
+      const cached = localStorage.getItem('s_os_ai_threads');
+      const allThreads = cached ? JSON.parse(cached) : [];
+      const otherUsers = Array.isArray(allThreads) ? allThreads.filter((t: any) => t.userId && t.userId !== uid) : [];
+      const ownedThreads = aiThreads.map(t => ({ ...t, userId: (t as any).userId || uid, createdAt: (t as any).createdAt || Date.now() }));
+      localStorage.setItem('s_os_ai_threads', JSON.stringify([...ownedThreads, ...otherUsers]));
+    } catch (e) {
+      console.error('[AI Buddy] Failed to persist local chat snapshot:', e);
+    }
+  }, [aiThreads, currentUser?.uid, currentUser?.email]);
 
   // Sync active mode, attached files, and active tutor when changing threads
   useEffect(() => {
@@ -2464,6 +2481,30 @@ export default function App() {
   };
 
   // Material Resource Hub additions
+  const mirrorMaterialToSchoolResources = async (mat: MaterialResource) => {
+    await saveSupabaseResource('school_resources', {
+      id: mat.id,
+      title: mat.title,
+      content: mat.description || '',
+      description: mat.description || '',
+      type: mat.type || 'resource',
+      resourceType: mat.type || 'resource',
+      targetGrade: mat.visibleToGrades?.[0] || mat.classGrade || 'All Grades',
+      class: mat.visibleToGrades?.[0] || mat.classGrade || 'All Grades',
+      targetSection: mat.visibleToSections?.[0] || mat.classSection || 'All Sections',
+      section: mat.visibleToSections?.[0] || mat.classSection || 'All Sections',
+      url: mat.url || mat.fileUrl || mat.file_url || mat.attachment_url || null,
+      fileUrl: mat.url || mat.fileUrl || mat.file_url || mat.attachment_url || null,
+      fileData: mat.url || mat.fileUrl || mat.file_url || mat.attachment_url || null,
+      storagePath: mat.storagePath || null,
+      galleryUrls: [],
+      fileName: mat.fileName || null,
+      createdAt: mat.created_at || Date.now(),
+      created_at: mat.created_at || Date.now(),
+      author: mat.uploadedBy || 'Teacher'
+    });
+  };
+
   const handleAddMaterial = async (titleText?: string, descText?: string) => {
     const finalTitle = titleText || newMaterialTitle;
     const finalDesc = descText || newMaterialDesc;
@@ -2500,6 +2541,7 @@ export default function App() {
 
     try {
       await saveSupabaseMaterial(docItem);
+      await mirrorMaterialToSchoolResources(docItem);
       // Optimistic update: show immediately without waiting for refetch
       setMaterials(prev => [docItem, ...prev]);
       setNewMaterialTitle('');
@@ -2823,7 +2865,7 @@ export default function App() {
       showNotification('Uploading file securely...');
       console.log("[UPLOAD TRACE] 3. uploadFileToStorage called for file", file.name);
       try {
-        const { url, path } = await uploadFileToStorage(file, 'materials');
+        const { url, path } = await uploadFileToStorage(file, 'StudentOS', `materials/${subjectInput || 'general'}`);
         
         console.log("[UPLOAD TRACE] 4. uploadFileToStorage returned success!");
         console.log("[UPLOAD TRACE] 4.1 Returned URL:", url);
@@ -2875,6 +2917,7 @@ export default function App() {
 
     try {
       await saveSupabaseMaterial(docItem);
+      await mirrorMaterialToSchoolResources(docItem);
       // Optimistic update: show in list immediately without waiting for refetch
       setMaterials(prev => [docItem, ...prev]);
 
@@ -2962,7 +3005,7 @@ export default function App() {
       showNotification(`Uploading "${quickUploadFile.name}"...`);
       console.log("[UPLOAD TRACE] 3. uploadFileToStorage called for quick file", quickUploadFile.name);
       try {
-        const { url, path } = await uploadFileToStorage(quickUploadFile, 'materials');
+        const { url, path } = await uploadFileToStorage(quickUploadFile, 'StudentOS', `materials/${quickUploadSubject || 'general'}`);
         
         console.log("[UPLOAD TRACE] 4. uploadFileToStorage returned success!");
         console.log("[UPLOAD TRACE] 4.1 Returned URL:", url);
@@ -3008,6 +3051,7 @@ export default function App() {
 
       try {
         await saveSupabaseMaterial(docItem);
+        await mirrorMaterialToSchoolResources(docItem);
         // Optimistic update: show in list immediately
         setMaterials(prev => [docItem, ...prev]);
 
@@ -3380,6 +3424,7 @@ export default function App() {
 
   const handleCreateNewThread = () => {
     const newId = generateUniqueId();
+    const aiUid = getAiPersistenceUserId();
     const newThread = {
       id: newId,
       title: `Study Session #${aiThreads.length + 1}`,
@@ -3390,10 +3435,10 @@ export default function App() {
       ],
       attachedFile: null,
       attachedFiles: [],
-      userId: auth.currentUser?.uid || '',
+      userId: aiUid,
       createdAt: Date.now()
     };
-    if (auth.currentUser?.uid && !isDemoMode) {
+    if (aiUid && !isDemoMode) {
       saveAiBuddyChat(newThread as any).catch(error => {
         console.error("Error saving AI buddy chat:", error);
       });
@@ -3406,14 +3451,15 @@ export default function App() {
 
   const handleSwitchPersona = (personaId: string) => {
     setSelectedPersona(personaId);
-    if (auth.currentUser?.uid && !isDemoMode) {
+    const aiUid = getAiPersistenceUserId();
+    if (aiUid && !isDemoMode) {
        const t = aiThreads.find(t => t.id === activeThreadId);
        if (t) {
          saveAiBuddyChat({ 
            ...t, 
            personaId, 
            title: `Study with ${AI_PERSONAS.find(p => p.id === personaId)?.name || 'Tutor'}`,
-           userId: auth.currentUser.uid 
+           userId: aiUid
          } as any).catch(error => {
            console.error("Error saving AI buddy chat persona:", error);
          });
@@ -3424,13 +3470,14 @@ export default function App() {
 
   const handleSwitchMode = (mode: 'explanatory' | 'socratic' | 'coder' | 'quiz_gen') => {
     setAiMode(mode);
-    if (auth.currentUser?.uid && !isDemoMode) {
+    const aiUid = getAiPersistenceUserId();
+    if (aiUid && !isDemoMode) {
        const t = aiThreads.find(t => t.id === activeThreadId);
        if (t) {
          saveAiBuddyChat({ 
            ...t, 
            mode,
-           userId: auth.currentUser.uid 
+           userId: aiUid
          } as any).catch(error => {
            console.error("Error saving AI buddy chat mode:", error);
          });
@@ -3445,8 +3492,9 @@ export default function App() {
       showNotification('At least one chat sequence must remain intact.');
       return;
     }
-    if (auth.currentUser?.uid && !isDemoMode) {
-      deleteAiBuddyChat(threadId, auth.currentUser.uid).catch(error => {
+    const aiUid = getAiPersistenceUserId();
+    if (aiUid && !isDemoMode) {
+      deleteAiBuddyChat(threadId, aiUid).catch(error => {
         console.error("Error deleting AI buddy chat:", error);
       });
     }
@@ -3468,15 +3516,27 @@ export default function App() {
   };
 
   const handleClearThreadHistory = () => {
+    const aiUid = getAiPersistenceUserId();
+    const clearedMessages = [
+      { role: 'assistant' as const, content: "Conversation segment cleared by user." }
+    ];
     setAiThreads(prev => prev.map(t => {
       if (t.id === activeThreadId) {
-        return {
+        const clearedThread = {
           ...t,
-          messages: [
-            { role: 'assistant' as const, content: "Conversation segment cleared by user." }
-          ],
+          messages: clearedMessages,
           attachedFile: null,
-          attachedFiles: []
+          attachedFiles: [],
+          userId: (t as any).userId || aiUid,
+          createdAt: (t as any).createdAt || Date.now()
+        };
+        if (aiUid && !isDemoMode) {
+          saveAiBuddyChat(clearedThread as any).catch(error => {
+            console.error("Error saving cleared AI buddy chat:", error);
+          });
+        }
+        return {
+          ...clearedThread
         };
       }
       return t;
@@ -3587,17 +3647,20 @@ export default function App() {
       return t;
     }));
 
-    if (auth.currentUser?.uid && !isDemoMode) {
+    {
+      const aiUid = getAiPersistenceUserId();
+      if (aiUid && !isDemoMode) {
        saveAiBuddyChat({ 
          ...currentThread, 
          id: targetThreadId,
-         userId: auth.currentUser.uid,
+         userId: aiUid,
          title: newTitle,
          messages: updatedMessages,
          attachedFiles: []
        } as any).catch(error => {
          console.error("Error saving AI buddy chat message:", error);
        });
+      }
     }
     
     setAiInput('');
@@ -3652,11 +3715,13 @@ export default function App() {
         return t;
       }));
 
-      if (auth.currentUser?.uid && !isDemoMode) {
+      {
+        const aiUid = getAiPersistenceUserId();
+        if (aiUid && !isDemoMode) {
          saveAiBuddyChat({ 
            ...currentThread, 
            id: targetThreadId,
-           userId: auth.currentUser.uid,
+           userId: aiUid,
            title: currentThread.title.startsWith('Study Session #') || currentThread.title.startsWith('Introductory Study') || currentThread.title.startsWith('Study with')
             ? (userQuery.length > 25 ? userQuery.substring(0, 25) + '...' : userQuery)
             : currentThread.title,
@@ -3664,6 +3729,7 @@ export default function App() {
          } as any).catch(error => {
            console.error("Error saving AI buddy chat response:", error);
          });
+        }
       }
 
       if (ttsEnabled) {
@@ -6166,7 +6232,7 @@ export default function App() {
                                         const file = e.target.files[0];
                                         try {
                                           showNotification('Uploading profile picture to storage...');
-                                          const { url } = await uploadFileToStorage(file, 'users', `profile_${auth.currentUser?.uid}`);
+                                          const { url } = await uploadFileToStorage(file, 'StudentOS', `profiles/${auth.currentUser?.uid || currentUser?.uid || 'guest'}`);
                                           setProfileAvatar(url);
                                           showNotification('✓ Profile image selected! Click save below to sync changes.');
                                         } catch (err: any) {
