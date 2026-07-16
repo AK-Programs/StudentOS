@@ -737,178 +737,201 @@ export const StudentOSJarvis: React.FC<StudentOSJarvisProps> = ({
   };
 
   // Command Parser & Executor
-  const executeVoiceCommand = async (textToParse: string) => {
-    if (!textToParse.trim()) return;
-    setIsProcessing(true);
-    const textLow = textToParse.toLowerCase();
-    
-    // Super Admin trigger
-    if (textLow.includes('naitik kashyap') || textLow.includes('super admin protocol')) {
-      if (effectiveRole === 'super_admin') {
-        setJarvisFeedback('Super Admin credentials verified via Firestore role. Control Center activated.');
-        speakFeedback('Super Admin credentials verified.');
-        if (onSuperAdminUnlocked) onSuperAdminUnlocked();
-        showNotification('SYSTEM: Super Admin Mode Activated.');
-      } else {
-        setJarvisFeedback('Access Denied: You lack the required Super Admin Firestore role.');
-        speakFeedback('Access Denied.');
-        showNotification('SYSTEM: Auth Failed.');
-      }
-      setIsProcessing(false);
-      return;
+  
+    const executeVoiceCommand = async (textToParse: string) => {
+  if (!textToParse.trim()) return;
+  setIsProcessing(true);
+  const textLow = textToParse.toLowerCase();
+
+  // Super Admin trigger
+  if (textLow.includes('naitik kashyap') || textLow.includes('super admin protocol')) {
+    if (effectiveRole === 'super_admin') {
+      setJarvisFeedback('Super Admin credentials verified via Firestore role. Control Center activated.');
+      speakFeedback('Super Admin credentials verified.');
+      if (onSuperAdminUnlocked) onSuperAdminUnlocked();
+      showNotification('SYSTEM: Super Admin Mode Activated.');
+    } else {
+      setJarvisFeedback('Access Denied: You lack the required Super Admin Firestore role.');
+      speakFeedback('Access Denied.');
+      showNotification('SYSTEM: Auth Failed.');
     }
+    setIsProcessing(false);
+    return;
+  }
 
-    let resolvedFeedback = '';
-    let actionTriggered = 'unknown';
+  // Get AI intent classification
+  const aiVerdict = await queryJarvisAIStream(textToParse);
+  let resolvedFeedback = aiVerdict.responseText;
+  let actionTriggered = aiVerdict.action;
 
-    // Call advanced AI Intent Engine directly - no simple keyword matching!
-    const aiVerdict = await queryJarvisAIStream(textToParse);
-    resolvedFeedback = aiVerdict.responseText;
-    actionTriggered = aiVerdict.action;
-    
-    // Handle the parsed actions dynamically based on Intent Engine classification
-    const allowedTabs = ['materials', 'whiteboard', 'ai_teacher', 'quiz', 'planner', 'feedback', 'homework', 'chats', 'assignments', 'timetable_viewer', 'worksheet_viewer', 'notice_viewer', 'attendance_manager', 'dashboard'];
-    
-    if (actionTriggered === 'navigate_tab' && aiVerdict.targetValue) {
-      const tabVal = aiVerdict.targetValue.toLowerCase();
-      if (allowedTabs.includes(tabVal)) {
-        setActiveTab(tabVal as any);
-      } else if (tabVal.includes('assignment')) {
-        setActiveTab('assignments');
-      } else if (tabVal.includes('attendance')) {
-        setActiveTab('attendance_manager');
-      } else if (tabVal.includes('timetable') || tabVal.includes('schedule')) {
-        setActiveTab('timetable_viewer');
-      } else if (tabVal.includes('worksheet')) {
-        setActiveTab('worksheet_viewer');
-      } else if (tabVal.includes('notice') || tabVal.includes('announcement')) {
-        setActiveTab('notice_viewer');
-      } else if (tabVal.includes('quiz')) {
-        setActiveTab('quiz');
-      } else if (tabVal.includes('note')) {
-        setActiveTab('notes');
-      } else if (tabVal.includes('planner') || tabVal.includes('plan')) {
-        setActiveTab('planner');
-      } else if (tabVal.includes('whiteboard') || tabVal.includes('canvas')) {
-        setActiveTab('whiteboard');
-      } else if (tabVal.includes('material')) {
-        setActiveTab('materials');
-      } else {
-        setActiveTab('dashboard');
-      }
-    } else if (actionTriggered === 'clear_whiteboard' && clearWhiteboard) {
-      clearWhiteboard();
-    } else if (actionTriggered === 'save_whiteboard' && saveWhiteboard) {
-      saveWhiteboard();
-    } else if (actionTriggered === 'search_materials' && aiVerdict.targetValue) {
-      setActiveTab('materials');
-      if (setSearchMaterialsQuery) setSearchMaterialsQuery(aiVerdict.targetValue);
-    } else if (actionTriggered === 'show_student_report') {
-      setActiveJarvisSection('reports');
-      if (aiVerdict.targetValue) {
-        const matched = reports.find(r => r.name.toLowerCase().includes(aiVerdict.targetValue!.toLowerCase()));
-        if (matched) setSelectedStudent(matched);
-      }
-    } else if (actionTriggered === 'show_house_rankings') {
-      setActiveJarvisSection('houses');
-    } else if (actionTriggered === 'show_section_rankings') {
-      setActiveJarvisSection('sections');
-    } else if (actionTriggered === 'generate_quiz') {
-      setActiveTab('quiz');
-      if (setTriggerQuickQuiz) setTriggerQuickQuiz(true);
-    } else if (actionTriggered === 'explain_concept') {
-      setActiveTab('ai_teacher');
-    } else if ((actionTriggered === 'write_on_whiteboard' || actionTriggered === 'draw_on_whiteboard') && aiVerdict.targetValue) {
-      setActiveTab('whiteboard');
-      if (drawShapeOnWhiteboard) {
-        if (actionTriggered === 'write_on_whiteboard') {
-          drawShapeOnWhiteboard('text', aiVerdict.targetValue);
-        } else {
-          drawShapeOnWhiteboard(aiVerdict.targetValue.toLowerCase());
-        }
-      }
-    } else if (actionTriggered === 'search_internet') {
-      handleRunInternetSearch(aiVerdict.targetValue || textToParse);
-    } else if (actionTriggered === 'discover_resources') {
-      handleRunResourceDiscovery(aiVerdict.targetValue || textToParse);
-    } else if (actionTriggered === 'generate_lesson_plan') {
-      setActiveTab('planner');
-      handleGenerateLessonPlan(aiVerdict.targetValue || textToParse);
-    } else if (actionTriggered === 'generate_notes') {
-      setActiveTab('notes');
-      handleGenerateNotes(aiVerdict.targetValue || textToParse);
-    } else if (actionTriggered === 'slide_new') {
-      setActiveTab('whiteboard');
-      if (typeof (window as any).whiteboardCreateSlide === 'function') (window as any).whiteboardCreateSlide();
-    } else if (actionTriggered === 'slide_next') {
-      setActiveTab('whiteboard');
-      if (typeof (window as any).whiteboardNextSlide === 'function') (window as any).whiteboardNextSlide();
-    } else if (actionTriggered === 'slide_prev') {
-      setActiveTab('whiteboard');
-      if (typeof (window as any).whiteboardPrevSlide === 'function') (window as any).whiteboardPrevSlide();
-    } else if (actionTriggered === 'close_orion') {
-      // Handles closing if custom prop is set or logs it
-      showNotification('SYSTEM: Dismissing Orion voice overlay.');
-    }
+  // === AUTOMATIC TAVILY WEB RESULTS (New) ===
+  const researchTriggers = ['search', 'find', 'what is', 'explain', 'latest', 'resources', 'article', 'video', 'study', 'research'];
+  const shouldSearchWeb = actionTriggered === 'search_internet' || 
+                          researchTriggers.some(kw => textLow.includes(kw));
 
-    setJarvisFeedback(resolvedFeedback);
-    speakFeedback(resolvedFeedback);
-
-    // Save history to Supabase & local state
-    const newAuditItem: TeacherCommand = {
-      id: `audit-${Date.now()}`,
-      commandText: textToParse,
-      recognizedAt: new Date().toISOString(),
-      parsedAction: actionTriggered,
-      status: (actionTriggered !== 'unknown' && actionTriggered !== 'general_chat') ? 'success' : 'unknown'
-    };
-
-    setCommandAudit(prev => {
-      const updated = [newAuditItem, ...prev].slice(0, 20);
-      if (currentUser?.uid) {
-        localStorage.setItem(`s_os_orion_audit_${currentUser.uid}`, JSON.stringify(updated));
-      }
-      return updated;
-    });
-
+  if (shouldSearchWeb) {
     try {
-      if (currentUser?.uid) {
-        const histId = `jarvis-${Date.now()}`;
-        await supabase.from('orion_chats').insert([{
-          id: histId,
-          user_id: currentUser.uid,
-          user_email: currentUser.email,
-          role: currentUser.role,
-          prompt: textToParse,
-          response: resolvedFeedback,
-          created_at: new Date().toISOString(),
-          action_executed: actionTriggered
-        }]);
-
-        const auditId = `audit-${Date.now()}`;
-        await supabase.from('teacher_commands').insert([{
-          id: auditId,
-          user_id: currentUser.uid,
-          command_text: textToParse,
-          recognized_at: new Date().toISOString(),
-          parsed_action: actionTriggered,
-          status: (actionTriggered !== 'unknown' && actionTriggered !== 'general_chat') ? 'success' : 'unknown'
-        }]);
+      await handleRunInternetSearch(aiVerdict.targetValue || textToParse);
+      
+      if (searchSources && searchSources.length > 0) {
+        const sourcesList = searchSources
+          .map((src: any, i: number) => `\( {i + 1}. [ \){src.title}](${src.uri})`)
+          .join('\n');
+        
+        resolvedFeedback += `\n\n**🔗 Real-time Web Sources (via Tavily):**\n${sourcesList}`;
+      }
+      
+      if (searchResults) {
+        resolvedFeedback += `\n\n**Web Summary:** ${searchResults.substring(0, 450)}...`;
       }
     } catch (e) {
-      console.error('Failed to log Jarvis event audit:', e);
+      console.warn('Automatic Tavily web search failed:', e);
     }
+  }
 
-    setIsProcessing(false);
+  // Handle all actions (navigation, whiteboard, etc.)
+  const allowedTabs = ['materials', 'whiteboard', 'ai_teacher', 'quiz', 'planner', 'feedback', 'homework', 'chats', 'assignments', 'timetable_viewer', 'worksheet_viewer', 'notice_viewer', 'attendance_manager', 'dashboard'];
 
-    // Close panel seamlessly on UI navigation triggers so the users immediately see the new screen
-    const navActions = ['navigate_tab', 'search_materials', 'explain_concept', 'generate_quiz', 'close_orion'];
-    if (navActions.includes(actionTriggered) && onClose) {
-      setTimeout(() => {
-        onClose();
-      }, 1500); // 1.5s delay allows reading/speech initiation before transitioning nicely 
+  if (actionTriggered === 'navigate_tab' && aiVerdict.targetValue) {
+    const tabVal = aiVerdict.targetValue.toLowerCase();
+    if (allowedTabs.includes(tabVal)) {
+      setActiveTab(tabVal as any);
+    } else if (tabVal.includes('assignment')) {
+      setActiveTab('assignments');
+    } else if (tabVal.includes('attendance')) {
+      setActiveTab('attendance_manager');
+    } else if (tabVal.includes('timetable') || tabVal.includes('schedule')) {
+      setActiveTab('timetable_viewer');
+    } else if (tabVal.includes('worksheet')) {
+      setActiveTab('worksheet_viewer');
+    } else if (tabVal.includes('notice') || tabVal.includes('announcement')) {
+      setActiveTab('notice_viewer');
+    } else if (tabVal.includes('quiz')) {
+      setActiveTab('quiz');
+    } else if (tabVal.includes('note')) {
+      setActiveTab('notes');
+    } else if (tabVal.includes('planner') || tabVal.includes('plan')) {
+      setActiveTab('planner');
+    } else if (tabVal.includes('whiteboard') || tabVal.includes('canvas')) {
+      setActiveTab('whiteboard');
+    } else if (tabVal.includes('material')) {
+      setActiveTab('materials');
+    } else {
+      setActiveTab('dashboard');
     }
-  };
+  } 
+  else if (actionTriggered === 'clear_whiteboard' && clearWhiteboard) {
+    clearWhiteboard();
+  } 
+  else if (actionTriggered === 'save_whiteboard' && saveWhiteboard) {
+    saveWhiteboard();
+  } 
+  else if (actionTriggered === 'search_materials' && aiVerdict.targetValue) {
+    setActiveTab('materials');
+    if (setSearchMaterialsQuery) setSearchMaterialsQuery(aiVerdict.targetValue);
+  } 
+  else if (actionTriggered === 'show_student_report') {
+    setActiveJarvisSection('reports');
+    if (aiVerdict.targetValue) {
+      const matched = reports.find(r => r.name.toLowerCase().includes(aiVerdict.targetValue!.toLowerCase()));
+      if (matched) setSelectedStudent(matched);
+    }
+  } 
+  else if (actionTriggered === 'show_house_rankings') {
+    setActiveJarvisSection('houses');
+  } 
+  else if (actionTriggered === 'show_section_rankings') {
+    setActiveJarvisSection('sections');
+  } 
+  else if (actionTriggered === 'generate_quiz') {
+    setActiveTab('quiz');
+    if (setTriggerQuickQuiz) setTriggerQuickQuiz(true);
+  } 
+  else if (actionTriggered === 'explain_concept') {
+    setActiveTab('ai_teacher');
+  } 
+  else if ((actionTriggered === 'write_on_whiteboard' || actionTriggered === 'draw_on_whiteboard') && aiVerdict.targetValue) {
+    setActiveTab('whiteboard');
+    if (drawShapeOnWhiteboard) {
+      if (actionTriggered === 'write_on_whiteboard') {
+        drawShapeOnWhiteboard('text', aiVerdict.targetValue);
+      } else {
+        drawShapeOnWhiteboard(aiVerdict.targetValue.toLowerCase());
+      }
+    }
+  } 
+  else if (actionTriggered === 'search_internet') {
+    handleRunInternetSearch(aiVerdict.targetValue || textToParse);
+  } 
+  else if (actionTriggered === 'discover_resources') {
+    handleRunResourceDiscovery(aiVerdict.targetValue || textToParse);
+  } 
+  else if (actionTriggered === 'generate_lesson_plan') {
+    setActiveTab('planner');
+    handleGenerateLessonPlan(aiVerdict.targetValue || textToParse);
+  } 
+  else if (actionTriggered === 'generate_notes') {
+    setActiveTab('notes');
+    handleGenerateNotes(aiVerdict.targetValue || textToParse);
+  } 
+  else if (actionTriggered === 'slide_new') {
+    setActiveTab('whiteboard');
+    if (typeof (window as any).whiteboardCreateSlide === 'function') (window as any).whiteboardCreateSlide();
+  } 
+  else if (actionTriggered === 'slide_next') {
+    setActiveTab('whiteboard');
+    if (typeof (window as any).whiteboardNextSlide === 'function') (window as any).whiteboardNextSlide();
+  } 
+  else if (actionTriggered === 'slide_prev') {
+    setActiveTab('whiteboard');
+    if (typeof (window as any).whiteboardPrevSlide === 'function') (window as any).whiteboardPrevSlide();
+  } 
+  else if (actionTriggered === 'close_orion') {
+    showNotification('SYSTEM: Dismissing Orion voice overlay.');
+  }
+
+  setJarvisFeedback(resolvedFeedback);
+  speakFeedback(resolvedFeedback);
+
+  // Save history to Supabase
+  try {
+    if (currentUser?.uid) {
+      const histId = `jarvis-${Date.now()}`;
+      await supabase.from('orion_chats').insert([{
+        id: histId,
+        user_id: currentUser.uid,
+        user_email: currentUser.email,
+        role: currentUser.role,
+        prompt: textToParse,
+        response: resolvedFeedback,
+        created_at: new Date().toISOString(),
+        action_executed: actionTriggered
+      }]);
+
+      const auditId = `audit-${Date.now()}`;
+      await supabase.from('teacher_commands').insert([{
+        id: auditId,
+        user_id: currentUser.uid,
+        command_text: textToParse,
+        recognized_at: new Date().toISOString(),
+        parsed_action: actionTriggered,
+        status: actionTriggered !== 'unknown' ? 'success' : 'error'
+      }]);
+    }
+  } catch (e) {
+    console.error('Failed to log Jarvis event audit:', e);
+  }
+
+  setIsProcessing(false);
+
+  // Close panel on navigation actions
+  const navActions = ['navigate_tab', 'search_materials', 'explain_concept', 'generate_quiz', 'close_orion'];
+  if (navActions.includes(actionTriggered) && onClose) {
+    setTimeout(() => {
+      onClose();
+    }, 1500);
+  }
+};
 
   const handleTextSubmit = (e: React.FormEvent) => {
     e.preventDefault();
