@@ -417,7 +417,6 @@ app.post('/api/ai/search', async (req, res) => {
   }
 
   throw new Error('No AI Provider available. Please configure OPENROUTER_API_KEY or GEMINI_API_KEY inside the Secrets panel.');
-}
 
 
 // API Routes
