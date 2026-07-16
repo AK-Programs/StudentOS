@@ -324,103 +324,59 @@ Return ONLY raw JSON array. Do not include markdown json wrappers.
   }
 });
 
+// ==================== TAVILY SEARCH (Clean Version) ====================
 app.post('/api/ai/search', async (req, res) => {
   const { query } = req.body;
+
   if (!query) {
     return res.status(400).json({ error: 'Query is required' });
   }
 
-  const tavilyKey = process.env.TAVILY_API_KEY || '';
-  
-  // 1. LOG: Tavily key detected
+  const tavilyKey = process.env.TAVILY_API_KEY || process.env.VITE_TAVILY_API_KEY || '';
+
   console.log(`[AI Server] Tavily key detected: ${tavilyKey ? 'YES' : 'NO'}`);
 
   if (!tavilyKey) {
-    console.error('[AI Server] Search error: Tavily API Key is not configured on the server.');
-    return res.status(400).json({ error: 'Tavily API Key is not configured on the server. Unable to process real-time web search.' });
+    return res.status(400).json({ 
+      error: 'Tavily API Key is not configured on the server.' 
+    });
   }
 
-  let searchResultsList: { title: string; description: string; uri: string; published_source?: string }[] = [];
-  let summaryText = '';
-
   try {
-    let rawResults: any[] = [];
-
-    // 2. LOG: Tavily request sent
-    console.log(`[AI Server] Tavily request sent for query: "${query}"`);
-    
     const response = await fetch('https://api.tavily.com/search', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         api_key: tavilyKey,
         query: query,
-        search_depth: "basic",
+        search_depth: 'basic',
         max_results: 5
       })
     });
 
-    // 3. LOG: Tavily response received
-    console.log(`[AI Server] Tavily response received with status: ${response.status}`);
-
-    if (response.ok) {
-      const responseData = await response.json();
-      rawResults = responseData.results || [];
-    } else {
+    if (!response.ok) {
       const errText = await response.text();
-      console.error(`[AI Server] Search error: Tavily API request failed with status ${response.status}: ${errText}`);
-      return res.status(response.status).json({ error: `Tavily API failed: ${errText}` });
+      console.error('[AI Server] Tavily error:', errText);
+      return res.status(response.status).json({ error: `Tavily failed: ${errText}` });
     }
 
-    if (rawResults.length > 0) {
-      searchResultsList = rawResults.map((item) => {
-        const title = item.title || 'Educational Resource';
-        const uri = item.url || '';
-        const description = item.content || item.snippet || 'Real-time learning material and online documentation.';
-        let published_source = '';
-        if (uri) {
-          try {
-            published_source = new URL(uri).hostname.replace('www.', '');
-          } catch (_) {}
-        }
-        if (!published_source) published_source = 'Verified Source';
+    const data = await response.json();
+    const results = (data.results || []).map((item: any) => ({
+      title: item.title || 'Educational Resource',
+      description: item.content || item.snippet || '',
+      uri: item.url || ''
+    }));
 
-        return { title, description, uri, published_source };
-      });
-      
-      // 4. LOG: Search results rendered
-      console.log(`[AI Server] Search results rendered for query: "${query}". Found ${searchResultsList.length} references.`);
-    } else {
-      console.warn(`[AI Server] Search error: Tavily returned empty results for query "${query}".`);
-      return res.status(404).json({ error: 'No search results found on Tavily.' });
-    }
-
-    // Synthesis academic summary strictly from findings
-    const summaryContext = searchResultsList.map((s, i) => `[Source ${i+1}]: ${s.title} (${s.uri}) - ${s.description}`).join('\n');
-    const summarizerAi = getGoogleGenAI();
-    if (summarizerAi) {
-      summaryText = await generateAICompletion(
-        "You are Orion Search summarizer. Synthesize a 3-4 sentence comprehensive, factual academic summary. Refer only to facts from the provided sources. Do not make up any facts.",
-        `Based strictly on the following live web search findings, write a beautifully structured educational summary for the query "${query}":\n\n${summaryContext}`
-      );
-    } else {
-      summaryText = `Academic synthesis of "${query}": Live search returned matching reference channels. We have compiled a curriculum list below covering theoretical methodologies, formula frameworks, and verified practice exercises.`;
-    }
+    return res.json({
+      summary: `Real-time results for "${query}"`,
+      results: results
+    });
 
   } catch (err: any) {
-    // 5. LOG: Search errors logged
-    console.error('[AI Server] Search error: Execution failure:', err);
-    return res.status(500).json({ error: `Search execution failure: ${err.message}` });
+    console.error('[AI Server] Search execution error:', err);
+    return res.status(500).json({ error: err.message });
   }
-
-  return res.json({
-    summary: summaryText,
-    results: searchResultsList
-  });
 });
-
 app.post('/api/ai/notes', async (req, res) => {
   const { content, action, instruction } = req.body;
 
