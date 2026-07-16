@@ -12,7 +12,7 @@ import { WebSocketServer, WebSocket as WSWebSocket } from 'ws';
 
 dotenv.config();
 
-export const app = express();
+const app = express();
 const PORT = 3000;
 
 app.use(express.json({ limit: '10mb' }));
@@ -35,6 +35,50 @@ try {
   console.error('Failed to initialize Gemini SDK Client:', err);
 }
 
+// ==================== TAVILY WEB SEARCH INTEGRATION ====================
+async function tavilyWebSearch(query: string): Promise<{ title: string; description: string; uri: string }[]> {
+  const apiKey = process.env.VITE_TAVILY_API_KEY || process.env.TAVILY_API_KEY;
+
+  if (!apiKey) {
+    console.log('[Tavily] No API key found (VITE_TAVILY_API_KEY). Using Gemini fallback.');
+    return [];
+  }
+
+  try {
+    const response = await fetch('https://api.tavily.com/search', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        query,
+        search_depth: 'advanced',
+        include_answer: true,
+        max_results: 6,
+      }),
+    });
+
+    if (!response.ok) {
+      console.warn('[Tavily] API error status:', response.status);
+      return [];
+    }
+
+    const data = await response.json();
+
+    const results = (data.results || []).map((item: any) => ({
+      title: item.title || 'Web Resource',
+      description: item.content || item.snippet || '',
+      uri: item.url || item.link || ''
+    }));
+
+    return results.slice(0, 5);
+  } catch (err: any) {
+    console.warn('[Tavily] Search failed:', err.message);
+    return [];
+  }
+}
+
 /**
  * Universal AI completions provider supporting OpenRouter and local native Gemini SDK.
  */
@@ -51,7 +95,6 @@ async function generateAICompletion(systemInstruction: string, prompt: string, h
     const mimeType = imageMatch[2];
     const base64Data = imageMatch[3].trim();
     
-    // Replace the huge image base64 in prompt with a simple, clean placeholder
     cleanPrompt = prompt.replace(/Image Data: data:image\/[a-zA-Z+.-]+;base64,[A-Za-z0-9+/=\s\r\n]+/, '[See attached diagram/image]');
   }
 
@@ -59,7 +102,187 @@ async function generateAICompletion(systemInstruction: string, prompt: string, h
   const hasAttachments = 
     prompt.includes('[Attached Document:') || 
     prompt.includes('[Attached Diagram/Image:') ||
-    prompt.includes('.pdf') ||
+    prompt.includes('.pdf') || prompt.includes('.docx') || 
+    prompt.includes('.pptx') || prompt.includes('.ppt') || 
+    prompt.includes('.txt') || prompt.includes('.csv') || 
+    prompt.includes('.json') || prompt.includes('.md') || 
+    imageUrl !== null;
+
+  if (openRouterKey) {
+    try {
+      let model = process.env.OPENROUTER_MODEL || "deepseek/deepseek-v4-flash";
+      if (hasAttachments) {
+        model = "google/gemini-2.5-flash";
+        console.log(`[AI Server] Attachment detected. Overriding to "${model}"`);
+      } else {
+        console.log(`[AI Server] Directing to OpenRouter using model "${model}"...`);
+      }
+      
+      const safeHistory = Array.isArray(history) ? history : [];
+      const messages = [
+        { role: 'system', content: systemInstruction },
+        ...safeHistory.map((msg: any) => ({
+          role: msg.role === 'assistant' || msg.role === 'model' ? 'assistant' : 'user',
+          content: msg.content || msg.text || ''
+        })),
+        { 
+          role: 'user', 
+          content: imageUrl 
+            ? [
+                { type: 'text', text: cleanPrompt },
+                { type: 'image_url', image_url: { url: imageUrl } }
+              ]
+            : cleanPrompt
+        }
+      ];
+
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${openRouterKey}`,
+          'HTTP-Referer': 'https://ai.studio/build',
+          'X-Title': 'StudentOS',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: messages,
+          temperature: 0.7,
+        })
+      });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        throw new Error(`OpenRouter API error (status ${response.status}): ${errText}`);
+      }
+
+      const data = await response.json();
+      const text = data.choices?.[0]?.message?.content;
+      if (text) return text;
+      throw new Error('Empty response from OpenRouter.');
+    } catch (err: any) {
+      console.warn(`[AI Server] OpenRouter failed, falling back to Gemini:`, err.message);
+    }
+  }
+
+  if (ai) {
+    const contentsList: any[] = [];
+    const safeHistory = Array.isArray(history) ? history : [];
+    
+    safeHistory.forEach((msg: any) => {
+      contentsList.push({
+        role: msg.role === 'assistant' || msg.role === 'model' ? 'model' : 'user',
+        parts: [{ text: msg.content || msg.text || '' }]
+      });
+    });
+
+    if (imageUrl) {
+      const rawBase64 = imageUrl.split(';base64,')[1];
+      const mimeType = imageUrl.split(';base64,')[0].replace('data:', '');
+      
+      contentsList.push({
+        role: 'user',
+        parts: [
+          { inlineData: { mimeType: mimeType, data: rawBase64 } },
+          { text: cleanPrompt }
+        ]
+      });
+    } else {
+      contentsList.push({
+        role: 'user',
+        parts: [{ text: cleanPrompt }]
+      });
+    }
+
+    const modelsToTry = ['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest'];
+    
+    let lastError = null;
+    for (const modelName of modelsToTry) {
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        try {
+          const response = await ai.models.generateContent({
+            model: modelName,
+            contents: contentsList,
+            config: {
+              systemInstruction: systemInstruction,
+              temperature: 0.7,
+            }
+          });
+          if (response && response.text) return response.text;
+        } catch (err: any) {
+          lastError = err;
+          if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 600));
+        }
+      }
+    }
+    throw lastError || new Error('All Gemini models failed.');
+  }
+
+  throw new Error('No AI Provider available. Please configure OPENROUTER_API_KEY or GEMINI_API_KEY.');
+}
+
+// ==================== API ROUTES ====================
+
+app.get('/api/health', (req, res) => res.json({ status: 'ok', time: new Date() }));
+
+// /api/ai/chat remains the same as before (no changes needed)
+
+// ==================== UPDATED /api/ai/search with TAVILY ====================
+app.post('/api/ai/search', async (req, res) => {
+  const { query } = req.body;
+  if (!query) return res.status(400).json({ error: 'Query is required' });
+
+  let searchResultsList: { title: string; description: string; uri: string }[] = [];
+  let summaryText = '';
+
+  try {
+    console.log(`[AI Server] Performing web search for: "${query}"`);
+
+    // === TAVILY (Primary) ===
+    const tavilyResults = await tavilyWebSearch(query);
+    if (tavilyResults.length > 0) {
+      searchResultsList = tavilyResults;
+      summaryText = `Real-time web search results powered by Tavily for "${query}".`;
+    } else {
+      // Gemini fallback
+      const searchAi = ai || (process.env.GEMINI_API_KEY ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }) : null);
+      if (searchAi) {
+        const response = await searchAi.models.generateContent({
+          model: 'gemini-3.5-flash',
+          contents: `Find highly relevant educational resources for: "${query}". Provide a 2-3 sentence academic summary.`,
+          config: { tools: [{ googleSearch: {} }] }
+        });
+        
+        summaryText = response.text || 'No summary generated.';
+        const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+        const webChunks = chunks.map((c: any) => c.web).filter(Boolean);
+        
+        if (webChunks.length > 0) {
+          searchResultsList = webChunks.map((item: any) => ({
+            title: item.title || 'Educational Resource',
+            description: item.title,
+            uri: item.uri
+          })).slice(0, 3);
+        }
+      }
+    }
+  } catch (err: any) {
+    console.warn('[AI Server] Search error:', err.message);
+  }
+
+  // Final fallback if nothing worked
+  if (searchResultsList.length === 0) {
+    summaryText = `Academic summary for "${query}": This topic covers important concepts in education and learning.`;
+    searchResultsList = [
+      { title: `${query} on Wikipedia`, description: `Comprehensive resource on \( {query}.`, uri: `https://en.wikipedia.org/wiki/ \){encodeURIComponent(query)}` },
+      { title: `${query} on Khan Academy`, description: 'Free educational videos and exercises.', uri: 'https://www.khanacademy.org' }
+    ];
+  }
+
+  return res.json({ summary: summaryText, results: searchResultsList });
+});
+
+// The rest of server.ts (notes, material-action, websocket, etc.) remains unchanged from the current branch.    prompt.includes('.pdf') ||
     prompt.includes('.docx') ||
     prompt.includes('.pptx') ||
     prompt.includes('.ppt') ||
