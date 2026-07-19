@@ -1,9 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
 
-// The Supabase anon/public key is intentionally public — Supabase designed it to
-// be embedded in client-side code (it enforces Row Level Security, not secrecy).
-// These hardcoded values are the canonical defaults for this project; they are
-// overridden by VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY env vars when set.
 const DEFAULT_SUPABASE_URL = 'https://zwpoutanhsujezglbson.supabase.co';
 const DEFAULT_SUPABASE_ANON_KEY =
   'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9' +
@@ -11,7 +7,7 @@ const DEFAULT_SUPABASE_ANON_KEY =
   '.Y48u9duD3WohxzDD6czXevPaG1mFRFS0rdRuu4840pQ';
 
 const getEnvVar = (key: string, defaultValue: string): string => {
-  // Try static import first (for Vite build optimization)
+  // Key Injects 
   let val = '';
   if (key === 'VITE_SUPABASE_URL') {
     val = import.meta.env.VITE_SUPABASE_URL;
@@ -19,7 +15,7 @@ const getEnvVar = (key: string, defaultValue: string): string => {
     val = import.meta.env.VITE_SUPABASE_ANON_KEY;
   }
 
-  // Fallback to dynamic lookup safely without triggering ReferenceError on 'process'
+  // Fallback
   if (!val) {
     const metaEnv = (import.meta as any).env;
     const processEnv = typeof process !== 'undefined' ? (process as any).env : null;
@@ -28,14 +24,12 @@ const getEnvVar = (key: string, defaultValue: string): string => {
 
   if (!val) return defaultValue;
 
-  // Clean up any potential surrounding quotes (single/double) and whitespace/newlines
+  // Validation
   let clean = String(val).trim();
   if ((clean.startsWith('"') && clean.endsWith('"')) || (clean.startsWith("'") && clean.endsWith("'"))) {
     clean = clean.substring(1, clean.length - 1).trim();
   }
 
-  // Validate: a Supabase anon key is a 3-part JWT (header.payload.signature).
-  // If the value is truncated (missing signature), fall back to the built-in default.
   if (key === 'VITE_SUPABASE_ANON_KEY' && clean.split('.').length < 3) {
     console.warn('[SUPABASE] VITE_SUPABASE_ANON_KEY appears truncated (missing JWT signature) — using built-in default key.');
     return defaultValue;
