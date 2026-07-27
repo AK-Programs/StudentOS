@@ -115,121 +115,66 @@ export async function deleteAiBuddyChat(threadId: string, userId: string): Promi
 }
 
 /**
- * Robust helper to fetch Peer-to-Peer Messages from Supabase, falling back to localStorage
+ * Fetch peer/group messages — uses chat_messages table ONLY.
  */
 export async function getPeerMessages(): Promise<ChatMessage[]> {
-  console.log('[SUPABASE-CHAT] Fetching room/peer messages from Supabase...');
-  const msgMap = new Map<string, ChatMessage>();
-
-  // 1. Query 'messages' table
-  try {
-    const { data, error } = await supabase
-      .from('messages')
-      .select('*')
-      .order('created_at', { ascending: true });
-
-    if (!error && data) {
-      data.forEach(item => {
-        let parsedDate = new Date();
-        if (item.created_at) {
-          const numVal = Number(item.created_at);
-          if (!isNaN(numVal) && item.created_at.toString().length > 10) {
-            parsedDate = new Date(numVal);
-          } else {
-            parsedDate = new Date(item.created_at);
-          }
-        }
-        msgMap.set(item.id, {
-          id: item.id,
-          name: item.name,
-          role: item.role,
-          house: item.house,
-          message: item.message,
-          createdAt: parsedDate.toISOString(),
-          targetId: item.target_id || item.room_id || null,
-          sharedMaterialId: item.shared_material_id,
-          ownerUid: item.owner_uid
-        } as ChatMessage);
-      });
-    }
-  } catch (err) {
-    console.warn('[SUPABASE-CHAT] Notice querying messages table:', err);
-  }
-
-  // 2. Query 'chat_messages' table (if exists)
   try {
     const { data, error } = await supabase
       .from('chat_messages')
       .select('*')
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: true })
+      .limit(500);
 
-    if (!error && data) {
-      data.forEach(item => {
-        if (!msgMap.has(item.id)) {
-          let parsedDate = new Date();
-          if (item.created_at) {
-            parsedDate = new Date(item.created_at);
-          }
-          msgMap.set(item.id, {
-            id: item.id,
-            name: item.name || item.sender_name || 'Student',
-            role: item.role || 'student',
-            house: item.house,
-            message: item.message || item.content || '',
-            createdAt: parsedDate.toISOString(),
-            targetId: item.target_id || item.room_id || null,
-            sharedMaterialId: item.shared_material_id,
-            ownerUid: item.owner_uid || item.sender_id || ''
-          } as ChatMessage);
-        }
-      });
+    if (error) {
+      if (error.code === '42P01') {
+        console.warn('[SUPABASE-CHAT] chat_messages table not found — run Setup Database in Admin Center.');
+      } else {
+        console.warn('[SUPABASE-CHAT] Error fetching chat_messages:', error.message);
+      }
+      return [];
     }
-  } catch (err) {
-    console.warn('[SUPABASE-CHAT] Notice querying chat_messages table:', err);
-  }
 
-  return Array.from(msgMap.values()).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+    return (data || []).map(item => ({
+      id: item.id,
+      name: item.sender_name || item.name || 'Student',
+      role: item.role || 'student',
+      house: item.house || undefined,
+      message: item.content || item.message || '',
+      createdAt: item.created_at ? new Date(item.created_at).toISOString() : new Date().toISOString(),
+      targetId: item.room_id || item.target_id || null,
+      sharedMaterialId: item.shared_material_id || undefined,
+      ownerUid: item.sender_id || item.owner_uid || ''
+    } as ChatMessage));
+  } catch (err) {
+    console.warn('[SUPABASE-CHAT] Network error fetching chat_messages:', err);
+    return [];
+  }
 }
 
 /**
- * Robust helper to save Peer/Group Message to Supabase
+ * Save peer/group message to chat_messages table ONLY.
  */
 export async function savePeerMessage(message: ChatMessage): Promise<void> {
-  console.log('[SUPABASE-CHAT] Saving message to Supabase:', message.id);
+  const row = {
+    id: message.id,
+    room_id: message.targetId || null,
+    sender_id: message.ownerUid || 'anonymous',
+    sender_name: message.name,
+    role: message.role || 'student',
+    house: message.house || null,
+    content: message.message,
+    created_at: message.createdAt ? new Date(message.createdAt).toISOString() : new Date().toISOString(),
+    target_id: message.targetId || null,
+    shared_material_id: message.sharedMaterialId || null
+  };
 
-  // 1. Try saving to 'messages' table
   try {
-    const dbRow = {
-      id: message.id,
-      owner_uid: message.ownerUid || '',
-      name: message.name,
-      role: message.role,
-      house: message.house || null,
-      message: message.message,
-      created_at: message.createdAt ? new Date(message.createdAt).getTime() : Date.now(),
-      target_id: message.targetId || null,
-      shared_material_id: message.sharedMaterialId || null
-    };
-
-    await supabase.from('messages').upsert(dbRow);
+    const { error } = await supabase.from('chat_messages').upsert(row, { onConflict: 'id' });
+    if (error && error.code !== '42P01') {
+      console.warn('[SUPABASE-CHAT] Error saving to chat_messages:', error.message);
+    }
   } catch (err) {
-    console.warn('[SUPABASE-CHAT] Notice saving to messages table:', err);
-  }
-
-  // 2. Try saving to 'chat_messages' table
-  try {
-    const dbRowChat = {
-      id: message.id,
-      room_id: message.targetId || null,
-      sender_id: message.ownerUid || 'anonymous',
-      sender_name: message.name,
-      content: message.message,
-      message: message.message,
-      created_at: message.createdAt ? new Date(message.createdAt).toISOString() : new Date().toISOString()
-    };
-    await supabase.from('chat_messages').upsert(dbRowChat);
-  } catch (err) {
-    console.warn('[SUPABASE-CHAT] Notice saving to chat_messages table:', err);
+    console.warn('[SUPABASE-CHAT] Network error saving to chat_messages:', err);
   }
 }
 

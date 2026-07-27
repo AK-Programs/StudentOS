@@ -119,7 +119,35 @@ ALTER TABLE public.ai_buddy_chats ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "allow_all_ai_buddy_chats" ON public.ai_buddy_chats;
 CREATE POLICY "allow_all_ai_buddy_chats" ON public.ai_buddy_chats FOR ALL USING (true) WITH CHECK (true);
 
--- ==================== MESSAGES TABLE (Global Chat) ====================
+-- ==================== CHAT MESSAGES TABLE (Global Chat & Chat Rooms) ====================
+-- This is the single authoritative table for all peer/group messages.
+CREATE TABLE IF NOT EXISTS public.chat_messages (
+  id TEXT PRIMARY KEY,
+  room_id TEXT,
+  target_id TEXT,
+  sender_id TEXT DEFAULT 'anonymous',
+  sender_name TEXT DEFAULT '',
+  name TEXT DEFAULT '',
+  role TEXT DEFAULT 'student',
+  house TEXT,
+  content TEXT NOT NULL DEFAULT '',
+  message TEXT DEFAULT '',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  shared_material_id TEXT,
+  owner_uid TEXT DEFAULT '',
+  reply_to_id TEXT,
+  is_edited BOOLEAN DEFAULT FALSE,
+  is_deleted BOOLEAN DEFAULT FALSE,
+  attachments JSONB DEFAULT '[]',
+  read_by TEXT[] DEFAULT '{}',
+  delivered_to TEXT[] DEFAULT '{}'
+);
+
+ALTER TABLE public.chat_messages ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "allow_all_chat_messages" ON public.chat_messages;
+CREATE POLICY "allow_all_chat_messages" ON public.chat_messages FOR ALL USING (true) WITH CHECK (true);
+
+-- Legacy messages table (kept for backward compatibility, but not actively used)
 CREATE TABLE IF NOT EXISTS public.messages (
   id TEXT PRIMARY KEY,
   owner_uid TEXT DEFAULT '',

@@ -349,70 +349,151 @@ app.post('/api/ai/mermaid', async (req, res) => {
   const { query } = req.body || {};
   if (!query) return res.status(400).json({ success: false, error: 'Query is required' });
 
-  const qLower = String(query).toLowerCase();
+  const q = String(query);
+  const qL = q.toLowerCase();
 
-  // Rich educational Mermaid fallback presets for common subjects
-  let fallbackCode = `graph TD\n  Topic[${query}] --> Key1[Primary Mechanism]\n  Topic --> Key2[Core Observations]\n  Key1 --> Sub1[Practical Applications]\n  Key2 --> Sub2[Key Equations & Rules]`;
+  // ── Comprehensive subject-specific educational fallbacks ──────────────────
+  let fallbackCode = '';
 
-  if (qLower.includes("newton") || qLower.includes("motion") || qLower.includes("force")) {
-    fallbackCode = `graph TD\n  Laws[Newton's Laws of Motion] --> L1[1st Law: Inertia]\n  Laws --> L2[2nd Law: F = m * a]\n  Laws --> L3[3rd Law: Action & Reaction]\n  L1 --> L1Ex[Objects resist state changes]\n  L2 --> L2Ex[Force equals mass times acceleration]\n  L3 --> L3Ex[Equal & opposite forces]`;
-  } else if (qLower.includes("digest") || qLower.includes("stomach") || qLower.includes("gut")) {
-    fallbackCode = `graph TD\n  Mouth[1. Mouth & Salivary Enzymes] --> Esophagus[2. Esophagus Peristalsis]\n  Esophagus --> Stomach[3. Stomach Acid Breakdown]\n  Stomach --> SmallInt[4. Small Intestine Nutrient Absorption]\n  SmallInt --> LargeInt[5. Large Intestine Water Reabsorption]\n  LargeInt --> Excretion[6. Waste Elimination]`;
-  } else if (qLower.includes("circulat") || qLower.includes("heart") || qLower.includes("blood")) {
-    fallbackCode = `graph LR\n  VenaCava[Vena Cava] --> RightAtrium[Right Atrium]\n  RightAtrium --> RightVentricle[Right Ventricle]\n  RightVentricle -->|Pulmonary Artery| Lungs[Lungs - Oxygenation]\n  Lungs -->|Pulmonary Vein| LeftAtrium[Left Atrium]\n  LeftAtrium --> LeftVentricle[Left Ventricle]\n  LeftVentricle -->|Aorta| Body[Body Tissues]`;
-  } else if (qLower.includes("photosynthes") || qLower.includes("plant energy")) {
-    fallbackCode = `mindmap\n  root((Photosynthesis Process))\n    Light Reactions\n      Sunlight Absorption\n      H2O Splitting\n      O2 Release\n    Calvin Cycle\n      CO2 Fixation\n      Glucose Synthesis`;
-  } else if (qLower.includes("water") && qLower.includes("cycle")) {
-    fallbackCode = `graph TD\n  Ocean[Oceans & Lakes] -->|Evaporation| Vapor[Water Vapor]\n  Trees[Vegetation] -->|Transpiration| Vapor\n  Vapor -->|Condensation| Clouds[Cloud Formation]\n  Clouds -->|Precipitation| Rain[Rain & Snow]\n  Rain -->|Surface Runoff| Ocean`;
-  } else if (qLower.includes("algorithm") || qLower.includes("flow") || qLower.includes("code")) {
-    fallbackCode = `graph TD\n  Start([Start]) --> Input[/Read Input Data/]\n  Input --> Check{Is Condition Valid?}\n  Check -->|Yes| Exec[Execute Calculation]\n  Check -->|No| HandleErr[Trigger Error Handler]\n  Exec --> Output[/Return Result/]\n  Output --> End([End])`;
-  } else if (qLower.includes("timeline") || qLower.includes("history")) {
-    fallbackCode = `timeline\n  title Academic Timeline: ${query}\n  Phase 1 : Discovery & Formulation\n  Phase 2 : Peer Verification & Testing\n  Phase 3 : Real-World Application`;
+  // Physics
+  if (/newton|laws of motion|inertia|f\s*=\s*ma/.test(qL)) {
+    fallbackCode = `graph TD\n  NLM["Newton's Laws of Motion"] --> L1["1st Law — Inertia\\nAn object at rest stays at rest\\nunless acted on by a net force"]\n  NLM --> L2["2nd Law — F = ma\\nNet force = mass × acceleration"]\n  NLM --> L3["3rd Law — Action–Reaction\\nFor every action there is an equal\\nand opposite reaction"]\n  L1 --> App1["Seatbelts in vehicles\\nPuck sliding on ice"]\n  L2 --> App2["Calculating rocket thrust\\nPushing a trolley"]\n  L3 --> App3["Jet propulsion\\nWalking forward on ground"]`;
+  } else if (/ohm|resist|volt|current|circuit/.test(qL)) {
+    fallbackCode = `graph LR\n  Battery["Battery (EMF = V)"] -->|"Current I"| Resistor["Resistor R"]\n  Resistor -->|"Ohm: V = IR"| Ground["Ground Return"]\n  Ground --> Battery\n  Battery -->|"Power P = IV"| Power["Power Dissipation"]\n  subgraph Series["Series Circuit"]\n    R1["R₁"] --> R2["R₂"] --> R3["R₃"]\n  end\n  subgraph Parallel["Parallel Circuit"]\n    P1["R₁"] & P2["R₂"] & P3["R₃"]\n  end`;
+  } else if (/gravit|free fall|projectile/.test(qL)) {
+    fallbackCode = `graph TD\n  Gravity["Gravitational Force (F = mg)"] --> FreeFall["Free Fall\\ng = 9.8 m/s²"]\n  Gravity --> Projectile["Projectile Motion"]\n  Projectile --> Horizontal["Horizontal: x = v₀t (constant)"]\n  Projectile --> Vertical["Vertical: y = v₀t − ½gt² (accelerating)"]\n  FreeFall --> TimeFormula["Time to fall: t = √(2h/g)"]\n  Horizontal & Vertical --> Combined["Parabolic Trajectory"]`;
+  } else if (/wave|sound|frequency|amplitude|doppler/.test(qL)) {
+    fallbackCode = `graph TD\n  Wave["Wave Properties"] --> Trans["Transverse Waves\\n(light, water)"] & Long["Longitudinal Waves\\n(sound, seismic)"]\n  Wave --> Freq["Frequency f (Hz)"] & Amp["Amplitude A"] & Wl["Wavelength λ"]\n  Freq --> Speed["Speed v = fλ"]\n  Sound --> Doppler["Doppler Effect\\nApproaching: higher pitch\\nReceding: lower pitch"]`;
+  // Biology
+  } else if (/photosynthes/.test(qL)) {
+    fallbackCode = `graph TD\n  Inputs["Inputs: CO₂ + H₂O + Sunlight"] --> LR["Light-Dependent Reactions\\n(Thylakoid membrane)"]\n  LR --> ATP["ATP + NADPH produced"]\n  LR --> O2["O₂ released as byproduct"]\n  ATP --> CC["Calvin Cycle\\n(Stroma)"]\n  CC --> G3P["G3P (Glyceraldehyde-3-phosphate)"]\n  G3P --> Glucose["Glucose C₆H₁₂O₆\\n(stored energy)"]`;
+  } else if (/mitosis|cell div/.test(qL)) {
+    fallbackCode = `graph LR\n  I["Interphase\\nDNA replication (S phase)"] --> P["Prophase\\nChromosomes condense\\nSpindle forms"]\n  P --> M["Metaphase\\nChromosomes align at\\nmetaphase plate"]\n  M --> A["Anaphase\\nChromatids pulled to\\nopposite poles"]\n  A --> T["Telophase\\nNuclear envelope reforms\\nChromosomes decondense"]\n  T --> C["Cytokinesis\\nCytoplasm divides → 2 identical\\ndiploid daughter cells"]`;
+  } else if (/meiosis/.test(qL)) {
+    fallbackCode = `graph TD\n  Meiosis --> M1["Meiosis I (Reduction Division)"]\n  M1 --> P1["Prophase I — Crossing over"] --> Meta1["Metaphase I"] --> Ana1["Anaphase I"] --> Telo1["Telophase I — 2 haploid cells"]\n  Meiosis --> M2["Meiosis II (Similar to Mitosis)"]\n  M2 --> Meta2["Metaphase II"] --> Ana2["Anaphase II"] --> Result["4 haploid gametes"]`;
+  } else if (/digest|alimentary|gut|stomach/.test(qL)) {
+    fallbackCode = `graph TD\n  Mouth["Mouth\\nMechanical + chemical digestion\\n(salivary amylase)"] --> Esoph["Oesophagus\\nPeristalsis moves bolus"]\n  Esoph --> Stomach["Stomach\\nHCl + pepsin\\nprotein digestion"]\n  Stomach --> SI["Small Intestine\\nDuodenum → Jejunum → Ileum\\nNutrient absorption (villi)"]\n  SI --> LI["Large Intestine\\nWater reabsorption\\nFormation of faeces"]\n  LI --> Rectum["Rectum + Anus\\nEgestion"]`;
+  } else if (/circulat|blood|heart|cardiac/.test(qL)) {
+    fallbackCode = `graph LR\n  Body["Body Tissues\\n(deoxygenated blood)"] -->|"Vena Cava"| RA["Right Atrium"]\n  RA -->|"Tricuspid valve"| RV["Right Ventricle"]\n  RV -->|"Pulmonary artery"| Lungs["Lungs\\nOxygenation (CO₂ → O₂)"]\n  Lungs -->|"Pulmonary vein"| LA["Left Atrium"]\n  LA -->|"Bicuspid / Mitral valve"| LV["Left Ventricle"]\n  LV -->|"Aorta"| Body`;
+  } else if (/respir|breath|lung|oxygen/.test(qL)) {
+    fallbackCode = `graph TD\n  Inhale["Inhalation\\nDiaphragm contracts\\nRibs rise → lung volume ↑\\nPressure ↓ → air flows in"] --> Gas["Gas Exchange (Alveoli)\\nO₂ diffuses into blood\\nCO₂ diffuses out"]\n  Gas --> Exhale["Exhalation\\nDiaphragm relaxes\\nRibs fall → lung volume ↓\\nPressure ↑ → air flows out"]\n  Gas --> Blood["O₂ binds haemoglobin → Oxyhaemoglobin\\nDelivered to respiring cells"]`;
+  } else if (/nervous|neuron|brain|synapse/.test(qL)) {
+    fallbackCode = `graph TD\n  CNS["Central Nervous System"] --> Brain["Brain\\nCerebrum / Cerebellum / Medulla"]\n  CNS --> SC["Spinal Cord\\nReflex arc pathway"]\n  PNS["Peripheral Nervous System"] --> Sensor["Sensory Neurons\\n(receptor → CNS)"]\n  PNS --> Motor["Motor Neurons\\n(CNS → effector)"]\n  Sensor --> Synapse["Synapse\\nNeurotransmitters cross cleft"]\n  Synapse --> Motor`;
+  // Chemistry
+  } else if (/periodic|element|atom|electron|proton/.test(qL)) {
+    fallbackCode = `graph TD\n  Atom["Atom Structure"] --> Nucleus["Nucleus\\nProtons (+charge)\\nNeutrons (no charge)"]\n  Atom --> Shells["Electron Shells\\n1st shell: max 2e\\n2nd shell: max 8e\\n3rd shell: max 18e"]\n  Nucleus --> Mass["Mass Number = Protons + Neutrons"]\n  Shells --> Valence["Valence Electrons\\n(outermost shell)\\ndetermine reactivity"]\n  Valence --> Bond["Chemical Bonding\\nIonic / Covalent / Metallic"]`;
+  } else if (/acid|base|ph|neutral|titrat/.test(qL)) {
+    fallbackCode = `graph LR\n  pH["pH Scale 0–14"] --> Acid["Acids (pH < 7)\\nH⁺ donors\\nExamples: HCl, H₂SO₄"]\n  pH --> Neutral["Neutral (pH = 7)\\nPure water H₂O"]\n  pH --> Base["Bases/Alkalis (pH > 7)\\nOH⁻ donors\\nExamples: NaOH, NH₃"]\n  Acid & Base --> Neutralisation["Neutralisation\\nAcid + Base → Salt + Water"]\n  Neutralisation --> Titration["Titration\\nFinding exact concentration\\nusing indicator"]`;
+  } else if (/react|chemical equation|product|reactant/.test(qL)) {
+    fallbackCode = `graph TD\n  React["Chemical Reaction"] --> Types["Types of Reactions"]\n  Types --> Combust["Combustion\\nFuel + O₂ → CO₂ + H₂O"]\n  Types --> Decomp["Decomposition\\nAB → A + B"]\n  Types --> Redox["Redox\\nOxidation: loses e⁻\\nReduction: gains e⁻ (OIL RIG)"]\n  Types --> Precip["Precipitation\\nTwo solutions → insoluble solid"]\n  React --> Rate["Rate of Reaction\\nTemperature, Concentration\\nSurface Area, Catalyst"]`;
+  // Computer Science
+  } else if (/oop|object.oriented|class|inherit|polymorphi|encapsul/.test(qL)) {
+    fallbackCode = `graph TD\n  OOP["Object-Oriented Programming"] --> Pillars["4 Pillars"]\n  Pillars --> Encap["Encapsulation\\nBundle data + methods\\ninto a class. Hide internals."]\n  Pillars --> Inherit["Inheritance\\nChild class extends\\nParent class (reuse)"]\n  Pillars --> Poly["Polymorphism\\nSame method name,\\ndifferent behaviour"]\n  Pillars --> Abstr["Abstraction\\nHide complexity,\\nshow only essentials"]\n  Encap --> Class["class BankAccount {\\n  private balance\\n  deposit() {}\\n}"]`;
+  } else if (/sort|bubble|merge|quick|algorithm/.test(qL)) {
+    fallbackCode = `graph TD\n  Start(["Start"]) --> Input[/"Read array A[n]"/]\n  Input --> Outer["i = 0 to n-1"]\n  Outer --> Inner["j = 0 to n-i-1"]\n  Inner --> Compare{{"A[j] > A[j+1]?"}}\n  Compare -->|"Yes"| Swap["Swap A[j] and A[j+1]"]\n  Compare -->|"No"| NextJ["j++"]\n  Swap --> NextJ\n  NextJ --> MoreJ{{"j < n-i-1?"}}\n  MoreJ -->|"Yes"| Inner\n  MoreJ -->|"No"| NextI["i++"]\n  NextI --> MoreI{{"i < n-1?"}}\n  MoreI -->|"Yes"| Outer\n  MoreI -->|"No"| Output[/"Sorted Array"/]\n  Output --> End(["End"])`;
+  } else if (/network|osi|tcp|http|protocol|internet/.test(qL)) {
+    fallbackCode = `graph TD\n  OSI["OSI Model (7 Layers)"] --> L7["7. Application — HTTP, FTP, SMTP"]\n  L7 --> L6["6. Presentation — Encryption, Compression"]\n  L6 --> L5["5. Session — Session management"]\n  L5 --> L4["4. Transport — TCP/UDP, Port numbers"]\n  L4 --> L3["3. Network — IP addressing, Routing"]\n  L3 --> L2["2. Data Link — MAC addresses, Frames"]\n  L2 --> L1["1. Physical — Cables, Signals, Bits"]`;
+  } else if (/database|sql|relational|table|query/.test(qL)) {
+    fallbackCode = `graph TD\n  DB["Relational Database"] --> Tables["Tables (Relations)"]\n  Tables --> Keys["Keys"]\n  Keys --> PK["Primary Key (PK)\\nUnique identifier per row"]\n  Keys --> FK["Foreign Key (FK)\\nLinks two tables"]\n  DB --> CRUD["SQL Operations"]\n  CRUD --> C["CREATE / INSERT"]\n  CRUD --> R["SELECT (with WHERE, JOIN)"]\n  CRUD --> U["UPDATE"]\n  CRUD --> D["DELETE"]\n  DB --> Norm["Normalisation\\n1NF → 2NF → 3NF\\n(Remove redundancy)"]`;
+  // Mathematics
+  } else if (/pythagoras|right.tri|hypotenuse/.test(qL)) {
+    fallbackCode = `graph TD\n  Theorem["Pythagorean Theorem\\na² + b² = c²"] --> Sides["Right Triangle Sides"]\n  Sides --> A["Side a (opposite)"]\n  Sides --> B["Side b (adjacent)"]\n  Sides --> C["Hypotenuse c\\n(longest side, opposite 90°)"]\n  Theorem --> FindC["Find hypotenuse:\\nc = √(a² + b²)"]\n  Theorem --> FindA["Find leg:\\na = √(c² − b²)"]\n  Theorem --> Triples["Pythagorean Triples:\\n3-4-5 │ 5-12-13 │ 8-15-17"]`;
+  } else if (/quadratic|ax2|parabola|discriminant/.test(qL)) {
+    fallbackCode = `graph TD\n  Quad["Quadratic Equation ax² + bx + c = 0"] --> Methods["Solving Methods"]\n  Methods --> Factor["Factorisation\\n(x+p)(x+q)=0"]\n  Methods --> Formula["Quadratic Formula\\nx = (−b ± √(b²−4ac)) / 2a"]\n  Methods --> Complete["Completing the Square"]\n  Formula --> Disc["Discriminant Δ = b²−4ac"]\n  Disc --> TwoReal["Δ > 0: Two distinct real roots"]\n  Disc --> OneReal["Δ = 0: One repeated real root"]\n  Disc --> NoReal["Δ < 0: No real roots (complex)"]`;
+  } else if (/statistic|mean|median|mode|standard dev/.test(qL)) {
+    fallbackCode = `graph TD\n  Stats["Descriptive Statistics"] --> Central["Measures of Central Tendency"]\n  Central --> Mean["Mean = Σx / n\\n(Sum ÷ count)"]\n  Central --> Median["Median\\nMiddle value when sorted"]\n  Central --> Mode["Mode\\nMost frequent value"]\n  Stats --> Spread["Measures of Spread"]\n  Spread --> Range["Range = Max − Min"]\n  Spread --> SD["Standard Deviation σ\\n√(Σ(x−x̄)² / n)"]\n  Spread --> IQR["IQR = Q3 − Q1"]`;
+  // History / Economics
+  } else if (/french.rev|bastille|napoleon|robespierre/.test(qL)) {
+    fallbackCode = `timeline\n  title French Revolution Timeline\n  1789 : Estates-General convened\n  1789 : Storming of the Bastille (14 July)\n  1789 : Declaration of Rights of Man\n  1791 : Constitutional Monarchy established\n  1792 : First French Republic declared\n  1793-1794 : Reign of Terror (Robespierre)\n  1795 : Directory government\n  1799 : Napoleon's coup (18 Brumaire)`;
+  } else if (/world war|ww1|ww2|1914|1939/.test(qL)) {
+    const isWW1 = /ww1|world war 1|1914/.test(qL);
+    fallbackCode = isWW1
+      ? `timeline\n  title World War I (1914–1918)\n  1914 : Assassination of Archduke Franz Ferdinand\n  1914 : War declared — Allied vs Central Powers\n  1915 : Gallipoli Campaign\n  1916 : Battle of the Somme / Verdun\n  1917 : USA enters the war\n  1917 : Russian Revolution — Russia withdraws\n  1918 : Armistice signed (11 November)`
+      : `timeline\n  title World War II (1939–1945)\n  1939 : Germany invades Poland — War declared\n  1940 : Fall of France / Battle of Britain\n  1941 : Germany invades USSR (Operation Barbarossa)\n  1941 : Pearl Harbor — USA enters the war\n  1942-43 : Battle of Stalingrad (turning point)\n  1944 : D-Day landings at Normandy\n  1945 : Germany surrenders (VE Day)\n  1945 : Atomic bombs — Japan surrenders (VJ Day)`;
+  } else if (/supply|demand|market|equilibrium|elasticity/.test(qL)) {
+    fallbackCode = `graph TD\n  Market["Market Equilibrium"] --> Supply["Supply Curve (upward sloping)\\nHigher price → more supplied"]\n  Market --> Demand["Demand Curve (downward sloping)\\nHigher price → less demanded"]\n  Supply & Demand --> Eq["Equilibrium Point\\nQuantity Supplied = Quantity Demanded"]\n  Eq --> Price["Equilibrium Price P*"]\n  Eq --> Qty["Equilibrium Quantity Q*"]\n  Market --> Elasticity["Price Elasticity"]\n  Elasticity --> Elastic["PED > 1: Elastic demand\\n(luxury goods)"]\n  Elasticity --> Inelastic["PED < 1: Inelastic demand\\n(necessities)"]`;
+  } else if (/water.cycle|evapor|condensat|precipitat/.test(qL)) {
+    fallbackCode = `graph TD\n  Oceans["Oceans, Lakes & Rivers"] -->|"Evaporation (heat energy)"| Vapor["Water Vapour in Atmosphere"]\n  Vegetation -->|"Transpiration"| Vapor\n  Vapor -->|"Condensation (cooling)"| Clouds["Cloud Formation"]\n  Clouds -->|"Precipitation (rain/snow/hail)"| Land["Land Surface"]\n  Land -->|"Surface Runoff"| Rivers["Rivers & Streams"] --> Oceans\n  Land -->|"Infiltration"| Ground["Groundwater / Aquifers"] --> Oceans`;
+  } else {
+    // Generic but domain-aware fallback using the query as the subject
+    fallbackCode = `graph TD\n  Topic["${q}"] --> Def["Definition & Core Concept"]\n  Topic --> Types["Classification / Types"]\n  Topic --> Process["Key Process / Mechanism"]\n  Process --> Step1["Step 1"]\n  Process --> Step2["Step 2"]\n  Process --> Step3["Step 3"]\n  Topic --> Significance["Real-World Significance & Applications"]`;
   }
 
   try {
     const aiGen = getGoogleGenAI();
     if (aiGen) {
-      const prompt = `
-You are an expert educational diagram author for StudentOS classroom whiteboards.
-Generate a valid, highly detailed Mermaid.js diagram for topic: "${query}".
+      const prompt = `You are an expert educational diagram author for a school classroom whiteboard.
+Generate a highly detailed, accurate Mermaid.js diagram for: "${q}"
 
-CRITICAL INSTRUCTIONS:
-- NEVER output generic placeholders like "Core Theory", "Concept 1", "Sub1", or "Main Idea".
-- ALWAYS use topic-specific terminology (e.g. for Newton's laws: First Law (Inertia), Second Law (F=ma), Third Law (Action-Reaction); for Digestive System: Mouth, Esophagus, Stomach, Small Intestine, Large Intestine; etc.).
-- Automatically pick the best Mermaid diagram format:
-  * Flowchart (graph TD or graph LR) for processes, cycles, or steps.
-  * Mindmap (mindmap) for overviews or classification.
-  * Sequence diagram (sequenceDiagram) for interactions.
-  * Timeline (timeline) for historical or sequential phases.
-  * State diagram (stateDiagram-v2) for state machines.
-- Return ONLY the raw Mermaid code block. Do NOT include markdown \`\`\` code fences.
-`;
+STRICT RULES — violating any rule makes the output unacceptable:
+1. NEVER use generic placeholder labels such as: "Core Theory", "Concept 1", "Sub1", "Sub2", "Applications", "Main Idea", "Primary Mechanism", "Key Observations", "Step 1 / Step 2", "Phase 1", "Topic → Key1 → Sub1". These are FORBIDDEN.
+2. ALWAYS use the real, domain-specific terminology for the subject. Examples:
+   - Newton's Laws: "First Law (Inertia)", "Second Law (F = ma)", "Third Law (Action–Reaction)"
+   - Mitosis: "Prophase", "Metaphase", "Anaphase", "Telophase", "Cytokinesis"
+   - Photosynthesis: "Light Reactions (Thylakoid)", "Calvin Cycle (Stroma)", "ATP + NADPH", "CO₂ + H₂O + Sunlight → Glucose"
+   - Digestion: "Mouth (salivary amylase)", "Oesophagus (peristalsis)", "Stomach (HCl + pepsin)", "Small intestine (villi)", "Large intestine (water reabsorption)"
+   - Sorting algorithm: "Compare A[j] and A[j+1]", "Swap if out of order", "Repeat n-1 passes"
+   - French Revolution: "Estates-General 1789", "Storming of Bastille", "Reign of Terror", "Robespierre executed", "Napoleon's coup"
+3. Choose the most appropriate diagram type for the subject:
+   - Process / cycle / steps → graph TD (top-down flowchart)
+   - Left-right cause-effect → graph LR
+   - Classification / overview → mindmap
+   - Historical sequence → timeline (format: "YEAR : Event")
+   - System interactions → sequenceDiagram
+   - State transitions → stateDiagram-v2
+4. Include at least 6–10 nodes with meaningful content. Do NOT produce a diagram with fewer than 5 nodes.
+5. Return ONLY the raw Mermaid code. No markdown fences (\`\`\`), no explanations, no comments.`;
+
       const response = await aiGen.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: prompt,
-        config: { temperature: 0.2 }
+        config: { temperature: 0.15, maxOutputTokens: 2048 }
       });
 
-      let code = response.text || "";
-      code = code.replace(/^\`\`\`(mermaid)?/m, '').replace(/\`\`\`$/m, '').trim();
-      if (code) {
-        return res.json({ success: true, mermaid: code, code, title: query });
+      let code = (response.text || '').replace(/^```(mermaid)?/m, '').replace(/```$/m, '').trim();
+
+      // Validate: reject if it contains known generic placeholders
+      const hasGeneric = /\b(Core Theory|Concept 1|Sub1|Sub2|Main Idea|Primary Mechanism|Key Observations|Phase 1|Phase 2)\b/i.test(code);
+      if (code && !hasGeneric) {
+        return res.json({ success: true, mermaid: code, code, title: q });
       }
+      // Fallback if AI produced generic content
     }
 
-    return res.json({ success: true, mermaid: fallbackCode, code: fallbackCode, title: query });
+    return res.json({ success: true, mermaid: fallbackCode, code: fallbackCode, title: q });
   } catch (err: any) {
     console.error('[AI Server] Mermaid error:', err);
-    return res.json({
-      success: false,
-      error: err.message || 'Error generating diagram',
-      mermaid: fallbackCode,
-      code: fallbackCode,
-      title: query
-    });
+    return res.json({ success: true, mermaid: fallbackCode, code: fallbackCode, title: q });
   }
 });
+
+// ── SVG Educational Diagram Fallbacks ────────────────────────────────────────
+function buildSvgFallback(query: string): string {
+  const q = String(query);
+  const qL = q.toLowerCase();
+  const BG = '#0f172a'; const BORDER = '#334155';
+  const mk = (title: string, content: string) =>
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 460" width="620" height="460"><rect width="620" height="460" rx="16" fill="${BG}" stroke="${BORDER}" stroke-width="2"/><text x="310" y="38" fill="#c7d2fe" font-size="20" font-weight="bold" text-anchor="middle" font-family="sans-serif">${title}</text>${content}</svg>`;
+
+  if (/heart|cardiac/.test(qL)) return mk('HUMAN HEART', `<rect x="100" y="80" width="170" height="140" rx="14" fill="#7f1d1d" stroke="#f87171" stroke-width="3"/><text x="185" y="148" fill="#fff" font-size="14" font-weight="bold" text-anchor="middle" font-family="sans-serif">Right Atrium</text><rect x="320" y="80" width="170" height="140" rx="14" fill="#1e1b4b" stroke="#818cf8" stroke-width="3"/><text x="405" y="148" fill="#fff" font-size="14" font-weight="bold" text-anchor="middle" font-family="sans-serif">Left Atrium</text><rect x="100" y="240" width="170" height="150" rx="14" fill="#991b1b" stroke="#fca5a5" stroke-width="3"/><text x="185" y="318" fill="#fff" font-size="14" font-weight="bold" text-anchor="middle" font-family="sans-serif">Right Ventricle</text><rect x="320" y="240" width="170" height="150" rx="14" fill="#312e81" stroke="#a5b4fc" stroke-width="3"/><text x="405" y="318" fill="#fff" font-size="14" font-weight="bold" text-anchor="middle" font-family="sans-serif">Left Ventricle</text><path d="M185 220 L185 240" stroke="#fca5a5" stroke-width="4" marker-end="url(#arr)"/><path d="M405 220 L405 240" stroke="#a5b4fc" stroke-width="4"/><text x="55" y="165" fill="#f87171" font-size="11" text-anchor="middle" font-family="sans-serif">Vena Cava ↑</text><text x="568" y="165" fill="#818cf8" font-size="11" text-anchor="middle" font-family="sans-serif">Aorta ↑</text><path d="M270 150 Q310 80 350 150" stroke="#f59e0b" stroke-width="2" fill="none" stroke-dasharray="5,4"/><text x="310" y="88" fill="#f59e0b" font-size="11" text-anchor="middle" font-family="sans-serif">Pulmonary circulation</text><text x="310" y="440" fill="#64748b" font-size="12" text-anchor="middle" font-family="sans-serif">Double circulatory system — deoxygenated (right) / oxygenated (left)</text>`);
+
+  if (/plant.cell|cell/.test(qL)) return mk('PLANT CELL STRUCTURE', `<ellipse cx="310" cy="250" rx="265" ry="175" fill="#14532d" stroke="#4ade80" stroke-width="3" opacity="0.7"/><rect x="50" y="80" width="520" height="340" rx="8" fill="none" stroke="#15803d" stroke-width="4" stroke-dasharray="8,4"/><text x="310" y="68" fill="#4ade80" font-size="11" font-family="sans-serif" text-anchor="middle">Cell Wall</text><circle cx="280" cy="240" r="70" fill="#1e1b4b" stroke="#818cf8" stroke-width="3"/><text x="280" y="244" fill="#fff" font-size="13" font-weight="bold" text-anchor="middle" font-family="sans-serif">Nucleus</text><text x="280" y="262" fill="#a5b4fc" font-size="10" text-anchor="middle" font-family="sans-serif">(DNA / chromosomes)</text><rect x="80" y="185" width="70" height="35" rx="10" fill="#064e3b" stroke="#10b981" stroke-width="2"/><text x="115" y="207" fill="#fff" font-size="10" font-weight="bold" text-anchor="middle" font-family="sans-serif">Chloroplast</text><rect x="80" y="285" width="70" height="30" rx="8" fill="#7f1d1d" stroke="#f87171" stroke-width="2"/><text x="115" y="305" fill="#fff" font-size="10" font-weight="bold" text-anchor="middle" font-family="sans-serif">Mitochondria</text><rect x="410" y="175" width="110" height="120" rx="10" fill="#0c4a6e" stroke="#38bdf8" stroke-width="2"/><text x="465" y="240" fill="#fff" font-size="11" font-weight="bold" text-anchor="middle" font-family="sans-serif">Vacuole</text><text x="465" y="258" fill="#7dd3fc" font-size="9" text-anchor="middle" font-family="sans-serif">(stores water)</text><text x="310" y="440" fill="#64748b" font-size="12" text-anchor="middle" font-family="sans-serif">Eukaryotic plant cell with cell wall, chloroplasts, central vacuole</text>`);
+
+  if (/atom|electron|proton|nucleus/.test(qL)) return mk('ATOMIC STRUCTURE', `<circle cx="310" cy="240" r="35" fill="#7f1d1d" stroke="#f87171" stroke-width="3"/><text x="310" y="238" fill="#fff" font-size="13" font-weight="bold" text-anchor="middle" font-family="sans-serif">Nucleus</text><text x="310" y="256" fill="#fca5a5" font-size="10" text-anchor="middle" font-family="sans-serif">p⁺ + n⁰</text><ellipse cx="310" cy="240" rx="100" ry="40" fill="none" stroke="#818cf8" stroke-width="2"/><circle cx="410" cy="240" r="9" fill="#818cf8"/><text x="428" y="234" fill="#a5b4fc" font-size="10" font-family="sans-serif">e⁻</text><ellipse cx="310" cy="240" rx="155" ry="62" fill="none" stroke="#34d399" stroke-width="2" transform="rotate(-50 310 240)"/><circle cx="310" cy="178" r="9" fill="#34d399"/><text x="325" y="172" fill="#6ee7b7" font-size="10" font-family="sans-serif">e⁻</text><ellipse cx="310" cy="240" rx="210" ry="80" fill="none" stroke="#f59e0b" stroke-width="2" transform="rotate(25 310 240)"/><circle cx="170" cy="210" r="9" fill="#f59e0b"/><text x="148" y="206" fill="#fcd34d" font-size="10" font-family="sans-serif" text-anchor="end">e⁻</text><text x="60" y="90" fill="#94a3b8" font-size="11" font-family="sans-serif">Shell 1: max 2 e⁻</text><text x="60" y="110" fill="#94a3b8" font-size="11" font-family="sans-serif">Shell 2: max 8 e⁻</text><text x="60" y="130" fill="#94a3b8" font-size="11" font-family="sans-serif">Shell 3: max 18 e⁻</text><text x="310" y="440" fill="#64748b" font-size="12" text-anchor="middle" font-family="sans-serif">Atomic model — protons &amp; neutrons in nucleus, electrons in shells</text>`);
+
+  if (/solar.system|planet|sun|orbit/.test(qL)) return mk('SOLAR SYSTEM', `<circle cx="310" cy="230" r="50" fill="#f59e0b" stroke="#fbbf24" stroke-width="3"/><text x="310" y="235" fill="#fff" font-size="13" font-weight="bold" text-anchor="middle" font-family="sans-serif">Sun</text><circle cx="310" cy="230" r="80" fill="none" stroke="#334155" stroke-width="1"/><circle cx="390" cy="230" r="7" fill="#94a3b8"/><text x="395" y="217" fill="#94a3b8" font-size="9" font-family="sans-serif">Mercury</text><circle cx="310" cy="230" r="110" fill="none" stroke="#334155" stroke-width="1"/><circle cx="420" cy="230" r="10" fill="#d97706"/><text x="433" y="217" fill="#d97706" font-size="9" font-family="sans-serif">Venus</text><circle cx="310" cy="230" r="140" fill="none" stroke="#334155" stroke-width="1"/><circle cx="450" cy="230" r="11" fill="#3b82f6"/><text x="464" y="217" fill="#3b82f6" font-size="9" font-family="sans-serif">Earth</text><circle cx="310" cy="230" r="168" fill="none" stroke="#334155" stroke-width="1"/><circle cx="478" cy="230" r="9" fill="#ef4444"/><text x="492" y="217" fill="#ef4444" font-size="9" font-family="sans-serif">Mars</text><circle cx="310" cy="230" r="210" fill="none" stroke="#334155" stroke-width="1"/><circle cx="520" cy="230" r="18" fill="#f97316"/><text x="540" y="218" fill="#f97316" font-size="9" font-family="sans-serif">Jupiter</text><text x="310" y="440" fill="#64748b" font-size="12" text-anchor="middle" font-family="sans-serif">Inner planets (rocky) ← Asteroid belt → Outer planets (gas giants)</text>`);
+
+  if (/dna|gene|chromosome|helix/.test(qL)) return mk('DNA DOUBLE HELIX', `<path d="M200 60 C250 110 380 110 420 160 C380 210 250 210 200 260 C250 310 380 310 420 360 C380 410 250 410 200 430" fill="none" stroke="#818cf8" stroke-width="4"/><path d="M420 60 C370 110 240 110 200 160 C240 210 370 210 420 260 C370 310 240 310 200 360 C240 410 370 410 420 430" fill="none" stroke="#34d399" stroke-width="4"/><line x1="310" y1="110" x2="310" y2="110" stroke="#f59e0b" stroke-width="3"/><line x1="305" y1="135" x2="315" y2="135" stroke="#f59e0b" stroke-width="3"/><line x1="300" y1="160" x2="320" y2="160" stroke="#ec4899" stroke-width="3"/><line x1="298" y1="185" x2="322" y2="185" stroke="#f59e0b" stroke-width="3"/><line x1="300" y1="210" x2="320" y2="210" stroke="#ec4899" stroke-width="3"/><line x1="303" y1="235" x2="317" y2="235" stroke="#f59e0b" stroke-width="3"/><line x1="308" y1="260" x2="312" y2="260" stroke="#ec4899" stroke-width="3"/><line x1="302" y1="285" x2="318" y2="285" stroke="#f59e0b" stroke-width="3"/><line x1="299" y1="310" x2="321" y2="310" stroke="#ec4899" stroke-width="3"/><line x1="302" y1="335" x2="318" y2="335" stroke="#f59e0b" stroke-width="3"/><text x="150" y="80" fill="#a5b4fc" font-size="12" font-family="sans-serif">Sugar-Phosphate</text><text x="150" y="96" fill="#a5b4fc" font-size="12" font-family="sans-serif">Backbone</text><text x="460" y="80" fill="#6ee7b7" font-size="12" font-family="sans-serif">Complementary</text><text x="460" y="96" fill="#6ee7b7" font-size="12" font-family="sans-serif">Strand</text><text x="355" y="200" fill="#fcd34d" font-size="11" font-family="sans-serif">A–T pairs</text><text x="355" y="280" fill="#f9a8d4" font-size="11" font-family="sans-serif">G–C pairs</text><text x="310" y="452" fill="#64748b" font-size="12" text-anchor="middle" font-family="sans-serif">DNA — antiparallel strands held by hydrogen bonds (A–T, G–C)</text>`);
+
+  if (/neuron|nerve|synapse/.test(qL)) return mk('NEURON STRUCTURE', `<ellipse cx="150" cy="230" rx="60" ry="45" fill="#1e1b4b" stroke="#818cf8" stroke-width="3"/><text x="150" y="228" fill="#fff" font-size="13" font-weight="bold" text-anchor="middle" font-family="sans-serif">Cell Body</text><text x="150" y="246" fill="#a5b4fc" font-size="10" text-anchor="middle" font-family="sans-serif">(Soma)</text><path d="M210 230 L480 230" stroke="#34d399" stroke-width="6"/><rect x="218" y="208" width="260" height="10" rx="3" fill="#064e3b" stroke="none" opacity="0.5"/><text x="345" y="220" fill="#6ee7b7" font-size="11" font-weight="bold" text-anchor="middle" font-family="sans-serif">Axon (myelinated)</text><rect x="250" y="215" width="30" height="30" rx="14" fill="#0f172a" stroke="#94a3b8" stroke-width="2"/><text x="265" y="236" fill="#94a3b8" font-size="9" text-anchor="middle" font-family="sans-serif">Myelin</text><rect x="350" y="215" width="30" height="30" rx="14" fill="#0f172a" stroke="#94a3b8" stroke-width="2"/><path d="M480 210 L540 180 M480 220 L540 200 M480 230 L540 230 M480 240 L540 260 M480 250 L540 280" stroke="#f59e0b" stroke-width="2.5"/><text x="555" y="230" fill="#fcd34d" font-size="12" font-weight="bold" font-family="sans-serif">Dendrites</text><path d="M90 190 L40 150 M90 185 L35 170 M90 200 L30 200" stroke="#ec4899" stroke-width="2.5"/><text x="20" y="140" fill="#f9a8d4" font-size="11" font-family="sans-serif">Input</text><text x="310" y="440" fill="#64748b" font-size="12" text-anchor="middle" font-family="sans-serif">Signal: dendrites → cell body → axon → synaptic terminals</text>`);
+
+  if (/volcano|magma|lava|erupt/.test(qL)) return mk('VOLCANIC ERUPTION', `<polygon points="310,70 80,390 540,390" fill="#7f1d1d" stroke="#f87171" stroke-width="3"/><polygon points="310,70 220,390 400,390" fill="#991b1b" stroke="none"/><path d="M290 70 Q280 30 260 10 Q285 25 310 15 Q335 25 360 10 Q340 30 330 70" fill="#f97316" stroke="#fed7aa" stroke-width="2"/><text x="310" y="10" fill="#fed7aa" font-size="11" font-weight="bold" text-anchor="middle" font-family="sans-serif">Eruption column</text><ellipse cx="310" cy="300" rx="50" ry="80" fill="#f97316" stroke="#fdba74" stroke-width="2" opacity="0.8"/><text x="310" y="295" fill="#fff" font-size="11" font-weight="bold" text-anchor="middle" font-family="sans-serif">Magma</text><text x="310" y="313" fill="#fed7aa" font-size="10" text-anchor="middle" font-family="sans-serif">Chamber</text><rect x="50" y="385" width="520" height="55" rx="8" fill="#78350f" stroke="#d97706" stroke-width="2"/><text x="310" y="416" fill="#fed7aa" font-size="12" font-weight="bold" text-anchor="middle" font-family="sans-serif">Earth's Crust &amp; Mantle</text><path d="M80 390 Q120 360 160 390" fill="#ef4444" stroke="#f87171" stroke-width="2" opacity="0.7"/><path d="M420 390 Q470 350 530 390" fill="#ef4444" stroke="#f87171" stroke-width="2" opacity="0.7"/><text x="100" y="375" fill="#fed7aa" font-size="10" font-family="sans-serif">Lava flow</text><text x="310" y="452" fill="#64748b" font-size="12" text-anchor="middle" font-family="sans-serif">Magma rises through vent → pyroclastic flow → lava solidifies</text>`);
+
+  if (/eye|optic|retina|lens|vision/.test(qL)) return mk('HUMAN EYE ANATOMY', `<ellipse cx="310" cy="230" rx="200" ry="160" fill="#0c1f3a" stroke="#38bdf8" stroke-width="3"/><circle cx="310" cy="230" r="100" fill="#1e3a5f" stroke="#60a5fa" stroke-width="2.5"/><circle cx="310" cy="230" r="60" fill="#0f172a" stroke="#3b82f6" stroke-width="2"/><circle cx="310" cy="230" r="35" fill="#111827"/><circle cx="310" cy="230" r="25" fill="#000"/><circle cx="298" cy="218" r="6" fill="#fff" opacity="0.8"/><line x1="108" y1="230" x2="140" y2="230" stroke="#38bdf8" stroke-width="3"/><text x="88" y="234" fill="#7dd3fc" font-size="11" text-anchor="end" font-family="sans-serif">Cornea</text><text x="255" y="190" fill="#93c5fd" font-size="11" font-family="sans-serif">Lens</text><text x="255" y="270" fill="#6ee7b7" font-size="11" font-family="sans-serif">Pupil</text><text x="340" y="215" fill="#a78bfa" font-size="11" font-family="sans-serif">Iris</text><line x1="505" y1="140" x2="475" y2="170" stroke="#f59e0b" stroke-width="2"/><text x="510" y="135" fill="#fcd34d" font-size="11" font-family="sans-serif">Sclera</text><line x1="505" y1="310" x2="460" y2="280" stroke="#f87171" stroke-width="2"/><text x="510" y="315" fill="#fca5a5" font-size="11" font-family="sans-serif">Retina</text><line x1="510" y1="230" x2="480" y2="230" stroke="#818cf8" stroke-width="2"/><text x="515" y="234" fill="#a5b4fc" font-size="11" font-family="sans-serif">Optic Nerve</text><text x="310" y="440" fill="#64748b" font-size="12" text-anchor="middle" font-family="sans-serif">Light → Cornea → Lens (focuses) → Retina → Optic nerve → Brain</text>`);
+
+  // Generic educational fallback with actual topic styling
+  return mk(q.toUpperCase(), `<rect x="60" y="75" width="500" height="110" rx="16" fill="#1e1b4b" stroke="#6366f1" stroke-width="2.5"/><text x="310" y="130" fill="#c7d2fe" font-size="17" font-weight="bold" text-anchor="middle" font-family="sans-serif">${q}</text><text x="310" y="158" fill="#818cf8" font-size="13" text-anchor="middle" font-family="sans-serif">Educational Diagram</text><rect x="60" y="210" width="230" height="120" rx="14" fill="#064e3b" stroke="#10b981" stroke-width="2.5"/><text x="175" y="278" fill="#fff" font-size="14" font-weight="bold" text-anchor="middle" font-family="sans-serif">Key Components</text><rect x="320" y="210" width="240" height="120" rx="14" fill="#7f1d1d" stroke="#f43f5e" stroke-width="2.5"/><text x="440" y="278" fill="#fff" font-size="14" font-weight="bold" text-anchor="middle" font-family="sans-serif">Key Processes</text><line x1="290" y1="270" x2="320" y2="270" stroke="#f59e0b" stroke-width="3" marker-end="url(#arr)"/><rect x="170" y="355" width="280" height="70" rx="12" fill="#312e81" stroke="#818cf8" stroke-width="2.5"/><text x="310" y="395" fill="#fff" font-size="14" font-weight="bold" text-anchor="middle" font-family="sans-serif">Outcome &amp; Significance</text><text x="310" y="445" fill="#475569" font-size="11" text-anchor="middle" font-family="sans-serif">AI SVG · Use Mermaid mode for detailed flowchart diagrams</text>`);
+}
 
 // Educational SVG Diagram Generator Endpoint
 app.post('/api/ai/svg-diagram', async (req, res) => {
@@ -420,93 +501,41 @@ app.post('/api/ai/svg-diagram', async (req, res) => {
   const { query, subject = 'general' } = req.body || {};
   if (!query) return res.status(400).json({ success: false, error: 'Query is required' });
 
-  const qLower = String(query).toLowerCase();
-
-  // High-fidelity Educational SVG Fallback Presets
-  let fallbackSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 450" width="600" height="450">
-    <rect width="600" height="450" rx="16" fill="#0f172a" stroke="#334155" stroke-width="2"/>
-    <text x="300" y="45" fill="#818cf8" font-size="22" font-weight="bold" text-anchor="middle" font-family="sans-serif">${query.toUpperCase()}</text>
-    <rect x="50" y="100" width="220" height="130" rx="12" fill="#1e1b4b" stroke="#6366f1" stroke-width="2.5"/>
-    <text x="160" y="165" fill="#ffffff" font-size="16" font-weight="bold" text-anchor="middle" font-family="sans-serif">Primary Structure</text>
-    <rect x="330" y="100" width="220" height="130" rx="12" fill="#064e3b" stroke="#10b981" stroke-width="2.5"/>
-    <text x="440" y="165" fill="#ffffff" font-size="16" font-weight="bold" text-anchor="middle" font-family="sans-serif">Secondary Reaction</text>
-    <path d="M 270 165 L 330 165" stroke="#f59e0b" stroke-width="4"/>
-    <text x="300" y="150" fill="#f59e0b" font-size="12" font-weight="bold" text-anchor="middle" font-family="sans-serif">Energy</text>
-    <rect x="190" y="280" width="220" height="110" rx="12" fill="#831843" stroke="#ec4899" stroke-width="2.5"/>
-    <text x="300" y="340" fill="#ffffff" font-size="16" font-weight="bold" text-anchor="middle" font-family="sans-serif">Result / Function</text>
-  </svg>`;
-
-  if (qLower.includes('heart') || qLower.includes('circulat')) {
-    fallbackSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 450" width="600" height="450">
-      <rect width="600" height="450" rx="16" fill="#0f172a" stroke="#334155" stroke-width="2"/>
-      <text x="300" y="40" fill="#f43f5e" font-size="22" font-weight="bold" text-anchor="middle" font-family="sans-serif">HUMAN HEART ANATOMY</text>
-      <!-- Left & Right Atrium/Ventricles -->
-      <rect x="140" y="90" width="150" height="130" rx="12" fill="#881337" stroke="#f43f5e" stroke-width="3"/>
-      <text x="215" y="155" fill="#ffffff" font-size="15" font-weight="bold" text-anchor="middle" font-family="sans-serif">Right Atrium</text>
-      <rect x="310" y="90" width="150" height="130" rx="12" fill="#1e1b4b" stroke="#6366f1" stroke-width="3"/>
-      <text x="385" y="155" fill="#ffffff" font-size="15" font-weight="bold" text-anchor="middle" font-family="sans-serif">Left Atrium</text>
-      <rect x="140" y="240" width="150" height="140" rx="12" fill="#9f1239" stroke="#fb7185" stroke-width="3"/>
-      <text x="215" y="315" fill="#ffffff" font-size="15" font-weight="bold" text-anchor="middle" font-family="sans-serif">Right Ventricle</text>
-      <rect x="310" y="240" width="150" height="140" rx="12" fill="#312e81" stroke="#818cf8" stroke-width="3"/>
-      <text x="385" y="315" fill="#ffffff" font-size="15" font-weight="bold" text-anchor="middle" font-family="sans-serif">Left Ventricle</text>
-      <path d="M 215 220 L 215 240" stroke="#fda4af" stroke-width="4"/>
-      <path d="M 385 220 L 385 240" stroke="#c7d2fe" stroke-width="4"/>
-      <text x="300" y="420" fill="#94a3b8" font-size="13" text-anchor="middle" font-family="sans-serif">Deoxygenated (Blue/Red) vs Oxygenated (Purple/Indigo) Blood Flow</text>
-    </svg>`;
-  } else if (qLower.includes('cell')) {
-    fallbackSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 450" width="600" height="450">
-      <rect width="600" height="450" rx="16" fill="#0f172a" stroke="#334155" stroke-width="2"/>
-      <text x="300" y="40" fill="#10b981" font-size="22" font-weight="bold" text-anchor="middle" font-family="sans-serif">CELL BIOLOGY STRUCTURE</text>
-      <!-- Cell Membrane & Organelles -->
-      <ellipse cx="300" cy="240" rx="240" ry="160" fill="#064e3b" stroke="#10b981" stroke-width="4" opacity="0.8"/>
-      <circle cx="280" cy="220" r="65" fill="#312e81" stroke="#818cf8" stroke-width="3"/>
-      <text x="280" y="225" fill="#ffffff" font-size="15" font-weight="bold" text-anchor="middle" font-family="sans-serif">Nucleus (DNA)</text>
-      <ellipse cx="140" cy="280" rx="35" ry="20" fill="#881337" stroke="#f43f5e" stroke-width="2"/>
-      <text x="140" y="285" fill="#ffffff" font-size="11" font-weight="bold" text-anchor="middle" font-family="sans-serif">Mitochondria</text>
-      <ellipse cx="440" cy="200" rx="40" ry="22" fill="#78350f" stroke="#f59e0b" stroke-width="2"/>
-      <text x="440" y="205" fill="#ffffff" font-size="11" font-weight="bold" text-anchor="middle" font-family="sans-serif">Vacuole</text>
-      <text x="300" y="425" fill="#94a3b8" font-size="13" text-anchor="middle" font-family="sans-serif">Eukaryotic Cell Membrane & Organelle Scaffold</text>
-    </svg>`;
-  } else if (qLower.includes('circuit') || qLower.includes('voltage')) {
-    fallbackSvg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 450" width="600" height="450">
-      <rect width="600" height="450" rx="16" fill="#0f172a" stroke="#334155" stroke-width="2"/>
-      <text x="300" y="40" fill="#f59e0b" font-size="22" font-weight="bold" text-anchor="middle" font-family="sans-serif">ELECTRICAL CIRCUIT DIAGRAM</text>
-      <path d="M 120 120 L 480 120 L 480 340 L 120 340 Z" fill="none" stroke="#f59e0b" stroke-width="4"/>
-      <!-- Battery -->
-      <rect x="80" y="200" width="80" height="60" fill="#1e1b4b" stroke="#818cf8" stroke-width="3"/>
-      <text x="120" y="235" fill="#ffffff" font-size="14" font-weight="bold" text-anchor="middle" font-family="sans-serif">Battery (V)</text>
-      <!-- Resistor -->
-      <rect x="250" y="100" width="100" height="40" fill="#064e3b" stroke="#10b981" stroke-width="3"/>
-      <text x="300" y="125" fill="#ffffff" font-size="14" font-weight="bold" text-anchor="middle" font-family="sans-serif">Resistor (R)</text>
-      <!-- Switch -->
-      <circle cx="300" cy="340" r="8" fill="#ef4444"/>
-      <text x="300" y="375" fill="#ffffff" font-size="13" font-weight="bold" text-anchor="middle" font-family="sans-serif">Switch (S)</text>
-    </svg>`;
-  }
+  const fallbackSvg = buildSvgFallback(query);
 
   try {
     const aiGen = getGoogleGenAI();
     if (aiGen) {
-      const prompt = `
-You are an expert educational illustrator for classroom whiteboards.
-Generate a valid, visually detailed inline SVG diagram for subject "${subject}", topic: "${query}".
+      const prompt = `You are an expert educational SVG illustrator for school classroom whiteboards.
+Generate a clean, accurate, dark-mode SVG diagram for subject "${subject}", topic: "${query}".
 
-SPECIFICATIONS:
-- Width: 600, Height: 450, viewBox="0 0 600 450"
-- Dark mode theme: background fill="#0f172a" with crisp stroke colors (#818cf8, #34d399, #f59e0b, #ec4899, #38bdf8).
-- Include clear, legible labels with <text> tags.
-- Draw key anatomy/components (circles, paths, rects) accurately representing the requested educational topic (e.g. Heart, Plant Cell, Brain, Respiratory, Digestive, Lever, Pulley, Circuit, Optics, Atom, Water Cycle, Volcano, Coordinate Plane, etc.).
-- Return ONLY the raw <svg>...</svg> string. Do NOT wrap in markdown or backticks.
-`;
+STRICT REQUIREMENTS:
+- viewBox="0 0 620 460" width="620" height="460"
+- Background: <rect width="620" height="460" fill="#0f172a" rx="16"/>
+- Color palette: #818cf8 (indigo), #34d399 (emerald), #f59e0b (amber), #f87171 (red), #38bdf8 (sky), #a78bfa (violet), #fff
+- ALL text in <text> tags with font-family="sans-serif". NEVER use foreignObject.
+- Draw accurate anatomical/scientific shapes using <circle>, <ellipse>, <rect>, <path>, <polygon>, <line>.
+- Label every component clearly. Include a footer caption at y="445".
+- For biology: draw actual cell organelles / organ shapes, not generic boxes.
+- For physics: draw actual apparatus (circuits with wires, lenses, magnets).
+- For chemistry: draw electron shells, molecular bonds, lab apparatus.
+- The diagram must TEACH — a student should understand the topic from it.
+- Return ONLY the raw <svg>...</svg> string. NO markdown, NO backticks, NO explanation.`;
+
       const response = await aiGen.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: prompt,
-        config: { temperature: 0.3 }
+        config: { temperature: 0.25, maxOutputTokens: 4096 }
       });
 
-      let svg = response.text || "";
-      svg = svg.replace(/^\`\`\`(xml|svg)?/m, '').replace(/\`\`\`$/m, '').trim();
-      if (svg.includes('<svg')) {
+      let svg = (response.text || '').replace(/^```(xml|svg|html)?/m, '').replace(/```$/m, '').trim();
+
+      // Validate: must contain <svg and have actual drawing elements
+      const isValid = svg.startsWith('<svg') && (
+        svg.includes('<circle') || svg.includes('<rect') || svg.includes('<path') ||
+        svg.includes('<ellipse') || svg.includes('<polygon') || svg.includes('<line')
+      );
+      if (isValid) {
         return res.json({ success: true, svg, title: query, subject });
       }
     }
@@ -514,13 +543,7 @@ SPECIFICATIONS:
     return res.json({ success: true, svg: fallbackSvg, title: query, subject });
   } catch (err: any) {
     console.error('[AI Server] SVG Diagram error:', err);
-    return res.json({
-      success: false,
-      error: err.message || 'Error generating SVG diagram',
-      svg: fallbackSvg,
-      title: query,
-      subject
-    });
+    return res.json({ success: true, svg: fallbackSvg, title: query, subject });
   }
 });
 

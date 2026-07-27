@@ -28,11 +28,11 @@ export const AssignmentUploadForm: React.FC<Props> = ({ category, onSuccess, onE
       
       if (category === 'gallery' && files.length > 0) {
         for (const f of files) {
-          const { url } = await uploadFileToStorage(f, 'StudentOS', `${category}/${classGrade || 'all-grades'}`);
+          const { url } = await uploadFileToStorage(f, `${category}/${classGrade || 'all-grades'}`);
           finalGalleryUrls.push({ url, name: f.name });
         }
       } else if (file) {
-        const { url, path } = await uploadFileToStorage(file, 'StudentOS', `${category}/${classGrade || 'all-grades'}`);
+        const { url, path } = await uploadFileToStorage(file, `${category}/${classGrade || 'all-grades'}`);
         fileUrl = url;
         storagePath = path;
       }

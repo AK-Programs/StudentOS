@@ -21,6 +21,7 @@ interface ShapeObj {
   text?: string;
   fontSize?: number;
   imageObj?: HTMLImageElement;
+  locked?: boolean;
 }
 
 interface LineObj {
@@ -96,6 +97,61 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
   // Hover position for the transparent eraser brush outline
   const [eraserHoverPos, setEraserHoverPos] = useState<{ x: number; y: number } | null>(null);
   const [aiTip, setAiTip] = useState<string | null>(null);
+
+  // ── Undo / Redo history stack (JSON snapshots, max 30 deep) ──────────────
+  const [undoStack, setUndoStack] = useState<string[]>([]);
+  const [redoStack, setRedoStack] = useState<string[]>([]);
+
+  const saveSnapshot = React.useCallback(() => {
+    const snapshot = JSON.stringify(slides.map(s => ({
+      ...s,
+      shapes: s.shapes.map(sh => { const { imageObj, ...rest } = sh as any; return rest; })
+    })));
+    setUndoStack(prev => [...prev.slice(-29), snapshot]);
+    setRedoStack([]);
+  }, [slides]);
+
+  const handleUndo = React.useCallback(() => {
+    setUndoStack(prev => {
+      if (prev.length === 0) return prev;
+      const stack = [...prev];
+      const snapshot = stack.pop()!;
+      // Push current state to redo
+      const currentSnap = JSON.stringify(slides.map(s => ({
+        ...s,
+        shapes: s.shapes.map(sh => { const { imageObj, ...rest } = sh as any; return rest; })
+      })));
+      setRedoStack(r => [currentSnap, ...r.slice(0, 29)]);
+      setSlides(JSON.parse(snapshot));
+      return stack;
+    });
+  }, [slides]);
+
+  const handleRedo = React.useCallback(() => {
+    setRedoStack(prev => {
+      if (prev.length === 0) return prev;
+      const stack = [...prev];
+      const snapshot = stack.shift()!;
+      const currentSnap = JSON.stringify(slides.map(s => ({
+        ...s,
+        shapes: s.shapes.map(sh => { const { imageObj, ...rest } = sh as any; return rest; })
+      })));
+      setUndoStack(u => [...u.slice(-29), currentSnap]);
+      setSlides(JSON.parse(snapshot));
+      return stack;
+    });
+  }, [slides]);
+
+  // Keyboard shortcuts: Ctrl+Z = undo, Ctrl+Y / Ctrl+Shift+Z = redo
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const ctrl = e.ctrlKey || e.metaKey;
+      if (ctrl && !e.shiftKey && e.key === 'z') { e.preventDefault(); handleUndo(); }
+      else if (ctrl && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) { e.preventDefault(); handleRedo(); }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [handleUndo, handleRedo]);
 
   useEffect(() => {
     if (aiTip) {
@@ -580,6 +636,8 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
 
   const handleMouseUp = () => {
     isDrawing.current = false;
+    // Save undo snapshot after each completed stroke or shape placement
+    saveSnapshot();
 
     // AI Predictive Shape Assistant Engine
     if (aiShapeAssistant && (tool === 'pen' || tool === 'pencil' || tool === 'marker' || tool === 'highlighter')) {
@@ -742,8 +800,20 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
     }
   };
 
+  const handleLockSelectedObject = () => {
+    if (!selectedObj || selectedObj.type !== 'shape') return;
+    saveSnapshot();
+    setSlides(prev => {
+      const updated = [...prev];
+      const shape = updated[activeSlideIdx].shapes.find(s => s.id === selectedObj.id);
+      if (shape) shape.locked = !shape.locked;
+      return updated;
+    });
+  };
+
   const handleClearCanvas = () => {
     if (confirm("Are you sure you want to clear this slide's canvas?")) {
+      saveSnapshot();
       setSlides(prev => {
         const updated = [...prev];
         updated[activeSlideIdx].lines = [];
@@ -880,6 +950,7 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
 
   const handleDeleteSelectedObject = () => {
     if (!selectedObj) return;
+    saveSnapshot();
     setSlides(prev => {
       const updated = [...prev];
       const slide = updated[activeSlideIdx];
@@ -895,6 +966,7 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
 
   const handleDuplicateSelectedObject = () => {
     if (!selectedObj) return;
+    saveSnapshot();
     setSlides(prev => {
       const updated = [...prev];
       const slide = updated[activeSlideIdx];
@@ -1282,16 +1354,29 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
               </button>
             </div>
 
-            {/* Duplicate & Edit Label controls */}
+            {/* Duplicate, Edit Label & Lock controls */}
             <div className="flex items-center gap-1.5 border-l border-white/10 pl-3">
               {selectedObj.type === 'shape' && (
-                <button 
-                  onClick={handleEditSelectedObjectLabel} 
-                  className="p-1 px-2 bg-slate-800 hover:bg-slate-700 text-indigo-300 rounded-lg border border-white/10 text-[10px] font-bold flex items-center gap-1" 
-                  title="Edit Label / Text"
-                >
-                  <Type className="w-3 h-3" /> Label
-                </button>
+                <>
+                  <button 
+                    onClick={handleEditSelectedObjectLabel} 
+                    className="p-1 px-2 bg-slate-800 hover:bg-slate-700 text-indigo-300 rounded-lg border border-white/10 text-[10px] font-bold flex items-center gap-1" 
+                    title="Edit Label / Text"
+                  >
+                    <Type className="w-3 h-3" /> Label
+                  </button>
+                  <button
+                    onClick={handleLockSelectedObject}
+                    className={`p-1 px-2 rounded-lg border text-[10px] font-bold flex items-center gap-1 transition-all ${
+                      (slides[activeSlideIdx]?.shapes.find(s => s.id === selectedObj.id) as any)?.locked
+                        ? 'bg-amber-500/20 border-amber-500/40 text-amber-300 hover:bg-amber-500/30'
+                        : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-white/10'
+                    }`}
+                    title="Lock / Unlock — locked objects cannot be moved or resized"
+                  >
+                    {(slides[activeSlideIdx]?.shapes.find(s => s.id === selectedObj.id) as any)?.locked ? '🔒 Unlock' : '🔓 Lock'}
+                  </button>
+                </>
               )}
               <button 
                 onClick={handleDuplicateSelectedObject} 
@@ -1306,7 +1391,7 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
             <button 
               onClick={handleDeleteSelectedObject} 
               className="p-1 px-2.5 bg-red-600 hover:bg-red-500 text-white text-[10px] font-black uppercase rounded-lg border border-red-500/30 shadow-md transition-all flex items-center gap-1"
-              title="Delete Element"
+              title="Delete Element (Del key)"
             >
               <Trash2 className="w-3 h-3" /> Remove
             </button>
@@ -1392,7 +1477,7 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
                 name="object"
                 x={shape.x} 
                 y={shape.y} 
-                draggable={tool === 'select'}
+                draggable={tool === 'select' && !shape.locked}
                 onDragEnd={(e) => {
                   shape.x = e.target.x();
                   shape.y = e.target.y();
