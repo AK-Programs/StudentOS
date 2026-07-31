@@ -53,7 +53,7 @@ export default function StudentMarksCenter({ currentUser, effectiveRole, showNot
   const [studentRecords, setStudentRecords] = useState<AcademicRecord[]>([]);
 
   let gradeOptions = Array.from({ length: 12 }, (_, i) => `Grade ${i + 1}`);
-  let sectionOptions = ['Astra', 'Elera', 'Solara', 'Vega'];
+  let sectionOptions = ['Astra', 'Elara', 'Solara', 'Vega'];
 
   if (effectiveRole === 'teacher' && currentUser?.assignedClasses) {
     const assigned = currentUser.assignedClasses;
@@ -69,7 +69,7 @@ export default function StudentMarksCenter({ currentUser, effectiveRole, showNot
         if (match[2]) {
            // We map section A back to Astra etc or just show the letter
            const secLetter = match[2];
-           const fullSection = ['Astra', 'Elera', 'Solara', 'Vega'].find(s => s.charAt(0) === secLetter) || secLetter;
+           const fullSection = ['Astra', 'Elara', 'Solara', 'Vega'].find(s => s.charAt(0) === secLetter) || secLetter;
            allowedSections.add(fullSection);
         }
       }
@@ -83,7 +83,7 @@ export default function StudentMarksCenter({ currentUser, effectiveRole, showNot
 
   const examTypes = ['Unit Test', 'Periodic Test', 'Half Yearly', 'Final Exam'];
 
-  // Load All Academic Records from DB / LocalStorage
+  // Load All Academic Records from DB
   const fetchAcademicRecords = async () => {
     try {
       // 1. Fetch from Supabase
@@ -93,20 +93,9 @@ export default function StudentMarksCenter({ currentUser, effectiveRole, showNot
       
       if (!error && data) {
         setAllRecords(data);
-        localStorage.setItem('s_os_student_marks_cache', JSON.stringify(data));
-      } else {
-        // Fallback to local storage cache
-        const cached = localStorage.getItem('s_os_student_marks_cache');
-        if (cached) {
-          setAllRecords(JSON.parse(cached));
-        }
       }
     } catch (err) {
-      console.warn('Supabase fetch marks fallback active:', err);
-      const cached = localStorage.getItem('s_os_student_marks_cache');
-      if (cached) {
-        setAllRecords(JSON.parse(cached));
-      }
+      console.warn('Supabase fetch marks failed:', err);
     }
   };
 
@@ -193,7 +182,6 @@ export default function StudentMarksCenter({ currentUser, effectiveRole, showNot
     // Update state first
     const updatedRecords = [newRecord, ...allRecords.filter(r => r.id !== recordId)];
     setAllRecords(updatedRecords);
-    localStorage.setItem('s_os_student_marks_cache', JSON.stringify(updatedRecords));
 
     // Persist to Supabase
     try {
@@ -237,7 +225,7 @@ export default function StudentMarksCenter({ currentUser, effectiveRole, showNot
       let totalScored = 0;
       let totalMax = 0;
       Object.entries(rec.marks).forEach(([sub, score]) => {
-        const sVal = parseFloat(score as string);
+        const sVal = parseFloat(score);
         if (!isNaN(sVal)) {
           totalScored += sVal;
           totalMax += rec.max_marks;
@@ -278,7 +266,7 @@ export default function StudentMarksCenter({ currentUser, effectiveRole, showNot
     const subjectAverages: Record<string, { scored: number; max: number }> = {};
     studentRecords.forEach(rec => {
       Object.entries(rec.marks).forEach(([sub, val]) => {
-        const score = parseFloat(val as string);
+        const score = parseFloat(val);
         if (!isNaN(score)) {
           if (!subjectAverages[sub]) {
             subjectAverages[sub] = { scored: 0, max: 0 };
@@ -331,7 +319,7 @@ export default function StudentMarksCenter({ currentUser, effectiveRole, showNot
     const subjectAverages: Record<string, { scored: number; max: number }> = {};
     studentRecords.forEach(rec => {
       Object.entries(rec.marks).forEach(([sub, val]) => {
-        const score = parseFloat(val as string);
+        const score = parseFloat(val);
         if (!isNaN(score)) {
           if (!subjectAverages[sub]) {
             subjectAverages[sub] = { scored: 0, max: 0 };
@@ -354,7 +342,7 @@ export default function StudentMarksCenter({ currentUser, effectiveRole, showNot
       let scoredSum = 0;
       let maxSum = 0;
       Object.entries(rec.marks).forEach(([_, val]) => {
-        const s = parseFloat(val as string);
+        const s = parseFloat(val);
         if (!isNaN(s)) {
           scoredSum += s;
           maxSum += rec.max_marks;
@@ -562,7 +550,7 @@ export default function StudentMarksCenter({ currentUser, effectiveRole, showNot
                       let totalScored = 0;
                       let totalMax = 0;
                       Object.entries(rec.marks).forEach(([_, val]) => {
-                        const s = parseFloat(val as string);
+                        const s = parseFloat(val);
                         if (!isNaN(s)) {
                           totalScored += s;
                           totalMax += rec.max_marks;
