@@ -25,8 +25,9 @@ import { getVaultNotes, saveVaultNoteToSupabase, deleteVaultNoteFromSupabase } f
 import { getSupabaseUserProfile, saveSupabaseUserProfile } from './lib/supabaseUsers';
 import { getSupabaseHomework, saveSupabaseHomework, deleteSupabaseHomework } from './lib/supabaseHomework';
 import { 
-  getAiBuddyChats, saveAiBuddyChat, deleteAiBuddyChat, 
-  getPeerMessages, savePeerMessage, getChatRooms, saveChatRoom 
+  getAiBuddyChats, saveAiBuddyChat, deleteAiBuddyChat, renameAiBuddyChat,
+  getPeerMessages, savePeerMessage, deletePeerMessage,
+  getChatRooms, saveChatRoom, joinChatRoom, leaveChatRoom, deleteChatRoom
 } from './lib/supabaseChat';
 import { saveSupabaseMaterial, getSupabaseMaterials, deleteSupabaseMaterial } from './lib/supabaseResources';
 import { PdfCanvasViewer } from './components/PdfCanvasViewer';
@@ -310,6 +311,10 @@ export default function App() {
   const [regRole, setRegRole] = useState<'student' | 'teacher' | 'coordinator' | 'admin'>('student');
   const [regName, setRegName] = useState('');
   const [regNameError, setRegNameError] = useState('');
+  const [regPhone, setRegPhone] = useState('');
+  const [regPhoneError, setRegPhoneError] = useState('');
+  const [regBirthdate, setRegBirthdate] = useState('');
+  const [regBirthdateError, setRegBirthdateError] = useState('');
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
   
@@ -1785,7 +1790,7 @@ What can I clarify today?` }
     if (!currentUser || activeTab !== 'feedback') return;
     const loadFeedbacks = async () => {
       try {
-        const { data, error } = await supabase.from('notes').select('*').eq('id', '__global_feedbacks__').single();
+        const { data, error } = await supabase.from('global_data').select('*').eq('id', '__global_feedbacks__').single();
         if (data && data.content) {
           setFeedbackPosts(JSON.parse(data.content));
         } else {
@@ -1803,7 +1808,7 @@ What can I clarify today?` }
     if (!currentUser || activeTab !== 'dashboard') return;
     const loadAnnouncements = async () => {
       try {
-        const { data } = await supabase.from('notes').select('*').eq('id', '__global_announcements__').single();
+        const { data } = await supabase.from('global_data').select('*').eq('id', '__global_announcements__').single();
         if (data && data.content) {
           setAnnouncements(JSON.parse(data.content));
         } else {
@@ -1849,6 +1854,11 @@ What can I clarify today?` }
       console.error("[SUPABASE-CHAT] Error fetching chat rooms:", err);
     });
   }, [activeTab, currentUser]);
+
+  const currentUserRef = useRef<UserProfile | null>(currentUser);
+  useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser]);
 
   // --- Supabase Realtime Sync Client ---
   useEffect(() => {
@@ -1929,6 +1939,61 @@ What can I clarify today?` }
         }
       } catch (err) {
         console.error('[Realtime] message process failure', err);
+      }
+    });
+
+    // Realtime Postgres Changes: Messages
+    channel.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+      const p = payload.new;
+      if (!p || !p.id) return;
+      const msg: ChatMessage = {
+        id: p.id,
+        name: p.name || 'Peer',
+        role: p.role || 'student',
+        house: p.house,
+        message: p.message || '',
+        createdAt: p.created_at ? (typeof p.created_at === 'number' ? new Date(p.created_at).toISOString() : p.created_at) : new Date().toISOString(),
+        targetId: p.target_id || 'group-all',
+        sharedMaterialId: p.shared_material_id,
+        ownerUid: p.owner_uid
+      };
+      setChats(prev => {
+        if (prev.some(c => c.id === msg.id)) return prev;
+        return [...prev, msg];
+      });
+      setTimeout(() => {
+        const view = document.getElementById('chat-scroll-view');
+        if (view) view.scrollTop = view.scrollHeight;
+      }, 50);
+    });
+
+    channel.on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages' }, (payload) => {
+      if (payload.old?.id) {
+        setChats(prev => prev.filter(c => c.id !== payload.old.id));
+      }
+    });
+
+    // Realtime Postgres Changes: Chat Rooms
+    channel.on('postgres_changes', { event: '*', schema: 'public', table: 'chat_rooms' }, () => {
+      getChatRooms().then(rooms => {
+        if (rooms) setChatRooms(rooms);
+      }).catch(console.error);
+    });
+
+    // Realtime Postgres Changes: AI Buddy Chats
+    channel.on('postgres_changes', { event: '*', schema: 'public', table: 'ai_buddy_chats' }, (payload) => {
+      const uid = currentUserRef.current?.uid;
+      if (!uid) return;
+      if (payload.eventType === 'DELETE') {
+        if (payload.old?.id) {
+          setAiThreads(prev => prev.filter(t => t.id !== payload.old.id));
+        }
+      } else if (payload.new && payload.new.user_id === uid) {
+        getAiBuddyChats(uid).then(threads => {
+          if (threads && threads.length > 0) {
+            setAiThreads(threads);
+          }
+        }).catch(console.error);
       }
     });
 
@@ -2476,6 +2541,14 @@ ${resultText}
       return;
     }
 
+    if (!regPhone.trim() || !/^[+0-9\-\s()]+$/.test(regPhone.trim())) {
+      showNotification('Please provide a valid phone number.');
+      return;
+    }
+    if (!regBirthdate) {
+      showNotification('Please provide a valid birthdate.');
+      return;
+    }
     
     const emailValidation = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!regEmail.trim() || !emailValidation.test(regEmail.trim())) {
@@ -2553,6 +2626,8 @@ ${resultText}
       role: isWhitelisted ? 'super_admin' : 'student', // Everyone starts as student except whitelisted
       requestedRole: isWhitelisted ? 'admin' : regRole,
       accountStatus: status,
+      phone: regPhone.trim(),
+      birthdate: regBirthdate,
       studyHours: 8,
       quizzesTaken: 2,
       streakDays: 4,
@@ -4134,7 +4209,8 @@ Date: ${new Date().toLocaleDateString()}
         if (p.id === id) {
           const upvotedBy = p.upvotedBy || [];
           if (upvotedBy.includes(currentUser.uid)) {
-            return p; // Already voted
+            // Remove vote
+            return { ...p, votes: p.votes - 1, upvotedBy: upvotedBy.filter(uid => uid !== currentUser.uid) };
           }
           return { ...p, votes: p.votes + 1, upvotedBy: [...upvotedBy, currentUser.uid] };
         }
@@ -4143,11 +4219,10 @@ Date: ${new Date().toLocaleDateString()}
       saveFeedbacksToSupabase(updated);
       return updated;
     });
-    showNotification('Upvote registered.');
   };
   const saveFeedbacksToSupabase = async (feedbacks: FeedbackPost[]) => {
     try {
-      await supabase.from('notes').upsert({
+      await supabase.from('global_data').upsert({
         id: '__global_feedbacks__',
         title: 'Global Feedbacks',
         subject: 'System',
@@ -4413,7 +4488,7 @@ ${pageText}
   const handleClearThreadHistory = () => {
     setAiThreads(prev => prev.map(t => {
       if (t.id === activeThreadId) {
-        return {
+        const clearedThread = {
           ...t,
           messages: [
             { role: 'assistant' as const, content: "Conversation segment cleared by user." }
@@ -4421,11 +4496,54 @@ ${pageText}
           attachedFile: null,
           attachedFiles: []
         };
+        if (currentUser?.uid) {
+          saveAiBuddyChat({ ...clearedThread, userId: currentUser.uid } as any).catch(console.error);
+        }
+        return clearedThread;
       }
       return t;
     }));
     setAttachedFiles([]);
     showNotification('Conversation record flushed.');
+  };
+
+  const handleLeaveRoom = async (roomId: string) => {
+    if (!roomId || !currentUser?.uid) return;
+    try {
+      await leaveChatRoom(roomId, currentUser.uid);
+      setChatRooms(prev => prev.filter(r => r.id !== roomId));
+      if (activeChatTargetId === roomId) {
+        setActiveChatTargetId('group-all');
+      }
+      showNotification('Left chat room');
+    } catch (err) {
+      console.error("Error leaving chat room:", err);
+    }
+  };
+
+  const handleDeleteRoom = async (roomId: string) => {
+    if (!roomId || !currentUser?.uid) return;
+    try {
+      await deleteChatRoom(roomId, currentUser.uid);
+      setChatRooms(prev => prev.filter(r => r.id !== roomId));
+      if (activeChatTargetId === roomId) {
+        setActiveChatTargetId('group-all');
+      }
+      showNotification('Room deleted successfully');
+    } catch (err) {
+      console.error("Error deleting chat room:", err);
+    }
+  };
+
+  const handleDeletePeerMessage = async (messageId: string) => {
+    if (!messageId) return;
+    try {
+      await deletePeerMessage(messageId);
+      setChats(prev => prev.filter(c => c.id !== messageId));
+      showNotification('Message deleted');
+    } catch (err) {
+      console.error("Error deleting message:", err);
+    }
   };
 
   const handleCopyToClipboard = (text: string) => {
@@ -5267,7 +5385,7 @@ ${roleLabel}: ${userQuery}`;
                     id="reg-step-profile"
                     onSubmit={(e) => { 
                       e.preventDefault(); 
-                      if (regNameError) {
+                      if (regNameError || regPhoneError || regBirthdateError || !regName || !regPhone || !regBirthdate || !regEmail) {
                         return;
                       }
                       setRegStep('submit'); 
@@ -5365,6 +5483,44 @@ ${roleLabel}: ${userQuery}`;
                             placeholder="e.g. captain@academy.edu"
                             className="w-full text-sm px-4 py-3 rounded-xl bg-slate-900/60 border border-white/10 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 text-white font-mono placeholder-slate-600 transition-all"
                           />
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wide">Phone Number</label>
+                          <input
+                            type="tel"
+                            required
+                            value={regPhone}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setRegPhone(val);
+                              if (val && !/^[+0-9\-\s()]+$/.test(val)) {
+                                setRegPhoneError('❌ Please enter a valid phone number');
+                              } else {
+                                setRegPhoneError('');
+                              }
+                            }}
+                            placeholder="e.g. +1 234 567 8900"
+                            className={`w-full text-sm px-4 py-3 rounded-xl bg-slate-900/60 border ${regPhoneError ? 'border-red-500 focus:ring-red-500/20 focus:border-red-500' : 'border-white/10 focus:ring-indigo-500/20 focus:border-indigo-500'} focus:outline-none focus:ring-2 text-white font-mono placeholder-slate-600 transition-all`}
+                          />
+                          {regPhoneError && <p className="text-red-500 text-[10px] font-bold mt-1">{regPhoneError}</p>}
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wide">Birthdate</label>
+                          <input
+                            type="date"
+                            required
+                            value={regBirthdate}
+                            onChange={(e) => {
+                              setRegBirthdate(e.target.value);
+                              if (e.target.value && new Date(e.target.value) > new Date()) {
+                                setRegBirthdateError('❌ Birthdate cannot be in the future');
+                              } else {
+                                setRegBirthdateError('');
+                              }
+                            }}
+                            className={`w-full text-sm px-4 py-3 rounded-xl bg-slate-900/60 border ${regBirthdateError ? 'border-red-500 focus:ring-red-500/20 focus:border-red-500' : 'border-white/10 focus:ring-indigo-500/20 focus:border-indigo-500'} focus:outline-none focus:ring-2 text-white font-medium placeholder-slate-600 transition-all`}
+                          />
+                          {regBirthdateError && <p className="text-red-500 text-[10px] font-bold mt-1">{regBirthdateError}</p>}
                         </div>
                       </div>
                       
