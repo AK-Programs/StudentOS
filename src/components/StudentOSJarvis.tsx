@@ -943,7 +943,8 @@ export const StudentOSJarvis: React.FC<StudentOSJarvisProps> = ({
           user_id: currentUser.uid,
           prompt: textToParse,
           response: resolvedFeedback,
-          timestamp: new Date().toISOString()
+          created_at: new Date().toISOString(),
+          action_executed: actionTriggered || 'unknown'
         }]);
 
         const auditId = crypto.randomUUID();
