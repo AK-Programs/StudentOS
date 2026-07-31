@@ -21,6 +21,7 @@ interface ShapeObj {
   text?: string;
   fontSize?: number;
   imageObj?: HTMLImageElement;
+  imageSrc?: string;
   locked?: boolean;
 }
 
@@ -102,45 +103,41 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
   const [undoStack, setUndoStack] = useState<string[]>([]);
   const [redoStack, setRedoStack] = useState<string[]>([]);
 
-  const saveSnapshot = React.useCallback(() => {
-    const snapshot = JSON.stringify(slides.map(s => ({
+  const serializeSlides = React.useCallback((slidesToSerialize: Slide[]) => {
+    return JSON.stringify(slidesToSerialize.map(s => ({
       ...s,
-      shapes: s.shapes.map(sh => { const { imageObj, ...rest } = sh as any; return rest; })
+      // Image elements cannot be serialized. `imageSrc` is retained and used
+      // to hydrate generated diagrams when a history state is restored.
+      shapes: s.shapes.map(sh => {
+        const { imageObj, ...rest } = sh as any;
+        return rest;
+      })
     })));
+  }, []);
+
+  const saveSnapshot = React.useCallback(() => {
+    const snapshot = serializeSlides(slides);
     setUndoStack(prev => [...prev.slice(-29), snapshot]);
     setRedoStack([]);
-  }, [slides]);
+  }, [serializeSlides, slides]);
 
   const handleUndo = React.useCallback(() => {
-    setUndoStack(prev => {
-      if (prev.length === 0) return prev;
-      const stack = [...prev];
-      const snapshot = stack.pop()!;
-      // Push current state to redo
-      const currentSnap = JSON.stringify(slides.map(s => ({
-        ...s,
-        shapes: s.shapes.map(sh => { const { imageObj, ...rest } = sh as any; return rest; })
-      })));
-      setRedoStack(r => [currentSnap, ...r.slice(0, 29)]);
-      setSlides(JSON.parse(snapshot));
-      return stack;
-    });
-  }, [slides]);
+    if (undoStack.length === 0) return;
+    const snapshot = undoStack[undoStack.length - 1];
+    setRedoStack(prev => [...prev.slice(-29), serializeSlides(slides)]);
+    setUndoStack(prev => prev.slice(0, -1));
+    setSlides(JSON.parse(snapshot));
+    setSelectedObj(null);
+  }, [serializeSlides, slides, undoStack]);
 
   const handleRedo = React.useCallback(() => {
-    setRedoStack(prev => {
-      if (prev.length === 0) return prev;
-      const stack = [...prev];
-      const snapshot = stack.shift()!;
-      const currentSnap = JSON.stringify(slides.map(s => ({
-        ...s,
-        shapes: s.shapes.map(sh => { const { imageObj, ...rest } = sh as any; return rest; })
-      })));
-      setUndoStack(u => [...u.slice(-29), currentSnap]);
-      setSlides(JSON.parse(snapshot));
-      return stack;
-    });
-  }, [slides]);
+    if (redoStack.length === 0) return;
+    const snapshot = redoStack[redoStack.length - 1];
+    setUndoStack(prev => [...prev.slice(-29), serializeSlides(slides)]);
+    setRedoStack(prev => prev.slice(0, -1));
+    setSlides(JSON.parse(snapshot));
+    setSelectedObj(null);
+  }, [redoStack, serializeSlides, slides]);
 
   // Keyboard shortcuts: Ctrl+Z = undo, Ctrl+Y / Ctrl+Shift+Z = redo
   useEffect(() => {
@@ -159,6 +156,32 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
       return () => clearTimeout(timer);
     }
   }, [aiTip]);
+
+  // Restore generated SVG/Mermaid images after undo or redo rehydrates a
+  // JSON snapshot. The raw source remains in history; only browser objects
+  // are recreated.
+  useEffect(() => {
+    slides.forEach(slide => {
+      slide.shapes.forEach(shape => {
+        if (!shape.imageSrc || shape.imageObj) return;
+        const image = new Image();
+        image.onload = () => {
+          setSlides(current => current.map(currentSlide => {
+            if (currentSlide.id !== slide.id) return currentSlide;
+            return {
+              ...currentSlide,
+              shapes: currentSlide.shapes.map(currentShape =>
+                currentShape.id === shape.id && !currentShape.imageObj
+                  ? { ...currentShape, imageObj: image }
+                  : currentShape
+              )
+            };
+          }));
+        };
+        image.src = shape.imageSrc;
+      });
+    });
+  }, [slides]);
 
   // Zoom and Pan Controls
   const [stageScale, setStageScale] = useState(1);
@@ -222,8 +245,10 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
                 height: 380,
                 stroke: '#818cf8',
                 strokeWidth: 0,
-                imageObj: img
+                imageObj: img,
+                imageSrc: img.src
               };
+              saveSnapshot();
               setSlides(prev => {
                 const updated = [...prev];
                 updated[activeSlideIdx].shapes = [...(updated[activeSlideIdx].shapes || []), svgShape];
@@ -251,8 +276,10 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
                   height: 380,
                   stroke: '#818cf8',
                   strokeWidth: 0,
-                  imageObj: img
+                  imageObj: img,
+                  imageSrc: img.src
                 };
+                saveSnapshot();
                 setSlides(prev => {
                   const updated = [...prev];
                   updated[activeSlideIdx].shapes = [...(updated[activeSlideIdx].shapes || []), svgShape];
@@ -286,8 +313,10 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
             height: 390,
             stroke: '#10b981',
             strokeWidth: 0,
-            imageObj: img
+            imageObj: img,
+            imageSrc: img.src
           };
+          saveSnapshot();
           setSlides(prev => {
             const updated = [...prev];
             updated[activeSlideIdx].shapes = [...(updated[activeSlideIdx].shapes || []), svgShape];
@@ -319,6 +348,7 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
           });
         }
         
+        if (newShapes.length > 0) saveSnapshot();
         setSlides(prev => {
           const updated = [...prev];
           updated[activeSlideIdx].shapes = [...(updated[activeSlideIdx].shapes || []), ...newShapes];
@@ -467,6 +497,7 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
     if (!pos) return;
 
     if (tool === 'object_eraser') {
+      saveSnapshot();
       isDrawing.current = true;
       eraseAt(pos.x, pos.y);
       return;
@@ -480,6 +511,11 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
       return;
     }
     
+    // Save the pre-edit state once for the entire pointer gesture.
+    // This lets a single undo remove one completed stroke or shape.
+    if (tool !== 'shape' || shapeType !== 'text') {
+      saveSnapshot();
+    }
     isDrawing.current = true;
     
     if (tool === 'pen' || tool === 'pencil' || tool === 'marker' || tool === 'highlighter' || tool === 'eraser') {
@@ -517,6 +553,7 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
       if (shapeType === 'text') {
         const textVal = prompt('Enter academic text value:');
         if (textVal) {
+          saveSnapshot();
           const newShape: ShapeObj = {
             id: Date.now().toString(),
             type: shapeType,
@@ -636,8 +673,6 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
 
   const handleMouseUp = () => {
     isDrawing.current = false;
-    // Save undo snapshot after each completed stroke or shape placement
-    saveSnapshot();
 
     // AI Predictive Shape Assistant Engine
     if (aiShapeAssistant && (tool === 'pen' || tool === 'pencil' || tool === 'marker' || tool === 'highlighter')) {
@@ -782,6 +817,7 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
   
   const handleObjectClick = (e: any, id: string, type: 'line' | 'shape') => {
     if (tool === 'object_eraser') {
+      saveSnapshot();
       setSlides(prev => {
         const updated = [...prev];
         if (type === 'line') {
@@ -826,12 +862,14 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
 
   // Slide Manager Actions
   const handleAddSlide = () => {
+    saveSnapshot();
     setSlides(prev => [...prev, { id: `slide_${Date.now()}`, shapes: [], lines: [], stickies: [] }]);
     setActiveSlideIdx(slides.length);
     setSelectedObj(null);
   };
 
   const handleDuplicateSlide = () => {
+    saveSnapshot();
     const current = slides[activeSlideIdx];
     const duplicated: Slide = {
       id: `slide_${Date.now()}`,
@@ -854,6 +892,7 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
       return;
     }
     if (confirm("Are you sure you want to delete this whiteboard slide?")) {
+      saveSnapshot();
       const newIdx = Math.max(0, activeSlideIdx - 1);
       setSlides(prev => prev.filter((_, idx) => idx !== activeSlideIdx));
       setActiveSlideIdx(newIdx);
@@ -872,6 +911,7 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
   // Selection Object Modifiers
   const handleModifyObjectColor = (color: string) => {
     if (!selectedObj) return;
+    saveSnapshot();
     setSlides(prev => {
       const updated = [...prev];
       const slide = updated[activeSlideIdx];
@@ -891,6 +931,7 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
 
   const handleModifyObjectFill = (color: string) => {
     if (!selectedObj || selectedObj.type !== 'shape') return;
+    saveSnapshot();
     setSlides(prev => {
       const updated = [...prev];
       const slide = updated[activeSlideIdx];
@@ -902,6 +943,7 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
 
   const handleModifyObjectThickness = (size: number) => {
     if (!selectedObj) return;
+    saveSnapshot();
     setSlides(prev => {
       const updated = [...prev];
       const slide = updated[activeSlideIdx];
@@ -918,6 +960,7 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
 
   const handleModifyObjectLayer = (order: 'front' | 'back') => {
     if (!selectedObj) return;
+    saveSnapshot();
     setSlides(prev => {
       const updated = [...prev];
       const slide = updated[activeSlideIdx];
@@ -1006,6 +1049,7 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
 
     const newText = prompt('Edit label / text content:', shape.text || '');
     if (newText !== null) {
+      saveSnapshot();
       setSlides(prev => {
         const updated = [...prev];
         const currentSlide = updated[activeSlideIdx];
@@ -1019,6 +1063,8 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
   };
 
   const currentSlide = slides[activeSlideIdx] || { id: 'default', shapes: [], lines: [] };
+  const selectedShapeLocked = selectedObj?.type === 'shape'
+    && Boolean(currentSlide.shapes.find(shape => shape.id === selectedObj.id)?.locked);
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950 flex flex-col font-sans select-none overflow-hidden">
@@ -1479,10 +1525,14 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
                 y={shape.y} 
                 draggable={tool === 'select' && !shape.locked}
                 onDragEnd={(e) => {
+                  if (shape.locked) return;
+                  saveSnapshot();
                   shape.x = e.target.x();
                   shape.y = e.target.y();
                 }}
                 onTransformEnd={(e) => {
+                  if (shape.locked) return;
+                  saveSnapshot();
                   const node = e.target;
                   shape.x = node.x();
                   shape.y = node.y();
@@ -1783,6 +1833,7 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
                 globalCompositeOperation={line.tool === 'eraser' ? 'destination-out' : 'source-over'}
                 draggable={tool === 'select'}
                 onDragEnd={(e) => {
+                  saveSnapshot();
                   line.points = line.points.map((p, idx) => {
                     const deltaX = e.target.x();
                     const deltaY = e.target.y();
@@ -1791,6 +1842,7 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
                   e.target.position({ x: 0, y: 0 });
                 }}
                 onTransformEnd={(e) => {
+                  saveSnapshot();
                   const node = e.target;
                   (line as any).scaleX = node.scaleX();
                   (line as any).scaleY = node.scaleY();
@@ -1823,7 +1875,7 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
             )}
             
             {/* Transformer for Selection */}
-            {selectedObj && tool === 'select' && (
+            {selectedObj && tool === 'select' && !selectedShapeLocked && (
               <Transformer 
                 ref={trRef} 
                 boundBoxFunc={(oldBox, newBox) => {
