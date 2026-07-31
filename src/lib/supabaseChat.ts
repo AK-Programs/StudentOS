@@ -290,6 +290,36 @@ export async function savePeerMessage(message: ChatMessage): Promise<void> {
 }
 
 /**
+ * Rename AI Buddy Chat
+ */
+export async function renameAiBuddyChat(threadId: string, title: string, userId: string): Promise<void> {
+  if (!userId || !threadId) return;
+  console.log('[SUPABASE-CHAT] Renaming ai_buddy_chat:', threadId, 'to:', title);
+  try {
+    await supabase
+      .from('ai_buddy_chats')
+      .update({ title, updated_at: new Date().toISOString() })
+      .eq('id', threadId)
+      .eq('user_id', userId);
+  } catch (err) {
+    console.warn('[SUPABASE-CHAT] Error renaming ai_buddy_chats:', err);
+  }
+}
+
+/**
+ * Delete Peer Message
+ */
+export async function deletePeerMessage(messageId: string): Promise<void> {
+  console.log('[SUPABASE-CHAT] Deleting message:', messageId);
+  try {
+    await supabase.from('messages').delete().eq('id', messageId);
+    await supabase.from('chat_room_messages').delete().eq('id', messageId);
+  } catch (err) {
+    console.warn('[SUPABASE-CHAT] Error deleting message:', err);
+  }
+}
+
+/**
  * Chat Rooms list helpers
  */
 export async function getChatRooms(): Promise<ChatRoom[]> {
@@ -337,11 +367,11 @@ export async function getChatRooms(): Promise<ChatRoom[]> {
           name: item.name,
           description,
           code,
-          type,
+          type: type as any,
           icon,
           creatorId,
-          members,
-          moderators
+          members: Array.isArray(members) ? members : [],
+          moderators: Array.isArray(moderators) ? moderators : []
         } as ChatRoom);
       });
     }
@@ -373,12 +403,87 @@ export async function saveChatRoom(room: ChatRoom): Promise<void> {
       description: `__JSON_METADATA__::${metaPayload}`,
       type: room.type,
       code: room.code,
-      icon: room.icon
+      icon: room.icon,
+      creator_id: room.creatorId || null,
+      members: JSON.stringify(room.members || []),
+      moderators: JSON.stringify(room.moderators || [])
     };
 
     await supabase.from('chat_rooms').upsert(dbRow);
+
+    // Sync chat_room_members table
+    if (room.members && room.members.length > 0) {
+      for (const memberUid of room.members) {
+        const isMod = room.moderators?.includes(memberUid) || memberUid === room.creatorId;
+        try {
+          await supabase.from('chat_room_members').upsert({
+            room_id: room.id,
+            user_id: memberUid,
+            role: isMod ? 'admin' : 'member'
+          }, { onConflict: 'room_id,user_id' });
+        } catch (_) {}
+      }
+    }
   } catch (err) {
     console.warn('[SUPABASE-CHAT] Notice saving to chat_rooms:', err);
+  }
+}
+
+export async function joinChatRoom(roomId: string, userId: string): Promise<ChatRoom | null> {
+  if (!roomId || !userId) return null;
+  console.log('[SUPABASE-CHAT] Joining chat room:', roomId, 'user:', userId);
+
+  try {
+    const rooms = await getChatRooms();
+    const targetRoom = rooms.find(r => r.id === roomId);
+    if (!targetRoom) return null;
+
+    const currentMembers = targetRoom.members || [];
+    if (!currentMembers.includes(userId)) {
+      targetRoom.members = [...currentMembers, userId];
+      await saveChatRoom(targetRoom);
+    }
+    return targetRoom;
+  } catch (err) {
+    console.warn('[SUPABASE-CHAT] Error joining room:', err);
+    return null;
+  }
+}
+
+export async function leaveChatRoom(roomId: string, userId: string): Promise<void> {
+  if (!roomId || !userId) return;
+  console.log('[SUPABASE-CHAT] Leaving chat room:', roomId, 'user:', userId);
+
+  try {
+    const rooms = await getChatRooms();
+    const targetRoom = rooms.find(r => r.id === roomId);
+    if (!targetRoom) return;
+
+    targetRoom.members = (targetRoom.members || []).filter(m => m !== userId);
+    targetRoom.moderators = (targetRoom.moderators || []).filter(m => m !== userId);
+    await saveChatRoom(targetRoom);
+
+    await supabase
+      .from('chat_room_members')
+      .delete()
+      .eq('room_id', roomId)
+      .eq('user_id', userId);
+  } catch (err) {
+    console.warn('[SUPABASE-CHAT] Error leaving room:', err);
+  }
+}
+
+export async function deleteChatRoom(roomId: string, userId: string): Promise<void> {
+  if (!roomId) return;
+  console.log('[SUPABASE-CHAT] Deleting chat room:', roomId);
+
+  try {
+    await supabase.from('chat_room_messages').delete().eq('room_id', roomId);
+    await supabase.from('messages').delete().eq('target_id', roomId);
+    await supabase.from('chat_room_members').delete().eq('room_id', roomId);
+    await supabase.from('chat_rooms').delete().eq('id', roomId);
+  } catch (err) {
+    console.warn('[SUPABASE-CHAT] Error deleting room:', err);
   }
 }
 
