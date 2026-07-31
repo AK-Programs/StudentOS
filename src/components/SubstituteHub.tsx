@@ -61,16 +61,26 @@ export const SubstituteHub = ({ currentUser, effectiveRole, showNotification }: 
   const [emergencies, setEmergencies] = useState<any[]>([]);
   
   useEffect(() => {
-    try {
-      const storedSwaps = localStorage.getItem('s_os_lecture_swaps');
-      if (storedSwaps) setSwaps(JSON.parse(storedSwaps));
-      const storedEmerg = localStorage.getItem('s_os_emergencies');
-      if (storedEmerg) setEmergencies(JSON.parse(storedEmerg));
-    } catch(e){}
+    const fetchStorage = async () => {
+      try {
+        const { data: swapsData } = await supabase.from('substitute_hub').select('data').eq('id', 'global_swaps').single();
+        if (swapsData && swapsData.data) setSwaps(JSON.parse(swapsData.data));
+        
+        const { data: emergData } = await supabase.from('substitute_hub').select('data').eq('id', 'global_emergencies').single();
+        if (emergData && emergData.data) setEmergencies(JSON.parse(emergData.data));
+      } catch(e){}
+    };
+    fetchStorage();
   }, []);
   
-  const saveSwaps = (list: any[]) => { setSwaps(list); localStorage.setItem('s_os_lecture_swaps', JSON.stringify(list)); };
-  const saveEmergencies = (list: any[]) => { setEmergencies(list); localStorage.setItem('s_os_emergencies', JSON.stringify(list)); };
+  const saveSwaps = async (list: any[]) => { 
+    setSwaps(list); 
+    await supabase.from('substitute_hub').upsert({ id: 'global_swaps', data: JSON.stringify(list) }); 
+  };
+  const saveEmergencies = async (list: any[]) => { 
+    setEmergencies(list); 
+    await supabase.from('substitute_hub').upsert({ id: 'global_emergencies', data: JSON.stringify(list) }); 
+  };
 
 
   // Form States
@@ -82,58 +92,61 @@ export const SubstituteHub = ({ currentUser, effectiveRole, showNotification }: 
   const [workAssigned, setWorkAssigned] = useState('');
   const [assignmentDate, setAssignmentDate] = useState(new Date().toISOString().split('T')[0]);
 
-  // Read/Write LocalStorage
+  // Read from Supabase
   useEffect(() => {
-    try {
-      const stored = localStorage.getItem('s_os_substitute_assignments');
-      if (stored) {
-        setAssignments(JSON.parse(stored));
-      } else {
-        // Mock default list
-        const initial: SubstituteAssignment[] = [
-          {
-            id: 'sub-1',
-            classGrade: 'Grade 10 Solara',
-            period: 'Period 3 (10:45 - 11:45)',
-            subject: 'Physics',
-            absentTeacherName: 'Dr. Sarah Jenkins',
-            substituteTeacherName: 'Prof. Alex Mercer',
-            workAssigned: 'Read Chapter 4 on Electromagnetism and solve exercises 1-5.',
-            status: 'Assigned',
-            date: new Date().toISOString().split('T')[0]
-          },
-          {
-            id: 'sub-2',
-            classGrade: 'Grade 9 Elara',
-            period: 'Period 1 (08:30 - 09:30)',
-            subject: 'Mathematics',
-            absentTeacherName: 'Mrs. Clara Higgins',
-            substituteTeacherName: 'Mr. Raj Patel',
-            workAssigned: 'Practice quadratic formula worksheets distributed in class.',
-            status: 'Completed',
-            date: new Date().toISOString().split('T')[0]
-          }
-        ];
-        setAssignments(initial);
-        localStorage.setItem('s_os_substitute_assignments', JSON.stringify(initial));
+    const loadData = async () => {
+      try {
+        const { data, error } = await supabase.from('substitute_hub').select('data').eq('id', 'global_substitutes').single();
+        if (error) throw error;
+        if (data && data.data) {
+          setAssignments(JSON.parse(data.data));
+          return;
+        }
+      } catch (e) {
+        console.warn('Failed to load from Supabase:', e);
       }
-    } catch (_) {}
+      
+      const initial: SubstituteAssignment[] = [
+        {
+          id: 'sub-1',
+          classGrade: 'Grade 10 Solara',
+          period: 'Period 3 (10:45 - 11:45)',
+          subject: 'Physics',
+          absentTeacherName: 'Dr. Sarah Jenkins',
+          substituteTeacherName: 'Prof. Alex Mercer',
+          workAssigned: 'Read Chapter 4 on Electromagnetism and solve exercises 1-5.',
+          status: 'Assigned',
+          date: new Date().toISOString().split('T')[0]
+        },
+        {
+          id: 'sub-2',
+          classGrade: 'Grade 9 Elara',
+          period: 'Period 1 (08:30 - 09:30)',
+          subject: 'Mathematics',
+          absentTeacherName: 'Mrs. Clara Higgins',
+          substituteTeacherName: 'Mr. Raj Patel',
+          workAssigned: 'Practice quadratic formula worksheets distributed in class.',
+          status: 'Completed',
+          date: new Date().toISOString().split('T')[0]
+        }
+      ];
+      setAssignments(initial);
+    };
+    loadData();
   }, []);
 
   const saveAssignments = async (list: SubstituteAssignment[]) => {
     setAssignments(list);
     try {
-      await supabase.from('notes').upsert({
+      await supabase.from('substitute_hub').upsert({
         id: 'global_substitutes',
-        title: 'Substitute Hub Data',
-        subject: 'System',
-        content: JSON.stringify(list),
-        created_at: new Date().toISOString()
+        data: JSON.stringify(list),
+        updated_at: new Date().toISOString()
       });
     } catch (e) {}
   };
 
-  const handleCreateAssignment = (e: React.FormEvent) => {
+  const handleCreateAssignment = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (absentTeacher === subTeacher) {
@@ -161,15 +174,21 @@ export const SubstituteHub = ({ currentUser, effectiveRole, showNotification }: 
 
     // Trigger local broadcast notification
     try {
-      const alerts = JSON.parse(localStorage.getItem('s_os_notif_alerts') || '[]');
-      alerts.unshift({
-        id: `notif-${Date.now()}`,
-        title: 'New Substitute Assigned',
-        message: `${subTeacher} will conduct ${subject} for ${classGrade} during ${period}.`,
-        role: 'all',
-        date: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      });
-      localStorage.setItem('s_os_notif_alerts', JSON.stringify(alerts.slice(0, 20)));
+      try {
+        const { data: notifData } = await supabase.from('substitute_hub').select('data').eq('id', 'global_alerts').single();
+        const currentAlerts = notifData && notifData.data ? JSON.parse(notifData.data) : [];
+        const newAlert = {
+          id: `notif-${Date.now()}`,
+          title: 'New Substitute Assigned',
+          message: `${subTeacher} will conduct ${subject} for ${classGrade} during ${period}.`,
+          role: 'all',
+          date: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        };
+        const updatedAlerts = [newAlert, ...currentAlerts].slice(0, 20);
+        await supabase.from('substitute_hub').upsert({ id: 'global_alerts', data: JSON.stringify(updatedAlerts) });
+      } catch (sbErr) {
+        console.error('Error saving alert:', sbErr);
+      }
 
       // Dispatch global notification event
       const gEvent = new CustomEvent('s_os_notification_created', {
