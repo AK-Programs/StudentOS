@@ -4710,9 +4710,11 @@ ${roleLabel}: ${userQuery}`;
       } catch (apiErr: any) {
         console.log("Server API failed, falling back to client-side AI:", apiErr);
         const { clientSideGemini } = await import('./lib/clientAiFallback');
-        // Pass only the user's message — the mock doesn't use system context
-        // and including history text caused false keyword matches (e.g. "workspace" → "work")
-        answer = await clientSideGemini(promptWithContext);
+        const historyPayload = (currentThread?.messages || []).map(m => ({
+          role: m.role,
+          content: m.content
+        }));
+        answer = await clientSideGemini(promptWithContext, historyPayload);
       }
       
       setAiThreads(prev => prev.map(t => {
