@@ -47,6 +47,8 @@ import StudentMarksCenter from './components/StudentMarksCenter';
 import CoordinatorModule from './components/CoordinatorModule';
 import { SportsActivitiesPortal } from './components/SportsActivitiesPortal';
 import { SubstituteHub } from './components/SubstituteHub';
+import { ChatSystem } from './components/ChatSystem';
+import { NotificationCenter } from './components/NotificationCenter';
 import { MOCK_QUIZZES, AI_PERSONAS, INITIAL_ANNOUNCEMENTS, INITIAL_FEEDBACK, INITIAL_MATERIALS, MOCK_SCHEDULES } from './mockData';
 
 // Stub Integrations
@@ -1943,34 +1945,62 @@ What can I clarify today?` }
     });
 
     // Realtime Postgres Changes: Messages
-    channel.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+    channel.on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, (payload) => {
       const p = payload.new;
-      if (!p || !p.id) return;
+      if (!p || !p.id) {
+        if (payload.eventType === 'DELETE' && payload.old?.id) {
+          setChats(prev => prev.filter(c => c.id !== payload.old.id));
+        }
+        return;
+      }
+
+      let text = p.message || '';
+      let meta: any = {};
+      if (typeof text === 'string' && text.startsWith('__EXTENDED_CHAT__::')) {
+        try {
+          meta = JSON.parse(text.substring('__EXTENDED_CHAT__::'.length));
+          text = meta.message || '';
+        } catch (_) {}
+      }
+
       const msg: ChatMessage = {
         id: p.id,
         name: p.name || 'Peer',
         role: p.role || 'student',
         house: p.house,
-        message: p.message || '',
+        message: text,
         createdAt: p.created_at ? (typeof p.created_at === 'number' ? new Date(p.created_at).toISOString() : p.created_at) : new Date().toISOString(),
         targetId: p.target_id || 'group-all',
         sharedMaterialId: p.shared_material_id,
-        ownerUid: p.owner_uid
+        ownerUid: p.owner_uid,
+        replyToId: meta.replyToId,
+        replyToText: meta.replyToText,
+        replyToSender: meta.replyToSender,
+        attachments: meta.attachments,
+        reactions: meta.reactions,
+        readBy: meta.readBy,
+        deliveredTo: meta.deliveredTo,
+        isEdited: meta.isEdited,
+        editedAt: meta.editedAt,
+        isPinned: meta.isPinned,
+        deletedForEveryone: meta.deletedForEveryone,
+        deletedFor: meta.deletedFor,
+        flaggedReason: meta.flaggedReason
       };
+
       setChats(prev => {
-        if (prev.some(c => c.id === msg.id)) return prev;
+        const idx = prev.findIndex(c => c.id === msg.id);
+        if (idx >= 0) {
+          const updated = [...prev];
+          updated[idx] = msg;
+          return updated;
+        }
         return [...prev, msg];
       });
       setTimeout(() => {
         const view = document.getElementById('chat-scroll-view');
         if (view) view.scrollTop = view.scrollHeight;
       }, 50);
-    });
-
-    channel.on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'messages' }, (payload) => {
-      if (payload.old?.id) {
-        setChats(prev => prev.filter(c => c.id !== payload.old.id));
-      }
     });
 
     // Realtime Postgres Changes: Chat Rooms
@@ -10961,332 +10991,18 @@ Could you please guide me step-by-step on how to solve this, explaining the theo
 
               {/* Tab 8: Peer global chat matrix */}
               {activeTab === 'peer_chat' && (
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-5 h-[650px] max-w-6xl mx-auto shadow-xl animate-fadeIn">
-                  
-                  {/* Left Column: Chat Rooms List (Groups, Friends, Channels) */}
-                  <div className={`md:col-span-4 bg-slate-900/80 border border-white/5 rounded-3xl p-4 flex flex-col justify-between ${showChatSidebarMobile ? 'block' : 'hidden md:flex'}`}>
-                    <div className="space-y-4 flex-1 flex flex-col min-h-0">
-                      
-                      {/* Search & Simple Heading */}
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-center">
-                          <h3 className="font-extrabold text-sm uppercase tracking-wider text-white">Class Chat Rooms</h3>
-                          <button
-                            onClick={() => setIsCreatingRoom(true)}
-                            className="bg-indigo-600 hover:bg-indigo-505 text-white text-[10px] px-2.5 py-1 rounded-lg font-black tracking-wide uppercase transition-all shadow-md active:scale-95"
-                          >
-                            ➕ Create
-                          </button>
-                        </div>
-                        <input
-                          type="text"
-                          value={chatSearchQuery}
-                          onChange={(e) => setChatSearchQuery(e.target.value)}
-                          placeholder="Search groups, friends, or channels..."
-                          className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                        />
-                      </div>
-
-                      {/* Rooms List Scrollable container */}
-                      <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 scrollbar-thin">
-                        {chatRooms
-                          .filter(room => {
-                            if (!chatSearchQuery) return true;
-                            return room.name.toLowerCase().includes(chatSearchQuery.toLowerCase()) || 
-                                   room.type.toLowerCase().includes(chatSearchQuery.toLowerCase());
-                          })
-                          .map((room) => {
-                            const isActive = activeChatTargetId === room.id;
-                            let badgeStyle = "bg-indigo-500/10 text-indigo-400";
-                            if (room.type === "friend") badgeStyle = "bg-teal-500/10 text-teal-400";
-                            if (room.type === "channel") badgeStyle = "bg-rose-500/10 text-rose-400";
-
-                            return (
-                              <button
-                                key={room.id}
-                                onClick={() => {
-                                  setActiveChatTargetId(room.id);
-                                  setShowChatSidebarMobile(false);
-                                }}
-                                className={`w-full text-left p-3 rounded-2xl border transition-all flex items-center gap-3 ${isActive ? 'bg-indigo-600/15 border-indigo-600/40 text-white' : 'bg-slate-950/20 border-white/5 hover:border-white/10 hover:bg-slate-950/40 text-slate-350'}`}
-                              >
-                                <span className="text-xl">{room.icon}</span>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex justify-between items-center">
-                                    <span className="text-xs font-black truncate">{room.name}</span>
-                                    <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md ${badgeStyle}`}>
-                                      {room.type}
-                                    </span>
-                                  </div>
-                                  <p className="text-[10px] text-slate-500 truncate mt-0.5">{room.description}</p>
-                                </div>
-                              </button>
-                            );
-                          })}
-                      </div>
-
-                    </div>
-                    
-                    {/* User Mini status footer */}
-                    <div className="pt-2 border-t border-white/5 flex justify-between items-center text-[10px] text-slate-400">
-                      <span>My House status:</span>
-                      <span className="font-extrabold text-indigo-400">⚡ Online & ready</span>
-                    </div>
-                  </div>
-
-                  {/* Right Column: Chat Dialog box */}
-                  <div className={`md:col-span-8 bg-slate-900/80 border border-white/5 rounded-3xl p-5 flex flex-col justify-between ${!showChatSidebarMobile ? 'flex' : 'hidden md:flex'}`}>
-                    
-                    {/* Heading bar */}
-                    {(() => {
-                      const activeRoomInfo = chatRooms.find(r => r.id === activeChatTargetId) || { id: 'group-all', name: 'All Students Group', type: 'group', icon: '🌍', description: 'General chat for all students' };
-
-                      return (
-                        <div className="flex items-center justify-between border-b border-white/5 pb-3">
-                          <div className="flex items-center gap-3">
-                            <button
-                              onClick={() => setShowChatSidebarMobile(true)}
-                              className="md:hidden p-1.5 bg-white/5 rounded-lg border border-white/10 text-white text-[11px]"
-                            >
-                              ← Rooms
-                            </button>
-                            <span className="text-2xl">{activeRoomInfo.icon}</span>
-                            <div>
-                              <h4 className="font-extrabold text-sm text-white">{activeRoomInfo.name}</h4>
-                              <p className="text-[10px] text-slate-400 mt-0.5">{activeRoomInfo.description}</p>
-                              {(activeRoomInfo as any).code && <p className="text-[10px] font-mono text-emerald-400 font-bold mt-1">Code: {(activeRoomInfo as any).code}</p>}
-                            </div>
-                          </div>
-                          
-                          {activeRoomInfo.type === 'channel' && (
-                            <span className="text-[9px] bg-rose-500/10 text-rose-400 border border-rose-500/20 px-2 py-0.5 rounded-full font-bold mr-2">
-                              📢 Broadcast Only
-                            </span>
-                          )}
-                          {(activeRoomInfo as any).creatorId === currentUser?.uid && (
-                            <button 
-                              onClick={() => setShowGroupSettings(true)}
-                              className="text-[10px] bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2 py-1 rounded-md font-bold hover:bg-indigo-500/20 transition-all"
-                            >
-                              ⚙️ Group Settings
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })()}
-
-                    {/* Chat Bubble Feed Container */}
-                    <div id="chat-scroll-view" className="flex-1 overflow-y-auto my-4 space-y-3.5 pr-1 bg-slate-950/40 p-4 rounded-2xl border border-white/5 shadow-inner">
-                      
-                      {/* Welcome message */}
-                      <div className="p-3 bg-white/5 rounded-xl border border-white/5 text-center text-[10px] text-slate-400 font-medium">
-                        🛡️ Messages are secure and private to the StudentOS system. Keep discussions respectful and fun.
-                      </div>
-
-                      {/* Mock legacy text to retain previous contents if group-all is active */}
-                      {activeChatTargetId === 'group-all' && (
-                        <>
-                          <div className="p-4 rounded-2xl bg-white/5 border border-white/5 max-w-[85%] space-y-1 mr-auto animate-fadeIn">
-                            <span className="text-xs font-bold text-emerald-400 block pb-0.5">Siddharth Sen (student • Emerald House):</span>
-                            <p className="text-xs text-slate-350">Finished the Computer Science Binary Trees quiz! Added +50 points to Emerald House standings. Let’s head the charts this term!</p>
-                            <span className="text-[8px] text-slate-500 block text-right">09:12 AM</span>
-                          </div>
-
-                          <div className="p-4 rounded-2xl bg-white/5 border border-white/5 max-w-[85%] space-y-1 mr-auto animate-fadeIn col flex flex-col gap-1">
-                            <span className="text-xs font-bold text-blue-400 block pb-0.5">Meera Jain (student • Sapphire House):</span>
-                            <p className="text-xs text-slate-350">Does anyone have the Calculus derivatives cheat sheet handy? It’s not in the Materials Hub yet.</p>
-                            <span className="text-[8px] text-slate-500 block text-right font-mono">10:04 AM</span>
-                          </div>
-                        </>
-                      )}
-
-                      {/* Filtered Active Messages */}
-                      {chats.filter(c => c.targetId === activeChatTargetId || (!c.targetId && activeChatTargetId === 'group-all')).map(c => {
-                        const isMine = c.ownerUid === currentUser?.uid;
-                        return (
-                          <div key={c.id} className={`p-4 rounded-2xl border max-w-[85%] space-y-1 animate-fadeIn flex flex-col gap-1 ${isMine ? 'ml-auto bg-indigo-500/10 border-indigo-500/20' : 'mr-auto bg-white/5 border-white/5'}`}>
-                            <span className={`text-xs font-bold block pb-0.5 ${c.role === 'teacher' ? 'text-amber-400' : 'text-blue-400'}`}>
-                              {c.name} ({c.role}{c.house ? ` • ${c.house} House` : ''}):
-                            </span>
-                            <p className="text-xs text-slate-350">{c.message}</p>
-                            <span className="text-[8px] text-slate-500 block text-right font-mono">
-                              {new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </span>
-                          </div>
-                        );
-                      })}
-                      
-                      {chats.filter(c => c.targetId === activeChatTargetId || (!c.targetId && activeChatTargetId === 'group-all')).length === 0 && (
-                        <div className="text-center py-10 bg-slate-900 border border-slate-800 rounded-xl">
-                          <p className="text-[11px] text-slate-500 italic">No messages yet. Say hello!</p>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Chat messaging input drawer */}
-                    {(() => {
-                      const activeRoomInfo2 = chatRooms.find(r => r.id === activeChatTargetId) || { type: 'group' };
-
-                      const isBroadcastChannel = activeRoomInfo2.type === 'channel';
-                      const canPost = !isBroadcastChannel || effectiveRole === 'teacher';
-
-                      if (!canPost) {
-                        return (
-                          <div className="p-3 bg-red-500/5 border border-red-500/10 rounded-2xl text-center text-[10px] text-red-400 font-semibold leading-relaxed">
-                            📢 Only teachers are permitted to broadcast or update announcements inside this school channel.
-                          </div>
-                        );
-                      }
-
-                      return (
-                        <div className="flex gap-2 bg-slate-950 p-2.5 rounded-2xl border border-white/5">
-                          <input 
-                            type="text"
-                            value={newChatText}
-                            onChange={e => setNewChatText(e.target.value)}
-                            onKeyDown={e => e.key === 'Enter' && handleSendChat()}
-                            placeholder={`Send a chat message...`}
-                            className="flex-1 bg-transparent border-0 focus:outline-none text-xs text-white px-3 font-medium text-left"
-                          />
-                          <button 
-                            onClick={() => handleSendChat()}
-                            className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs uppercase px-5 py-2 rounded-xl transition-all"
-                          >
-                            Send
-                          </button>
-                        </div>
-                      );
-                    })()}
-
-                  </div>
-
-                  {/* Create New Room Modal */}
-                  {isCreatingRoom && (
-                    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fadeIn">
-                      <div className="bg-slate-900 border border-white/10 rounded-3xl max-w-md w-full p-6 shadow-2xl relative space-y-4">
-                        <button 
-                          onClick={() => setIsCreatingRoom(false)}
-                          className="absolute top-4 right-4 text-slate-400 hover:text-white p-1 rounded-full bg-white/5 hover:bg-white/10 transition-colors"
-                        >
-                          <X className="w-4 h-4" />
-                        </button>
-                        
-                        <div>
-                          <h3 className="text-base font-black text-white">Join Existing Room</h3>
-                          <p className="text-xs text-slate-400 mt-1">Enter a 6-character room code to join an existing group.</p>
-                        </div>
-                        
-                        <form onSubmit={handleJoinRoom} className="flex gap-2">
-                          <input 
-                            type="text"
-                            value={joinRoomCode}
-                            onChange={e => setJoinRoomCode(e.target.value.toUpperCase())}
-                            placeholder="Enter Code (e.g. A1B2C3)"
-                            maxLength={6}
-                            required
-                            className="flex-1 bg-slate-950 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 uppercase tracking-widest font-mono"
-                          />
-                          <button type="submit" className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-xl text-xs transition-colors">
-                            Join
-                          </button>
-                        </form>
-                        
-                        <div className="h-px bg-white/10 my-4" />
-
-                        <div>
-                          <h3 className="text-base font-black text-white">Create New Chat Room</h3>
-                          <p className="text-xs text-slate-400 mt-1">Start a private friend dialogue, study group alliance, or announce a broadcast channel.</p>
-                        </div>
-                        
-                        <form onSubmit={handleCreateRoom} className="space-y-3.5">
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Room Name</label>
-                            <input 
-                              type="text"
-                              value={newRoomName}
-                              onChange={e => setNewRoomName(e.target.value)}
-                              placeholder="e.g. Physics Revision, Meera J., Ruby Alliance"
-                              required
-                              className="w-full bg-slate-950 border border-white/10 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                            />
-                          </div>
-
-                          <div className="grid grid-cols-3 gap-2">
-                            {(['group', 'friend', 'channel'] as const).map((t) => (
-                              <button
-                                key={t}
-                                type="button"
-                                onClick={() => {
-                                  setNewRoomType(t);
-                                  if (t === 'friend') setNewRoomIcon('🧑‍🎓');
-                                  else if (t === 'channel') setNewRoomIcon('📢');
-                                  else setNewRoomIcon('📐');
-                                }}
-                                className={`py-1.5 rounded-xl text-[10px] font-black uppercase text-center border transition-all ${newRoomType === t ? 'bg-indigo-600/20 border-indigo-500 text-white font-black' : 'bg-slate-950 border-white/5 text-slate-400 hover:border-white/10'}`}
-                              >
-                                {t === 'group' && '🌍 '}
-                                {t === 'friend' && '🧑‍🎓 '}
-                                {t === 'channel' && '📢 '}
-                                {t}
-                              </button>
-                            ))}
-                          </div>
-
-                          <div className="grid grid-cols-2 gap-3">
-                            <div>
-                              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Select Icon Emoji</label>
-                              <select 
-                                value={newRoomIcon}
-                                onChange={e => setNewRoomIcon(e.target.value)}
-                                className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                              >
-                                <option value="📐">📐 Math/Study</option>
-                                <option value="🧪">🧪 Science </option>
-                                <option value="🌍">🌍 Global/All</option>
-                                <option value="📢">📢 Announcement</option>
-                                <option value="🧑‍🎓">🧑‍🎓 Student/Friend</option>
-                                <option value="🟥">🟥 Ruby House</option>
-                                <option value="🟩">🟩 Emerald House</option>
-                                <option value="🟦">🟦 Sapphire House</option>
-                                <option value="🟧">🟧 Topaz House</option>
-                                <option value="🏆">🏆 Sports/Cultural</option>
-                                <option value="💬">💬 Chat Bubble</option>
-                              </select>
-                            </div>
-
-                            <div>
-                              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Room Description</label>
-                              <input 
-                                type="text"
-                                value={newRoomDescription}
-                                onChange={e => setNewRoomDescription(e.target.value)}
-                                placeholder="Short details or tagline..."
-                                className="w-full bg-slate-950 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                              />
-                            </div>
-                          </div>
-
-                          <div className="pt-2 flex justify-end gap-2.5">
-                            <button
-                              type="button"
-                              onClick={() => setIsCreatingRoom(false)}
-                              className="px-4 py-2 rounded-xl text-xs font-semibold hover:bg-white/5 border border-transparent text-slate-400 hover:text-white transition-all"
-                            >
-                              Cancel
-                            </button>
-                            <button
-                              type="submit"
-                              className="px-4.5 py-2 rounded-xl bg-orange-605 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold uppercase tracking-wider transition-all shadow-lg active:scale-95"
-                            >
-                              Create Room
-                            </button>
-                          </div>
-                        </form>
-                      </div>
-                    </div>
-                  )}
-
-                </div>
+                <ChatSystem
+                  currentUser={currentUser}
+                  effectiveRole={effectiveRole as any}
+                  chatRooms={chatRooms}
+                  setChatRooms={setChatRooms}
+                  chats={chats}
+                  setChats={setChats}
+                  activeChatTargetId={activeChatTargetId}
+                  setActiveChatTargetId={setActiveChatTargetId}
+                  showNotification={showNotification}
+                  students={students}
+                />
               )}
 
               {/* Tab 9: Faculty Dashboard View */}
