@@ -33,6 +33,8 @@ export interface UserProfile {
   section?: SectionType;
   house?: HouseType;
   rollNumber?: string;
+  phone?: string;
+  birthdate?: string;
   department?: string;
   subjects?: string[];
   designation?: string;
@@ -205,6 +207,13 @@ export interface QuizQuestion {
   explanation: string;
 }
 
+export interface ChatAttachment {
+  type: 'image' | 'pdf' | 'audio' | 'video' | 'file';
+  url: string;
+  name: string;
+  size?: string;
+}
+
 export interface ChatMessage {
   id: string;
   name: string;
@@ -215,18 +224,47 @@ export interface ChatMessage {
   targetId?: string;
   sharedMaterialId?: string;
   ownerUid?: string;
+  replyToId?: string;
+  replyToText?: string;
+  replyToSender?: string;
+  attachments?: ChatAttachment[];
+  reactions?: Record<string, string[]>; // emoji -> userUids[]
+  readBy?: string[];
+  deliveredTo?: string[];
+  isEdited?: boolean;
+  editedAt?: string;
+  isPinned?: boolean;
+  deletedForEveryone?: boolean;
+  deletedFor?: string[];
+  flaggedReason?: string;
 }
 
 export interface ChatRoom {
   id: string;
   name: string;
   type: 'group' | 'friend' | 'channel';
+  channelCategory?: 'principal' | 'teacher' | 'class' | 'house' | 'club' | 'event';
   icon: string;
   description: string;
   code?: string;
   creatorId?: string;
   members?: string[];
   moderators?: string[];
+  inviteExpiresAt?: string;
+  isReadOnlyForStudents?: boolean;
+  pinnedMessageIds?: string[];
+}
+
+export interface AppNotification {
+  id: string;
+  title: string;
+  message: string;
+  type: 'assignment' | 'homework' | 'attendance' | 'exam' | 'marks' | 'feedback' | 'announcement' | 'chat' | 'mention' | 'ai_task' | 'substitute' | 'timetable' | 'resource' | 'blog';
+  createdAt: string;
+  isRead: boolean;
+  targetUserId?: string; // 'all' or user ID
+  targetClass?: string;
+  linkTab?: string;
 }
 
 export interface AITeacherPersona {
