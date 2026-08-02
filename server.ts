@@ -47,23 +47,14 @@ function sanitizeHistory(history: any[] = []): { role: 'user' | 'assistant'; con
   );
   if (filtered.length === 0) return [];
 
-  // Gemini API & OpenRouter sequence MUST start with 'user' role
-  const firstUserIdx = filtered.findIndex(
-    m => m.role === 'user'
-  );
-  if (firstUserIdx === -1) return [];
-
-  const sliced = filtered.slice(firstUserIdx);
   const sanitized: { role: 'user' | 'assistant'; content: string }[] = [];
 
-  for (const msg of sliced) {
+  for (const msg of filtered) {
     const role: 'user' | 'assistant' =
       msg.role === 'assistant' || msg.role === 'model' ? 'assistant' : 'user';
 
     if (sanitized.length === 0) {
-      if (role === 'user') {
-        sanitized.push({ role: 'user', content: msg.content.trim() });
-      }
+      sanitized.push({ role, content: msg.content.trim() });
     } else {
       const last = sanitized[sanitized.length - 1];
       if (last.role === role) {
@@ -175,12 +166,22 @@ async function generateAICompletion(systemInstruction: string, prompt: string, h
   if (ai) {
     const contentsList: any[] = [];
     
-    sanitizedHistory.forEach((msg) => {
+    let startIdx = 0;
+    if (sanitizedHistory.length > 0 && sanitizedHistory[0].role === 'assistant') {
+      contentsList.push({
+        role: 'user',
+        parts: [{ text: `[Prior Tutor Context]: ${sanitizedHistory[0].content}` }]
+      });
+      startIdx = 1;
+    }
+
+    for (let i = startIdx; i < sanitizedHistory.length; i++) {
+      const msg = sanitizedHistory[i];
       contentsList.push({
         role: msg.role === 'assistant' ? 'model' : 'user',
         parts: [{ text: msg.content }]
       });
-    });
+    }
 
     if (imageUrl) {
       const rawBase64 = imageUrl.split(';base64,')[1];
