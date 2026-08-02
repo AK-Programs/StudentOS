@@ -24,7 +24,6 @@ export async function getAiBuddyChats(userId: string): Promise<AiBuddyThread[]> 
   
   const mergedMap = new Map<string, AiBuddyThread>();
 
-  // 1. Query ai_buddy_chats table
   try {
     const { data, error } = await supabase
       .from('ai_buddy_chats')
@@ -38,12 +37,29 @@ export async function getAiBuddyChats(userId: string): Promise<AiBuddyThread[]> 
           const parsedMsgs = typeof item.messages === 'string' ? JSON.parse(item.messages) : item.messages;
           const isWrapped = parsedMsgs && !Array.isArray(parsedMsgs) && parsedMsgs.messages;
 
+          const rawMsgs: any[] = isWrapped ? parsedMsgs.messages : (Array.isArray(parsedMsgs) ? parsedMsgs : []);
+          
+          const cleanMsgs: { role: 'user' | 'assistant'; content: string }[] = [];
+          if (Array.isArray(rawMsgs)) {
+            for (const msg of rawMsgs) {
+              if (!msg || typeof msg.content !== 'string' || !msg.content.trim()) continue;
+              const last = cleanMsgs[cleanMsgs.length - 1];
+              if (last && last.role === msg.role && last.content.trim() === msg.content.trim()) {
+                continue;
+              }
+              cleanMsgs.push({
+                role: msg.role === 'assistant' ? 'assistant' : 'user',
+                content: msg.content
+              });
+            }
+          }
+
           mergedMap.set(item.id, {
             id: item.id,
             title: item.title,
             personaId: isWrapped ? parsedMsgs.personaId : 'study_buddy',
             mode: isWrapped ? parsedMsgs.mode : 'explanatory',
-            messages: isWrapped ? parsedMsgs.messages : (Array.isArray(parsedMsgs) ? parsedMsgs : []),
+            messages: cleanMsgs,
             attachedFiles: isWrapped ? parsedMsgs.attachedFiles : [],
             userId: item.user_id,
             createdAt: item.created_at ? new Date(item.created_at).getTime() : Date.now()
@@ -52,39 +68,6 @@ export async function getAiBuddyChats(userId: string): Promise<AiBuddyThread[]> 
           console.warn('[SUPABASE-CHAT] Failed to parse ai_buddy_chats row:', item.id, parseErr);
         }
       }
-      
-      // 2. Hydrate messages from ai_buddy_messages table if available
-      const threadIds = Array.from(mergedMap.keys());
-      if (threadIds.length > 0) {
-        const { data: messagesData, error: messagesError } = await supabase
-          .from('ai_buddy_messages')
-          .select('*')
-          .in('thread_id', threadIds)
-          .order('created_at', { ascending: true });
-          
-        if (!messagesError && messagesData) {
-          // Group messages by thread_id
-          const messagesByThread = messagesData.reduce((acc: any, msg: any) => {
-            if (!acc[msg.thread_id]) acc[msg.thread_id] = [];
-            acc[msg.thread_id].push({
-              role: msg.role,
-              content: msg.content
-            });
-            return acc;
-          }, {});
-          
-          // Override the JSONB messages with the relational messages if they exist
-          for (const [threadId, msgs] of Object.entries(messagesByThread)) {
-            const thread = mergedMap.get(threadId);
-            if (thread && Array.isArray(msgs) && msgs.length > 0) {
-              thread.messages = msgs as any;
-            }
-          }
-        } else if (messagesError && messagesError.code !== '42P01') {
-          console.warn('[SUPABASE-CHAT] Query error on ai_buddy_messages table:', messagesError.message);
-        }
-      }
-      
     } else if (error && error.code !== '42P01') {
       console.warn('[SUPABASE-CHAT] Query error on ai_buddy_chats table:', error.message);
     }
@@ -102,14 +85,28 @@ export async function saveAiBuddyChat(thread: AiBuddyThread): Promise<void> {
   if (!thread.userId) return;
   console.log('[SUPABASE-CHAT] Saving ai_buddy_chat thread:', thread.id);
 
+  const cleanMessages: { role: 'user' | 'assistant'; content: string }[] = [];
+  if (Array.isArray(thread.messages)) {
+    for (const msg of thread.messages) {
+      if (!msg || typeof msg.content !== 'string' || !msg.content.trim()) continue;
+      const last = cleanMessages[cleanMessages.length - 1];
+      if (last && last.role === msg.role && last.content.trim() === msg.content.trim()) {
+        continue;
+      }
+      cleanMessages.push({
+        role: msg.role === 'assistant' ? 'assistant' : 'user',
+        content: msg.content
+      });
+    }
+  }
+
   const payloadString = JSON.stringify({
-    messages: thread.messages || [],
+    messages: cleanMessages,
     personaId: thread.personaId || 'study_buddy',
     mode: thread.mode || 'explanatory',
     attachedFiles: thread.attachedFiles || []
   });
 
-  // 1. Save to ai_buddy_chats table
   try {
     const dbRow = {
       id: thread.id,
@@ -127,23 +124,18 @@ export async function saveAiBuddyChat(thread: AiBuddyThread): Promise<void> {
       console.warn('[SUPABASE-CHAT] Table ai_buddy_chats upsert notice:', error.message);
     }
     
-    // 2. Also save messages individually to the ai_buddy_messages table
-    if (thread.messages && thread.messages.length > 0) {
-      // Clear existing messages for this thread to avoid duplicates
-      await supabase.from('ai_buddy_messages').delete().eq('thread_id', thread.id);
-      
-      const messagesToInsert = thread.messages.map(msg => ({
-        thread_id: thread.id,
-        role: msg.role,
-        content: msg.content
-      }));
-      
-      const { error: msgError } = await supabase
-        .from('ai_buddy_messages')
-        .insert(messagesToInsert);
-        
-      if (msgError) {
-        console.warn('[SUPABASE-CHAT] Table ai_buddy_messages insert error:', msgError.message);
+    // Also save messages individually to the ai_buddy_messages table as secondary log if present
+    if (cleanMessages.length > 0) {
+      try {
+        await supabase.from('ai_buddy_messages').delete().eq('thread_id', thread.id);
+        const messagesToInsert = cleanMessages.map(msg => ({
+          thread_id: thread.id,
+          role: msg.role,
+          content: msg.content
+        }));
+        await supabase.from('ai_buddy_messages').insert(messagesToInsert);
+      } catch (msgErr) {
+        // Safe to ignore secondary table errors as primary JSON payload is persisted
       }
     }
 
