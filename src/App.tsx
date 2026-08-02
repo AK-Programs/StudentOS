@@ -1916,6 +1916,51 @@ What can I clarify today?` }
       }
     });
 
+    // Realtime Broadcast Event: New Chat Message
+    channel.on('broadcast', { event: 'new_chat_message' }, (payload) => {
+      if (payload.payload) {
+        const newMsg = payload.payload as ChatMessage;
+        setChats(prev => {
+          const idx = prev.findIndex(m => m.id === newMsg.id);
+          if (idx >= 0) {
+            const updated = [...prev];
+            updated[idx] = { ...updated[idx], ...newMsg };
+            return updated;
+          }
+          return [...prev, newMsg];
+        });
+        setTimeout(() => {
+          const view = document.getElementById('chat-scroll-view');
+          if (view) view.scrollTop = view.scrollHeight;
+        }, 40);
+      }
+    });
+
+    // Realtime Broadcast Event: Room Updated
+    channel.on('broadcast', { event: 'room_updated' }, (payload) => {
+      const uid = currentUserRef.current?.uid;
+      getChatRooms(uid).then(rooms => {
+        if (rooms) setChatRooms(rooms);
+      }).catch(console.error);
+    });
+
+    // Realtime Broadcast Event: Room Left
+    channel.on('broadcast', { event: 'room_left' }, () => {
+      const uid = currentUserRef.current?.uid;
+      getChatRooms(uid).then(rooms => {
+        if (rooms) setChatRooms(rooms);
+      }).catch(console.error);
+    });
+
+    // Realtime Broadcast Event: Room Deleted
+    channel.on('broadcast', { event: 'room_deleted' }, (payload) => {
+      if (payload.payload?.roomId) {
+        const delId = payload.payload.roomId;
+        setChatRooms(prev => prev.filter(r => r.id !== delId));
+        setActiveChatTargetId(prev => prev === delId ? 'group-all' : prev);
+      }
+    });
+
     // Realtime Postgres Changes: Chat Room Messages
     channel.on('postgres_changes', { event: '*', schema: 'public', table: 'chat_room_messages' }, () => {
       getPeerMessages().then(list => {
