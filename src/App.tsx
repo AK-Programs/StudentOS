@@ -1820,7 +1820,7 @@ What can I clarify today?` }
       console.error("[SUPABASE-CHAT] Error fetching peer messages:", err);
     });
 
-    getChatRooms().then(roomsList => {
+    getChatRooms(currentUser.uid).then(roomsList => {
       if (roomsList) {
         setChatRooms(roomsList);
       }
@@ -1932,14 +1932,16 @@ What can I clarify today?` }
 
     // Realtime Postgres Changes: Chat Rooms
     channel.on('postgres_changes', { event: '*', schema: 'public', table: 'chat_rooms' }, () => {
-      getChatRooms().then(rooms => {
+      const uid = currentUserRef.current?.uid;
+      getChatRooms(uid).then(rooms => {
         if (rooms) setChatRooms(rooms);
       }).catch(console.error);
     });
 
     // Realtime Postgres Changes: Room Members
     channel.on('postgres_changes', { event: '*', schema: 'public', table: 'chat_room_members' }, () => {
-      getChatRooms().then(rooms => {
+      const uid = currentUserRef.current?.uid;
+      getChatRooms(uid).then(rooms => {
         if (rooms) setChatRooms(rooms);
       }).catch(console.error);
     });
@@ -4125,24 +4127,22 @@ Date: ${new Date().toLocaleDateString()}
   // Interactive Feedback Forum lists
   const handleJoinRoom = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!joinRoomCode.trim()) return;
+    if (!joinRoomCode.trim() || !currentUser) return;
     const code = joinRoomCode.trim().toUpperCase();
     
-    // Fetch all rooms from Supabase since user might not have it in local state
     try {
-      const allRooms = await getChatRooms();
-      const room = allRooms.find(r => (r as any).code === code);
-      if (room) {
-        if (!chatRooms.some(r => r.id === room.id)) {
-          setChatRooms(prev => [...prev, room]);
-          saveChatRoom(room).catch(console.error); // Save to local storage for the user
-        }
-        setActiveChatTargetId(room.id);
+      const res = await joinChatRoom(code, currentUser.uid);
+      if (res.success && res.room) {
+        setChatRooms(prev => {
+          if (prev.some(r => r.id === res.room!.id)) return prev;
+          return [...prev, res.room!];
+        });
+        setActiveChatTargetId(res.room.id);
         setIsCreatingRoom(false);
         setJoinRoomCode('');
-        showNotification(`Joined room: ${room.name}`);
+        showNotification(res.alreadyJoined ? `Already joined ${res.room.name}` : `Joined room: ${res.room.name}`);
       } else {
-        showNotification('Invalid room code. Please check and try again.');
+        showNotification(res.message || 'Invalid room code. Please check and try again.');
       }
     } catch (err) {
       console.error(err);
