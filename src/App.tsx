@@ -1991,7 +1991,16 @@ What can I clarify today?` }
       } else if (payload.new && payload.new.user_id === uid) {
         getAiBuddyChats(uid).then(threads => {
           if (threads && threads.length > 0) {
-            setAiThreads(threads);
+            setAiThreads(prev => {
+              const map = new Map(prev.map(t => [t.id, t]));
+              for (const remote of threads) {
+                const local = map.get(remote.id);
+                if (!local || remote.messages.length >= local.messages.length) {
+                  map.set(remote.id, remote);
+                }
+              }
+              return Array.from(map.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+            });
           }
         }).catch(console.error);
       }
