@@ -163,7 +163,7 @@ export async function deleteAiBuddyChat(threadId: string, userId: string): Promi
 }
 
 /**
- * Robust helper to fetch Peer-to-Peer Messages from Supabase, falling back to localStorage
+ * Robust helper to fetch Peer/Group Messages from Supabase chat_room_messages table
  */
 export async function getPeerMessages(): Promise<ChatMessage[]> {
   console.log('[SUPABASE-CHAT] Fetching room/peer messages from Supabase...');
@@ -182,10 +182,10 @@ export async function getPeerMessages(): Promise<ChatMessage[]> {
     return { text: rawMsg || '', meta: {} };
   };
 
-  // 1. Query 'messages' table
+  // 1. Query 'chat_room_messages' table (primary table for room messages)
   try {
     const { data, error } = await supabase
-      .from('messages')
+      .from('chat_room_messages')
       .select('*')
       .order('created_at', { ascending: true });
 
@@ -193,24 +193,19 @@ export async function getPeerMessages(): Promise<ChatMessage[]> {
       data.forEach(item => {
         let parsedDate = new Date();
         if (item.created_at) {
-          const numVal = Number(item.created_at);
-          if (!isNaN(numVal) && item.created_at.toString().length > 10) {
-            parsedDate = new Date(numVal);
-          } else {
-            parsedDate = new Date(item.created_at);
-          }
+          parsedDate = new Date(item.created_at);
         }
-        const { text, meta } = parseMessagePayload(item.message);
+        const { text, meta } = parseMessagePayload(item.content || '');
         msgMap.set(item.id, {
           id: item.id,
-          name: item.name,
-          role: item.role,
-          house: item.house,
+          name: item.sender_name || 'Student',
+          role: item.sender_role || 'student',
+          house: item.sender_house || 'Ruby',
           message: text,
           createdAt: parsedDate.toISOString(),
-          targetId: item.target_id || item.room_id || null,
+          targetId: item.room_id || 'group-all',
           sharedMaterialId: item.shared_material_id,
-          ownerUid: item.owner_uid,
+          ownerUid: item.sender_id || '',
           replyToId: meta.replyToId,
           replyToText: meta.replyToText,
           replyToSender: meta.replyToSender,
@@ -226,65 +221,21 @@ export async function getPeerMessages(): Promise<ChatMessage[]> {
           flaggedReason: meta.flaggedReason
         } as ChatMessage);
       });
+    } else if (error) {
+      console.warn('[SUPABASE-CHAT] Notice querying chat_room_messages table:', error.message);
     }
   } catch (err) {
-    console.warn('[SUPABASE-CHAT] Notice querying messages table:', err);
-  }
-
-  // 2. Query 'chat_messages' table (if exists)
-  try {
-    const { data, error } = await supabase
-      .from('chat_messages')
-      .select('*')
-      .order('created_at', { ascending: true });
-
-    if (!error && data) {
-      data.forEach(item => {
-        if (!msgMap.has(item.id)) {
-          let parsedDate = new Date();
-          if (item.created_at) {
-            parsedDate = new Date(item.created_at);
-          }
-          const { text, meta } = parseMessagePayload(item.message || item.content || '');
-          msgMap.set(item.id, {
-            id: item.id,
-            name: item.name || item.sender_name || 'Student',
-            role: item.role || 'student',
-            house: item.house,
-            message: text,
-            createdAt: parsedDate.toISOString(),
-            targetId: item.target_id || item.room_id || null,
-            sharedMaterialId: item.shared_material_id,
-            ownerUid: item.owner_uid || item.sender_id || '',
-            replyToId: meta.replyToId,
-            replyToText: meta.replyToText,
-            replyToSender: meta.replyToSender,
-            attachments: meta.attachments,
-            reactions: meta.reactions,
-            readBy: meta.readBy,
-            deliveredTo: meta.deliveredTo,
-            isEdited: meta.isEdited,
-            editedAt: meta.editedAt,
-            isPinned: meta.isPinned,
-            deletedForEveryone: meta.deletedForEveryone,
-            deletedFor: meta.deletedFor,
-            flaggedReason: meta.flaggedReason
-          } as ChatMessage);
-        }
-      });
-    }
-  } catch (err) {
-    console.warn('[SUPABASE-CHAT] Notice querying chat_messages table:', err);
+    console.warn('[SUPABASE-CHAT] Error querying chat_room_messages table:', err);
   }
 
   return Array.from(msgMap.values()).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 }
 
 /**
- * Robust helper to save Peer/Group Message to Supabase
+ * Robust helper to save Peer/Group Message to Supabase chat_room_messages
  */
 export async function savePeerMessage(message: ChatMessage): Promise<void> {
-  console.log('[SUPABASE-CHAT] Saving message to Supabase:', message.id);
+  console.log('[SUPABASE-CHAT] Saving message to Supabase chat_room_messages:', message.id);
 
   const hasExtra = !!(
     message.replyToId ||
@@ -317,39 +268,25 @@ export async function savePeerMessage(message: ChatMessage): Promise<void> {
       })}`
     : message.message;
 
-  // 1. Try saving to 'messages' table
-  try {
-    const dbRow = {
-      id: message.id,
-      owner_uid: message.ownerUid || '',
-      name: message.name,
-      role: message.role,
-      house: message.house || null,
-      message: formattedContent,
-      created_at: message.createdAt ? new Date(message.createdAt).getTime() : Date.now(),
-      target_id: message.targetId || null,
-      shared_material_id: message.sharedMaterialId || null
-    };
-
-    await supabase.from('messages').upsert(dbRow);
-  } catch (err) {
-    console.warn('[SUPABASE-CHAT] Notice saving to messages table:', err);
-  }
-
-  // 2. Try saving to 'chat_messages' table
+  // Save to 'chat_room_messages' table
   try {
     const dbRowChat = {
       id: message.id,
-      room_id: message.targetId || null,
+      room_id: message.targetId || 'group-all',
       sender_id: message.ownerUid || 'anonymous',
-      sender_name: message.name,
+      sender_name: message.name || 'Student',
+      sender_role: message.role || 'student',
+      sender_house: message.house || 'Ruby',
       content: formattedContent,
-      message: formattedContent,
+      shared_material_id: message.sharedMaterialId || null,
       created_at: message.createdAt ? new Date(message.createdAt).toISOString() : new Date().toISOString()
     };
-    await supabase.from('chat_messages').upsert(dbRowChat);
+    const { error } = await supabase.from('chat_room_messages').upsert(dbRowChat);
+    if (error) {
+      console.warn('[SUPABASE-CHAT] Error upserting to chat_room_messages:', error.message);
+    }
   } catch (err) {
-    console.warn('[SUPABASE-CHAT] Notice saving to chat_messages table:', err);
+    console.warn('[SUPABASE-CHAT] Exception saving to chat_room_messages:', err);
   }
 }
 
@@ -376,7 +313,6 @@ export async function renameAiBuddyChat(threadId: string, title: string, userId:
 export async function deletePeerMessage(messageId: string): Promise<void> {
   console.log('[SUPABASE-CHAT] Deleting message:', messageId);
   try {
-    await supabase.from('messages').delete().eq('id', messageId);
     await supabase.from('chat_room_messages').delete().eq('id', messageId);
   } catch (err) {
     console.warn('[SUPABASE-CHAT] Error deleting message:', err);
@@ -390,16 +326,15 @@ export async function getChatRooms(): Promise<ChatRoom[]> {
   console.log('[SUPABASE-CHAT] Querying chat_rooms from Supabase...');
   const roomMap = new Map<string, ChatRoom>();
 
-  // 1. Try chat_rooms table
   try {
     const { data, error } = await supabase
       .from('chat_rooms')
       .select('*');
 
-    if (!error && data) {
+    if (!error && data && data.length > 0) {
       data.forEach(item => {
         let description = item.description || '';
-        let code = item.code || '';
+        let code = '';
         let type = 'group';
         let icon = '💬';
         let members: string[] = [];
@@ -417,13 +352,6 @@ export async function getChatRooms(): Promise<ChatRoom[]> {
             moderators = parsed.moderators || [];
             creatorId = parsed.creatorId || '';
           } catch (_) {}
-        } else {
-          if (item.type) type = item.type;
-          if (item.code) code = item.code;
-          if (item.icon) icon = item.icon;
-          if (item.creator_id) creatorId = item.creator_id;
-          if (item.members) members = typeof item.members === 'string' ? JSON.parse(item.members) : item.members;
-          if (item.moderators) moderators = typeof item.moderators === 'string' ? JSON.parse(item.moderators) : item.moderators;
         }
 
         roomMap.set(item.id, {
@@ -439,6 +367,23 @@ export async function getChatRooms(): Promise<ChatRoom[]> {
         } as ChatRoom);
       });
     }
+
+    // If chat_rooms table is completely empty, seed the canonical General Lounge room so users have a main room
+    if (roomMap.size === 0) {
+      const defaultRoom: ChatRoom = {
+        id: 'group-all',
+        name: 'General Lounge',
+        type: 'group',
+        icon: '🌍',
+        description: 'General school-wide chat room for all students and teachers',
+        code: 'GLOBAL',
+        creatorId: 'system',
+        members: ['all'],
+        moderators: ['system']
+      };
+      await saveChatRoom(defaultRoom);
+      roomMap.set(defaultRoom.id, defaultRoom);
+    }
   } catch (err) {
     console.warn('[SUPABASE-CHAT] Notice querying chat_rooms:', err);
   }
@@ -451,40 +396,39 @@ export async function saveChatRoom(room: ChatRoom): Promise<void> {
   
   const metaPayload = JSON.stringify({
     description: room.description || '',
-    code: room.code,
-    type: room.type,
-    icon: room.icon,
-    creatorId: room.creatorId,
+    code: room.code || Math.random().toString(36).substring(2, 8).toUpperCase(),
+    type: room.type || 'group',
+    icon: room.icon || '💬',
+    creatorId: room.creatorId || '',
     members: room.members || [],
     moderators: room.moderators || []
   });
 
-  // Save to chat_rooms table
+  // Save ONLY valid columns to chat_rooms table (id, name, description, created_at)
   try {
     const dbRow = {
       id: room.id,
       name: room.name,
       description: `__JSON_METADATA__::${metaPayload}`,
-      type: room.type,
-      code: room.code,
-      icon: room.icon,
-      creator_id: room.creatorId || null,
-      members: JSON.stringify(room.members || []),
-      moderators: JSON.stringify(room.moderators || [])
+      created_at: new Date().toISOString()
     };
 
-    await supabase.from('chat_rooms').upsert(dbRow);
+    const { error } = await supabase.from('chat_rooms').upsert(dbRow);
+    if (error) {
+      console.warn('[SUPABASE-CHAT] Error upserting to chat_rooms:', error.message);
+    }
 
     // Sync chat_room_members table
     if (room.members && room.members.length > 0) {
       for (const memberUid of room.members) {
+        if (!memberUid) continue;
         const isMod = room.moderators?.includes(memberUid) || memberUid === room.creatorId;
         try {
-          await supabase.from('chat_room_members').upsert({
+          await supabase.from('chat_room_members').insert({
             room_id: room.id,
             user_id: memberUid,
             role: isMod ? 'admin' : 'member'
-          }, { onConflict: 'room_id,user_id' });
+          });
         } catch (_) {}
       }
     }
@@ -493,20 +437,38 @@ export async function saveChatRoom(room: ChatRoom): Promise<void> {
   }
 }
 
-export async function joinChatRoom(roomId: string, userId: string): Promise<ChatRoom | null> {
-  if (!roomId || !userId) return null;
-  console.log('[SUPABASE-CHAT] Joining chat room:', roomId, 'user:', userId);
+export async function joinChatRoom(roomCodeOrId: string, userId: string): Promise<ChatRoom | null> {
+  if (!roomCodeOrId || !userId) return null;
+  const cleanCode = roomCodeOrId.trim().toUpperCase();
+  console.log('[SUPABASE-CHAT] Joining chat room with code/id:', cleanCode, 'for user:', userId);
 
   try {
     const rooms = await getChatRooms();
-    const targetRoom = rooms.find(r => r.id === roomId);
-    if (!targetRoom) return null;
+    const targetRoom = rooms.find(r => 
+      (r.code && r.code.toUpperCase() === cleanCode) || 
+      (r.id && r.id.toUpperCase() === cleanCode) ||
+      r.id === roomCodeOrId.trim()
+    );
+
+    if (!targetRoom) {
+      console.warn('[SUPABASE-CHAT] Room code not found:', cleanCode);
+      return null;
+    }
 
     const currentMembers = targetRoom.members || [];
     if (!currentMembers.includes(userId)) {
       targetRoom.members = [...currentMembers, userId];
       await saveChatRoom(targetRoom);
     }
+
+    try {
+      await supabase.from('chat_room_members').insert({
+        room_id: targetRoom.id,
+        user_id: userId,
+        role: 'member'
+      });
+    } catch (_) {}
+
     return targetRoom;
   } catch (err) {
     console.warn('[SUPABASE-CHAT] Error joining room:', err);
@@ -543,7 +505,6 @@ export async function deleteChatRoom(roomId: string, userId: string): Promise<vo
 
   try {
     await supabase.from('chat_room_messages').delete().eq('room_id', roomId);
-    await supabase.from('messages').delete().eq('target_id', roomId);
     await supabase.from('chat_room_members').delete().eq('room_id', roomId);
     await supabase.from('chat_rooms').delete().eq('id', roomId);
   } catch (err) {
