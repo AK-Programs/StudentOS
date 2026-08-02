@@ -469,8 +469,17 @@ export async function saveChatRoom(room: ChatRoom): Promise<void> {
   }
 }
 
-export async function joinChatRoom(roomCodeOrId: string, userId: string): Promise<ChatRoom | null> {
-  if (!roomCodeOrId || !userId) return null;
+export interface JoinRoomResult {
+  success: boolean;
+  room?: ChatRoom;
+  alreadyJoined?: boolean;
+  message?: string;
+}
+
+export async function joinChatRoom(roomCodeOrId: string, userId: string): Promise<JoinRoomResult> {
+  if (!roomCodeOrId || !userId) {
+    return { success: false, message: 'Invalid room code or user ID.' };
+  }
   const cleanCode = roomCodeOrId.trim().toUpperCase();
   console.log('[SUPABASE-CHAT] Joining chat room with code/id:', cleanCode, 'for user:', userId);
 
@@ -479,7 +488,7 @@ export async function joinChatRoom(roomCodeOrId: string, userId: string): Promis
     const { data: allRoomsData, error } = await supabase.from('chat_rooms').select('*');
     if (error || !allRoomsData || allRoomsData.length === 0) {
       console.warn('[SUPABASE-CHAT] Failed to query rooms for invite code:', cleanCode);
-      return null;
+      return { success: false, message: 'Room code not found or invalid.' };
     }
 
     let targetRoom: ChatRoom | null = null;
@@ -527,13 +536,32 @@ export async function joinChatRoom(roomCodeOrId: string, userId: string): Promis
 
     if (!targetRoom) {
       console.warn('[SUPABASE-CHAT] Room code not found:', cleanCode);
-      return null;
+      return { success: false, message: 'Room code not found or invalid.' };
     }
 
+    // Check if user is already a member
     const currentMembers = targetRoom.members || [];
-    if (!currentMembers.includes(userId)) {
-      targetRoom.members = [...currentMembers, userId];
+    let isAlreadyMember = currentMembers.includes(userId);
+
+    try {
+      const { data: memberRow } = await supabase
+        .from('chat_room_members')
+        .select('*')
+        .eq('room_id', targetRoom.id)
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (memberRow) {
+        isAlreadyMember = true;
+      }
+    } catch (_) {}
+
+    if (isAlreadyMember) {
+      return { success: true, room: targetRoom, alreadyJoined: true, message: 'Already joined this room!' };
     }
+
+    // Add user to targetRoom.members
+    targetRoom.members = [...currentMembers, userId];
 
     // Persist updated membership in chat_rooms metadata
     await saveChatRoom(targetRoom);
@@ -547,10 +575,10 @@ export async function joinChatRoom(roomCodeOrId: string, userId: string): Promis
       }, { onConflict: 'room_id,user_id' });
     } catch (_) {}
 
-    return targetRoom;
+    return { success: true, room: targetRoom, alreadyJoined: false, message: `Joined room: ${targetRoom.name}` };
   } catch (err) {
     console.warn('[SUPABASE-CHAT] Error joining room:', err);
-    return null;
+    return { success: false, message: 'Failed to join room. Please try again.' };
   }
 }
 
