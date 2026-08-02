@@ -169,6 +169,19 @@ export async function getPeerMessages(): Promise<ChatMessage[]> {
   console.log('[SUPABASE-CHAT] Fetching room/peer messages from Supabase...');
   const msgMap = new Map<string, ChatMessage>();
 
+  const parseMessagePayload = (rawMsg: string): { text: string; meta: Partial<ChatMessage> } => {
+    if (typeof rawMsg === 'string' && rawMsg.startsWith('__EXTENDED_CHAT__::')) {
+      try {
+        const parsed = JSON.parse(rawMsg.substring('__EXTENDED_CHAT__::'.length));
+        return {
+          text: parsed.message || '',
+          meta: parsed
+        };
+      } catch (_) {}
+    }
+    return { text: rawMsg || '', meta: {} };
+  };
+
   // 1. Query 'messages' table
   try {
     const { data, error } = await supabase
@@ -187,16 +200,30 @@ export async function getPeerMessages(): Promise<ChatMessage[]> {
             parsedDate = new Date(item.created_at);
           }
         }
+        const { text, meta } = parseMessagePayload(item.message);
         msgMap.set(item.id, {
           id: item.id,
           name: item.name,
           role: item.role,
           house: item.house,
-          message: item.message,
+          message: text,
           createdAt: parsedDate.toISOString(),
           targetId: item.target_id || item.room_id || null,
           sharedMaterialId: item.shared_material_id,
-          ownerUid: item.owner_uid
+          ownerUid: item.owner_uid,
+          replyToId: meta.replyToId,
+          replyToText: meta.replyToText,
+          replyToSender: meta.replyToSender,
+          attachments: meta.attachments,
+          reactions: meta.reactions,
+          readBy: meta.readBy,
+          deliveredTo: meta.deliveredTo,
+          isEdited: meta.isEdited,
+          editedAt: meta.editedAt,
+          isPinned: meta.isPinned,
+          deletedForEveryone: meta.deletedForEveryone,
+          deletedFor: meta.deletedFor,
+          flaggedReason: meta.flaggedReason
         } as ChatMessage);
       });
     }
@@ -218,16 +245,30 @@ export async function getPeerMessages(): Promise<ChatMessage[]> {
           if (item.created_at) {
             parsedDate = new Date(item.created_at);
           }
+          const { text, meta } = parseMessagePayload(item.message || item.content || '');
           msgMap.set(item.id, {
             id: item.id,
             name: item.name || item.sender_name || 'Student',
             role: item.role || 'student',
             house: item.house,
-            message: item.message || item.content || '',
+            message: text,
             createdAt: parsedDate.toISOString(),
             targetId: item.target_id || item.room_id || null,
             sharedMaterialId: item.shared_material_id,
-            ownerUid: item.owner_uid || item.sender_id || ''
+            ownerUid: item.owner_uid || item.sender_id || '',
+            replyToId: meta.replyToId,
+            replyToText: meta.replyToText,
+            replyToSender: meta.replyToSender,
+            attachments: meta.attachments,
+            reactions: meta.reactions,
+            readBy: meta.readBy,
+            deliveredTo: meta.deliveredTo,
+            isEdited: meta.isEdited,
+            editedAt: meta.editedAt,
+            isPinned: meta.isPinned,
+            deletedForEveryone: meta.deletedForEveryone,
+            deletedFor: meta.deletedFor,
+            flaggedReason: meta.flaggedReason
           } as ChatMessage);
         }
       });
@@ -245,6 +286,37 @@ export async function getPeerMessages(): Promise<ChatMessage[]> {
 export async function savePeerMessage(message: ChatMessage): Promise<void> {
   console.log('[SUPABASE-CHAT] Saving message to Supabase:', message.id);
 
+  const hasExtra = !!(
+    message.replyToId ||
+    (message.attachments && message.attachments.length > 0) ||
+    message.reactions ||
+    message.readBy ||
+    message.isEdited ||
+    message.isPinned ||
+    message.deletedForEveryone ||
+    message.deletedFor ||
+    message.flaggedReason
+  );
+
+  const formattedContent = hasExtra
+    ? `__EXTENDED_CHAT__::${JSON.stringify({
+        message: message.message,
+        replyToId: message.replyToId,
+        replyToText: message.replyToText,
+        replyToSender: message.replyToSender,
+        attachments: message.attachments,
+        reactions: message.reactions,
+        readBy: message.readBy,
+        deliveredTo: message.deliveredTo,
+        isEdited: message.isEdited,
+        editedAt: message.editedAt,
+        isPinned: message.isPinned,
+        deletedForEveryone: message.deletedForEveryone,
+        deletedFor: message.deletedFor,
+        flaggedReason: message.flaggedReason
+      })}`
+    : message.message;
+
   // 1. Try saving to 'messages' table
   try {
     const dbRow = {
@@ -253,7 +325,7 @@ export async function savePeerMessage(message: ChatMessage): Promise<void> {
       name: message.name,
       role: message.role,
       house: message.house || null,
-      message: message.message,
+      message: formattedContent,
       created_at: message.createdAt ? new Date(message.createdAt).getTime() : Date.now(),
       target_id: message.targetId || null,
       shared_material_id: message.sharedMaterialId || null
@@ -271,8 +343,8 @@ export async function savePeerMessage(message: ChatMessage): Promise<void> {
       room_id: message.targetId || null,
       sender_id: message.ownerUid || 'anonymous',
       sender_name: message.name,
-      content: message.message,
-      message: message.message,
+      content: formattedContent,
+      message: formattedContent,
       created_at: message.createdAt ? new Date(message.createdAt).toISOString() : new Date().toISOString()
     };
     await supabase.from('chat_messages').upsert(dbRowChat);
