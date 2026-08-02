@@ -11,19 +11,14 @@ const DEFAULT_SUPABASE_ANON_KEY =
   '.Y48u9duD3WohxzDD6czXevPaG1mFRFS0rdRuu4840pQ';
 
 const getEnvVar = (key: string, defaultValue: string): string => {
-  // Try static import first (for Vite build optimization)
   let val = '';
-  if (key === 'VITE_SUPABASE_URL') {
-    val = import.meta.env.VITE_SUPABASE_URL;
-  } else if (key === 'VITE_SUPABASE_ANON_KEY') {
-    val = import.meta.env.VITE_SUPABASE_ANON_KEY;
-  }
+  try {
+    const metaEnv = (import.meta as any)?.env;
+    val = metaEnv?.[key] || '';
+  } catch (_) {}
 
-  // Fallback to dynamic lookup safely without triggering ReferenceError on 'process'
-  if (!val) {
-    const metaEnv = (import.meta as any).env;
-    const processEnv = typeof process !== 'undefined' ? (process as any).env : null;
-    val = metaEnv?.[key] || processEnv?.[key] || '';
+  if (!val && typeof process !== 'undefined' && (process as any)?.env) {
+    val = (process as any).env[key] || '';
   }
 
   if (!val) return defaultValue;
