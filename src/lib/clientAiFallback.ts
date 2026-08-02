@@ -6,25 +6,18 @@ export function sanitizeHistory(history: any[] = []): any[] {
   const filtered = history.filter(h => h && typeof h.content === 'string' && h.content.trim().length > 0);
   if (filtered.length === 0) return [];
 
-  // Gemini API requires the first turn in contents to be 'user'
-  const firstUserIdx = filtered.findIndex(m => m.role === 'user');
-  if (firstUserIdx === -1) return [];
-
-  const sliced = filtered.slice(firstUserIdx);
   const sanitized: any[] = [];
 
-  for (const msg of sliced) {
+  for (const msg of filtered) {
     const role = (msg.role === 'assistant' || msg.role === 'model') ? 'assistant' : 'user';
     if (sanitized.length === 0) {
-      if (role === 'user') {
-        sanitized.push({ role: 'user', content: msg.content });
-      }
+      sanitized.push({ role, content: msg.content.trim() });
     } else {
       const last = sanitized[sanitized.length - 1];
       if (last.role === role) {
-        last.content += '\n' + msg.content;
+        last.content += '\n' + msg.content.trim();
       } else {
-        sanitized.push({ role, content: msg.content });
+        sanitized.push({ role, content: msg.content.trim() });
       }
     }
   }
@@ -43,13 +36,26 @@ export async function clientSideGemini(
   if (key) {
     try {
       const ai = new GoogleGenAI({ apiKey: key });
-      const contents = [
-        ...sanitized.map(m => ({
-          role: m.role === 'user' ? 'user' : 'model',
-          parts: [{ text: m.content }]
-        })),
-        { role: 'user', parts: [{ text: userMessage }] }
-      ];
+      const contents: any[] = [];
+
+      // Ensure first turn in Gemini contents is 'user' for Gemini SDK rules
+      let startIdx = 0;
+      if (sanitized.length > 0 && sanitized[0].role === 'assistant') {
+        contents.push({
+          role: 'user',
+          parts: [{ text: `[Prior Tutor Context]: ${sanitized[0].content}` }]
+        });
+        startIdx = 1;
+      }
+
+      for (let i = startIdx; i < sanitized.length; i++) {
+        contents.push({
+          role: sanitized[i].role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: sanitized[i].content }]
+        });
+      }
+
+      contents.push({ role: 'user', parts: [{ text: userMessage }] });
 
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
