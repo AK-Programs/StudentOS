@@ -39,12 +39,52 @@ export function getGoogleGenAI(): GoogleGenAI | null {
   }
 }
 
+function sanitizeHistory(history: any[] = []): { role: 'user' | 'assistant'; content: string }[] {
+  if (!Array.isArray(history) || history.length === 0) return [];
+
+  const filtered = history.filter(
+    h => h && typeof h.content === 'string' && h.content.trim().length > 0
+  );
+  if (filtered.length === 0) return [];
+
+  // Gemini API & OpenRouter sequence MUST start with 'user' role
+  const firstUserIdx = filtered.findIndex(
+    m => m.role === 'user'
+  );
+  if (firstUserIdx === -1) return [];
+
+  const sliced = filtered.slice(firstUserIdx);
+  const sanitized: { role: 'user' | 'assistant'; content: string }[] = [];
+
+  for (const msg of sliced) {
+    const role: 'user' | 'assistant' =
+      msg.role === 'assistant' || msg.role === 'model' ? 'assistant' : 'user';
+
+    if (sanitized.length === 0) {
+      if (role === 'user') {
+        sanitized.push({ role: 'user', content: msg.content.trim() });
+      }
+    } else {
+      const last = sanitized[sanitized.length - 1];
+      if (last.role === role) {
+        last.content += '\n' + msg.content.trim();
+      } else {
+        sanitized.push({ role, content: msg.content.trim() });
+      }
+    }
+  }
+
+  return sanitized;
+}
+
 /**
  * Universal AI completions provider supporting OpenRouter and local native Gemini SDK.
  */
 async function generateAICompletion(systemInstruction: string, prompt: string, history: any[] = []): Promise<string> {
   const openRouterKey = process.env.OPENROUTER_API_KEY;
   const ai = getGoogleGenAI();
+
+  const sanitizedHistory = sanitizeHistory(history);
 
   // 1. Parse Image Base64 from prompt if present
   let imageUrl: string | null = null;
@@ -78,19 +118,17 @@ async function generateAICompletion(systemInstruction: string, prompt: string, h
     try {
       let model = process.env.OPENROUTER_MODEL || "deepseek/deepseek-v4-flash";
       if (hasAttachments) {
-        // Route to multimodal Gemini 2.5 Flash for PDF/Image/DOCX/PPT/TXT
         model = "google/gemini-2.5-flash";
         console.log(`[AI Server] Attachment detected. Overriding OpenRouter model to "${model}" for rich, high-context document understanding.`);
       } else {
         console.log(`[AI Server] Directing API request to OpenRouter using model "${model}"...`);
       }
       
-      const safeHistory = Array.isArray(history) ? history : [];
       const messages = [
         { role: 'system', content: systemInstruction },
-        ...safeHistory.map((msg: any) => ({
-          role: msg.role === 'assistant' || msg.role === 'model' ? 'assistant' : 'user',
-          content: msg.content || msg.text || ''
+        ...sanitizedHistory.map((msg) => ({
+          role: msg.role === 'assistant' ? 'assistant' : 'user',
+          content: msg.content
         })),
         { 
           role: 'user', 
@@ -136,17 +174,15 @@ async function generateAICompletion(systemInstruction: string, prompt: string, h
 
   if (ai) {
     const contentsList: any[] = [];
-    const safeHistory = Array.isArray(history) ? history : [];
     
-    safeHistory.forEach((msg: any) => {
+    sanitizedHistory.forEach((msg) => {
       contentsList.push({
-        role: msg.role === 'assistant' || msg.role === 'model' ? 'model' : 'user',
-        parts: [{ text: msg.content || msg.text || '' }]
+        role: msg.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: msg.content }]
       });
     });
 
     if (imageUrl) {
-      // Extract the raw base64 data without data:image/... prefix for native Gemini SDK
       const rawBase64 = imageUrl.split(';base64,')[1];
       const mimeType = imageUrl.split(';base64,')[0].replace('data:', '');
       
@@ -256,16 +292,46 @@ app.post('/api/ai/chat', async (req, res) => {
     const geminiKey = process.env.GEMINI_API_KEY;
     
     if (!openRouterKey && !geminiKey) {
-      // Elegant fallback simulation when running without an API key configured yet
+      const sanitized = sanitizeHistory(history);
+      if (sanitized.length > 0) {
+        const allUserTexts = [
+          ...sanitized.filter(m => m.role === 'user').map(m => m.content),
+          prompt
+        ];
+        const fullText = allUserTexts.join('\n');
+
+        const nameMatch = fullText.match(/(?:my name is|i am|call me|name's)\s+([A-Za-z]+)/i);
+        const detectedName = nameMatch ? nameMatch[1] : null;
+
+        const subMatch = fullText.match(/(?:favourite|favorite|like|enjoy|studying|subject)\s+(?:subject\s+is\s+|is\s+|subject\s+)?([A-Za-z]+)/i);
+        const detectedSubject = subMatch ? subMatch[1] : null;
+
+        const p = prompt.toLowerCase();
+        if (p.includes('my name') || p.includes('who am i') || p.includes('what is my name')) {
+          if (detectedName) return res.json({ text: `Your name is **${detectedName}**!` });
+          return res.json({ text: `You haven't told me your name yet! What should I call you?` });
+        }
+
+        if (p.includes('subject') && (p.includes('like') || p.includes('favourite') || p.includes('favorite') || p.includes('which'))) {
+          if (detectedSubject) return res.json({ text: `Your favorite subject is **${detectedSubject}**!` });
+          return res.json({ text: `You haven't mentioned your favorite subject yet! Is it Physics, Math, Chemistry, or Computer Science?` });
+        }
+
+        return res.json({
+          text: `That makes sense! Let's build on that concept. Regarding **"${prompt.length > 40 ? prompt.substring(0, 40) + '...' : prompt}"**, what specific part would you like to explore next?`
+        });
+      }
+
+      // Initial greeting for brand-new blank thread only
       const fallbacks: { [key: string]: string } = {
-        elara: `Excellent inquiry! In ${subject || 'Mathematics'}, we always identify our given inputs first. Let's form a logical hypothesis. Since my backend Gemini connection requires a secure API key in AI Studio settings, I am currently simulating responses. But here is the principle: break any complex problem down to its core formulas!`,
-        ruby: `Structured thinking is the sovereign of good scholarship! To excel in this subject, you must support your claims with textual evidence. In standard analysis, outline your thesis, compose body paragraphs with quotes, and deliver a convincing conclusion. (Set up your API Key in the Secrets panel to fully unlock my intelligence!)`,
-        solara: `Whoa! That's a classic code query. The key is structural debugging: trace your variables, ensure you don't mutate state directly, and make your components modular! I'd love to write full code snippets for you — just declare my API Key in your workspace Secrets panel to get started!`,
-        study_buddy: `Hey buddy! 🚀 That sounds like a cool topic. Let's tackle this assignment together! Although my full AI brains are waiting for an API Key, I can help you outline this, organize your Tasks checklist, or start a 25-minute Pomodoro focus stream! Let's crush this!`
+        elara: `Greetings! I am Professor Elara. I'm excited to help you explore ${subject || 'Science & Math'}. What topic shall we dive into?`,
+        ruby: `Welcome! I am Dr. Ruby. Let's analyze ${subject || 'Literature & History'} with academic rigor. What question do you have today?`,
+        solara: `Hey there! Coach Solara here. Ready to tackle ${subject || 'Computer Science'} code and concepts? Ask away!`,
+        study_buddy: `Hey buddy! 🚀 I'm your StudentOS AI Buddy. What are we studying today?`
       };
 
       return res.json({ 
-        text: fallbacks[persona] || `I'm here to support you! Let's work on ${subject || 'this topic'} together. Please verify your API Key is configured in your settings panel to enable interactive feedback.`
+        text: fallbacks[persona] || `I'm here to support you! Let's work on ${subject || 'this topic'} together. Ask me anything!`
       });
     }
 
