@@ -4,7 +4,7 @@ import {
   Trash2, Edit3, Pin, Shield, QrCode, UserPlus, LogOut, Settings, X, Search, 
   CheckCheck, Check, Volume2, AlertTriangle, Info, Sparkles, Filter, Bell,
   Copy, Link, Eye, UserCheck, Flame, ThumbsUp, Heart, Trophy, Megaphone,
-  BookOpen, Users, Hash
+  BookOpen, Users, Hash, MoreHorizontal
 } from 'lucide-react';
 import { ChatMessage, ChatRoom, UserRole, HouseType, ChatAttachment, UserProfile } from '../types';
 import { moderateChatMessage } from '../lib/aiModeration';
@@ -60,6 +60,22 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
   const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
   const [forwardingMsg, setForwardingMsg] = useState<ChatMessage | null>(null);
+  const [activeMenuMsg, setActiveMenuMsg] = useState<ChatMessage | null>(null);
+  const longPressTimerRef = useRef<any>(null);
+
+  const handleTouchStartMessage = (msg: ChatMessage) => {
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = setTimeout(() => {
+      setActiveMenuMsg(msg);
+    }, 450);
+  };
+
+  const handleTouchEndMessage = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
 
   // Attachments & Voice note states
   const [attachedFiles, setAttachedFiles] = useState<ChatAttachment[]>([]);
@@ -550,6 +566,10 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
             return (
               <div
                 key={c.id}
+                onTouchStart={() => handleTouchStartMessage(c)}
+                onTouchEnd={handleTouchEndMessage}
+                onTouchMove={handleTouchEndMessage}
+                onContextMenu={(e) => { e.preventDefault(); setActiveMenuMsg(c); }}
                 className={`group relative p-3.5 rounded-2xl border max-w-[85%] space-y-1.5 animate-fadeIn flex flex-col ${isMine ? 'ml-auto bg-indigo-600/15 border-indigo-500/30 text-white' : 'mr-auto bg-slate-900 border-white/10 text-slate-200'}`}
               >
                 {/* Header info */}
@@ -557,7 +577,16 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
                   <span className={`font-bold ${c.role === 'teacher' || c.role === 'principal' ? 'text-amber-400' : 'text-indigo-400'}`}>
                     {c.name} <span className="text-[10px] text-slate-400 font-normal">({c.role}{c.house ? ` • ${c.house}` : ''})</span>
                   </span>
-                  {c.isPinned && <Pin className="w-3 h-3 text-amber-400 shrink-0" />}
+                  <div className="flex items-center gap-1">
+                    {c.isPinned && <Pin className="w-3 h-3 text-amber-400 shrink-0" />}
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setActiveMenuMsg(c); }}
+                      title="Options"
+                      className="p-0.5 hover:bg-white/10 rounded text-slate-400 hover:text-white"
+                    >
+                      <MoreHorizontal className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Reply Reference if present */}
@@ -910,6 +939,118 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
                   <span>{room.name}</span>
                 </button>
               ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mobile / Touch Context Menu Bottom Sheet */}
+      {activeMenuMsg && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 z-50 animate-fadeIn">
+          <div className="bg-slate-900 border border-white/10 rounded-t-3xl sm:rounded-3xl max-w-sm w-full p-5 space-y-4 shadow-2xl relative">
+            <button onClick={() => setActiveMenuMsg(null)} className="absolute top-4 right-4 text-slate-400 hover:text-white p-1 rounded-full bg-white/5">
+              <X className="w-4 h-4" />
+            </button>
+
+            <div>
+              <span className="text-[10px] font-extrabold uppercase text-indigo-400 tracking-wider">Message Actions</span>
+              <p className="text-xs text-slate-300 italic truncate mt-1 bg-slate-950 p-2.5 rounded-xl border border-white/5">
+                "{activeMenuMsg.message}"
+              </p>
+            </div>
+
+            {/* Quick Reactions Bar */}
+            <div>
+              <span className="text-[10px] font-bold text-slate-400 uppercase">React:</span>
+              <div className="flex gap-2 mt-1.5 justify-between bg-slate-950 p-2 rounded-xl border border-white/5">
+                {['👍', '❤️', '😂', '😮', '🔥', '🚀', '💯'].map(emoji => (
+                  <button
+                    key={emoji}
+                    onClick={() => {
+                      handleAddReaction(activeMenuMsg.id, emoji);
+                      setActiveMenuMsg(null);
+                    }}
+                    className="text-lg hover:scale-125 transition-transform p-1"
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Action Buttons Grid */}
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <button
+                onClick={() => {
+                  setReplyingTo(activeMenuMsg);
+                  setActiveMenuMsg(null);
+                }}
+                className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-950 hover:bg-indigo-600/20 border border-white/10 text-slate-200 font-medium"
+              >
+                <Reply className="w-4 h-4 text-indigo-400" />
+                <span>Reply</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(activeMenuMsg.message);
+                  showNotification('Copied message text!');
+                  setActiveMenuMsg(null);
+                }}
+                className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-950 hover:bg-indigo-600/20 border border-white/10 text-slate-200 font-medium"
+              >
+                <Copy className="w-4 h-4 text-emerald-400" />
+                <span>Copy</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setForwardingMsg(activeMenuMsg);
+                  setActiveMenuMsg(null);
+                }}
+                className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-950 hover:bg-indigo-600/20 border border-white/10 text-slate-200 font-medium"
+              >
+                <Forward className="w-4 h-4 text-amber-400" />
+                <span>Forward</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  handleTogglePin(activeMenuMsg.id);
+                  setActiveMenuMsg(null);
+                }}
+                className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-950 hover:bg-indigo-600/20 border border-white/10 text-slate-200 font-medium"
+              >
+                <Pin className="w-4 h-4 text-amber-400" />
+                <span>{activeMenuMsg.isPinned ? 'Unpin' : 'Pin'}</span>
+              </button>
+
+              {activeMenuMsg.ownerUid === currentUser?.uid && (
+                <button
+                  onClick={() => {
+                    setEditingMsgId(activeMenuMsg.id);
+                    setEditText(activeMenuMsg.message);
+                    setActiveMenuMsg(null);
+                  }}
+                  className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-950 hover:bg-indigo-600/20 border border-white/10 text-indigo-300 font-medium"
+                >
+                  <Edit3 className="w-4 h-4 text-indigo-400" />
+                  <span>Edit</span>
+                </button>
+              )}
+
+              {(activeMenuMsg.ownerUid === currentUser?.uid || isModerator) && (
+                <button
+                  onClick={() => {
+                    handleDeleteMessage(activeMenuMsg.id, true);
+                    setActiveMenuMsg(null);
+                  }}
+                  className="flex items-center gap-2 p-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-400 col-span-2 font-medium"
+                >
+                  <Trash2 className="w-4 h-4 text-rose-400" />
+                  <span>Delete for Everyone</span>
+                </button>
+              )}
             </div>
           </div>
         </div>
