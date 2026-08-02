@@ -589,22 +589,7 @@ export default function App() {
   const [feedbackPosts, setFeedbackPosts] = useState<FeedbackPost[]>([]);
   const [students, setStudents] = useState<UserProfile[]>([]);
   const [chats, setChats] = useState<ChatMessage[]>([]);
-  const [chatRooms, setChatRooms] = useState<ChatRoom[]>([
-    { id: 'group-all', name: 'All Students Group', type: 'group', icon: '🌍', description: 'General chat for all students' },
-    { id: 'group-math', name: 'Math Study Club', type: 'group', icon: '📐', description: 'Solve trigonometry and chemistry' },
-    { id: 'group-ruby', name: 'Ruby House Alliance', type: 'group', icon: '🟥', description: 'Coordinate Ruby House plans' },
-    { id: 'group-emerald', name: 'Emerald Studious', type: 'group', icon: '🟩', description: 'Coordinate Emerald plans' },
-    { id: 'group-science', name: 'Science Projects', type: 'group', icon: '🧪', description: 'Lab ideas and assistance' },
-    
-    { id: 'friend-siddharth', name: 'Siddharth Sen', type: 'friend', icon: '🧑‍🎓', description: 'Active 2m ago' },
-    { id: 'friend-meera', name: 'Meera Jain', type: 'friend', icon: '👩‍🎓', description: 'Online' },
-    { id: 'friend-anya', name: 'Anya Mehta', type: 'friend', icon: '👩', description: 'Offline' },
-    { id: 'friend-rahul', name: 'Rahul Dev', type: 'friend', icon: '🧑', description: 'Active 1h ago' },
-
-    { id: 'channel-school', name: 'School Announcements', type: 'channel', icon: '📢', description: 'Official alerts from Principal' },
-    { id: 'channel-alerts', name: 'Exam & Test Alerts', type: 'channel', icon: '⚡', description: 'Dates and schedules' },
-    { id: 'channel-sports', name: 'Sports & Cultural Hub', type: 'channel', icon: '🏆', description: 'Tournaments schedule' }
-  ]);
+  const [chatRooms, setChatRooms] = useState<ChatRoom[]>([]);
   const [isCreatingRoom, setIsCreatingRoom] = useState<boolean>(false);
   const [newRoomName, setNewRoomName] = useState<string>('');
   const [showGroupSettings, setShowGroupSettings] = useState<boolean>(false);
@@ -1823,18 +1808,13 @@ What can I clarify today?` }
     loadAnnouncements();
   }, [currentUser, activeTab]);
 
-  // Chats Sync On-Demand (Lazy-Loaded from Supabase)
+  // Chats & Rooms Sync On-Demand (Loaded from Supabase)
   useEffect(() => {
-    if (!currentUser || activeTab !== 'peer_chat') return;
-    console.log("[SUPABASE-CHAT] Syncing messages and custom rooms...");
+    if (!currentUser) return;
+    console.log("[SUPABASE-CHAT] Fetching peer messages & chat rooms from Supabase...");
     getPeerMessages().then(list => {
       if (list) {
-        console.log(`[SUPABASE-CHAT] Component received MESSAGES_COUNT: ${list.length}, CURRENT_USER: ${currentUser?.uid}, CURRENT_ROOM_ID/CHAT_ROOM_ID: ${activeChatTargetId}`);
         setChats(list);
-        setTimeout(() => {
-          const scrollArea = document.getElementById('chat-scroll-view');
-          if (scrollArea) scrollArea.scrollTop = scrollArea.scrollHeight;
-        }, 80);
       }
     }).catch(err => {
       console.error("[SUPABASE-CHAT] Error fetching peer messages:", err);
@@ -1842,20 +1822,12 @@ What can I clarify today?` }
 
     getChatRooms().then(roomsList => {
       if (roomsList) {
-        setChatRooms(prev => {
-          const merged = [...prev];
-          for (const room of roomsList) {
-            if (!merged.some(r => r.id === room.id)) {
-              merged.push(room);
-            }
-          }
-          return merged;
-        });
+        setChatRooms(roomsList);
       }
     }).catch(err => {
       console.error("[SUPABASE-CHAT] Error fetching chat rooms:", err);
     });
-  }, [activeTab, currentUser]);
+  }, [currentUser, activeTab]);
 
   const currentUserRef = useRef<UserProfile | null>(currentUser);
   useEffect(() => {
@@ -1944,67 +1916,29 @@ What can I clarify today?` }
       }
     });
 
-    // Realtime Postgres Changes: Messages
-    channel.on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, (payload) => {
-      const p = payload.new;
-      if (!p || !p.id) {
-        if (payload.eventType === 'DELETE' && payload.old?.id) {
-          setChats(prev => prev.filter(c => c.id !== payload.old.id));
-        }
-        return;
-      }
+    // Realtime Postgres Changes: Chat Room Messages
+    channel.on('postgres_changes', { event: '*', schema: 'public', table: 'chat_room_messages' }, () => {
+      getPeerMessages().then(list => {
+        if (list) setChats(list);
+      }).catch(console.error);
+    });
 
-      let text = p.message || '';
-      let meta: any = {};
-      if (typeof text === 'string' && text.startsWith('__EXTENDED_CHAT__::')) {
-        try {
-          meta = JSON.parse(text.substring('__EXTENDED_CHAT__::'.length));
-          text = meta.message || '';
-        } catch (_) {}
-      }
-
-      const msg: ChatMessage = {
-        id: p.id,
-        name: p.name || 'Peer',
-        role: p.role || 'student',
-        house: p.house,
-        message: text,
-        createdAt: p.created_at ? (typeof p.created_at === 'number' ? new Date(p.created_at).toISOString() : p.created_at) : new Date().toISOString(),
-        targetId: p.target_id || 'group-all',
-        sharedMaterialId: p.shared_material_id,
-        ownerUid: p.owner_uid,
-        replyToId: meta.replyToId,
-        replyToText: meta.replyToText,
-        replyToSender: meta.replyToSender,
-        attachments: meta.attachments,
-        reactions: meta.reactions,
-        readBy: meta.readBy,
-        deliveredTo: meta.deliveredTo,
-        isEdited: meta.isEdited,
-        editedAt: meta.editedAt,
-        isPinned: meta.isPinned,
-        deletedForEveryone: meta.deletedForEveryone,
-        deletedFor: meta.deletedFor,
-        flaggedReason: meta.flaggedReason
-      };
-
-      setChats(prev => {
-        const idx = prev.findIndex(c => c.id === msg.id);
-        if (idx >= 0) {
-          const updated = [...prev];
-          updated[idx] = msg;
-          return updated;
-        }
-        return [...prev, msg];
-      });
-      setTimeout(() => {
-        const view = document.getElementById('chat-scroll-view');
-        if (view) view.scrollTop = view.scrollHeight;
-      }, 50);
+    // Realtime Postgres Changes: Messages (legacy table support)
+    channel.on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => {
+      getPeerMessages().then(list => {
+        if (list) setChats(list);
+      }).catch(console.error);
     });
 
     // Realtime Postgres Changes: Chat Rooms
     channel.on('postgres_changes', { event: '*', schema: 'public', table: 'chat_rooms' }, () => {
+      getChatRooms().then(rooms => {
+        if (rooms) setChatRooms(rooms);
+      }).catch(console.error);
+    });
+
+    // Realtime Postgres Changes: Room Members
+    channel.on('postgres_changes', { event: '*', schema: 'public', table: 'chat_room_members' }, () => {
       getChatRooms().then(rooms => {
         if (rooms) setChatRooms(rooms);
       }).catch(console.error);
