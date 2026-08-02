@@ -8,8 +8,9 @@ import {
 } from 'lucide-react';
 import { ChatMessage, ChatRoom, UserRole, HouseType, ChatAttachment, UserProfile } from '../types';
 import { moderateChatMessage } from '../lib/aiModeration';
-import { savePeerMessage, deletePeerMessage, saveChatRoom, joinChatRoom, leaveChatRoom, deleteChatRoom } from '../lib/supabaseChat';
+import { savePeerMessage, deletePeerMessage, saveChatRoom, joinChatRoom, leaveChatRoom, deleteChatRoom, regenerateRoomCode, getPeerMessages } from '../lib/supabaseChat';
 import { saveAppNotification } from '../lib/notifications';
+import { supabase } from '../lib/supabase';
 
 interface ChatSystemProps {
   currentUser: UserProfile | null;
@@ -52,8 +53,53 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
 
   // Group settings & QR modal
   const [showGroupSettings, setShowGroupSettings] = useState(false);
+  const [editRoomName, setEditRoomName] = useState('');
+  const [editRoomDescription, setEditRoomDescription] = useState('');
+  const [editRoomIcon, setEditRoomIcon] = useState('💬');
   const [showQrModal, setShowQrModal] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+
+  // Active Room Realtime Subscription Hook
+  useEffect(() => {
+    if (!activeChatTargetId) return;
+
+    const channelName = `room_channel_${activeChatTargetId}`;
+    console.log('[REALTIME-ROOM] Subscribing to active room channel:', channelName);
+
+    const roomChannel = supabase.channel(channelName);
+
+    roomChannel
+      .on('broadcast', { event: 'new_chat_message' }, (payload) => {
+        if (payload.payload) {
+          const newMsg = payload.payload as ChatMessage;
+          setChats(prev => {
+            const idx = prev.findIndex(m => m.id === newMsg.id);
+            if (idx >= 0) {
+              const updated = [...prev];
+              updated[idx] = { ...updated[idx], ...newMsg };
+              return updated;
+            }
+            return [...prev, newMsg];
+          });
+        }
+      })
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'chat_room_messages',
+        filter: `room_id=eq.${activeChatTargetId}`
+      }, () => {
+        getPeerMessages().then(list => {
+          if (list) setChats(list);
+        }).catch(console.error);
+      })
+      .subscribe();
+
+    return () => {
+      console.log('[REALTIME-ROOM] Unsubscribing from room channel:', channelName);
+      supabase.removeChannel(roomChannel);
+    };
+  }, [activeChatTargetId, setChats]);
 
   // Message interaction states
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
@@ -529,15 +575,19 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
             </button>
 
             {/* Settings button */}
-            {isModerator && (
-              <button
-                onClick={() => setShowGroupSettings(true)}
-                title="Group Settings"
-                className="p-2 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 rounded-xl border border-indigo-500/30 transition-all"
-              >
-                <Settings className="w-4 h-4" />
-              </button>
-            )}
+            <button
+              onClick={() => {
+                setEditRoomName(activeRoomInfo.name);
+                setEditRoomDescription(activeRoomInfo.description || '');
+                setEditRoomIcon(activeRoomInfo.icon || '💬');
+                setShowGroupSettings(true);
+              }}
+              title="Group Settings"
+              className="p-2 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 rounded-xl border border-indigo-500/30 transition-all flex items-center gap-1.5 text-xs font-bold"
+            >
+              <Settings className="w-4 h-4" />
+              <span className="hidden sm:inline">Settings</span>
+            </button>
           </div>
         </div>
 
@@ -916,6 +966,223 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
             </div>
 
             <p className="text-[10px] text-slate-400">Invite links expire in 24 hours. Scan QR to join room directly.</p>
+          </div>
+        </div>
+      )}
+
+      {/* Group Settings Modal */}
+      {showGroupSettings && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-slate-900 border border-white/10 rounded-3xl max-w-lg w-full p-6 shadow-2xl relative space-y-5 max-h-[85vh] overflow-y-auto scrollbar-thin">
+            <button
+              onClick={() => setShowGroupSettings(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white p-1 rounded-full bg-white/5"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            {/* Modal Header */}
+            <div className="flex items-center gap-3 border-b border-white/10 pb-4">
+              <span className="text-3xl p-2 bg-slate-950 border border-white/10 rounded-2xl">{activeRoomInfo.icon}</span>
+              <div>
+                <h3 className="text-base font-black text-white flex items-center gap-2">
+                  {activeRoomInfo.name}
+                  {isModerator && <span className="text-[10px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded-full font-bold">Admin/Mod</span>}
+                </h3>
+                <p className="text-xs text-slate-400">{activeRoomInfo.description || 'No description provided'}</p>
+              </div>
+            </div>
+
+            {/* Editable Room Info (Moderators / Admins) */}
+            {isModerator ? (
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  const updated: ChatRoom = {
+                    ...activeRoomInfo,
+                    name: editRoomName.trim() || activeRoomInfo.name,
+                    description: editRoomDescription.trim(),
+                    icon: editRoomIcon.trim() || activeRoomInfo.icon
+                  };
+                  setChatRooms(prev => prev.map(r => r.id === updated.id ? updated : r));
+                  await saveChatRoom(updated);
+                  showNotification('Room details updated!');
+                }}
+                className="space-y-3 bg-slate-950/60 p-4 rounded-2xl border border-white/5"
+              >
+                <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-wider">Room Information</h4>
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">Room Icon & Name</label>
+                  <div className="flex gap-2 mt-1">
+                    <input
+                      type="text"
+                      value={editRoomIcon}
+                      onChange={e => setEditRoomIcon(e.target.value)}
+                      className="w-12 bg-slate-900 border border-white/10 rounded-xl px-2 py-2 text-center text-sm text-white"
+                    />
+                    <input
+                      type="text"
+                      value={editRoomName}
+                      onChange={e => setEditRoomName(e.target.value)}
+                      required
+                      className="flex-1 bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">Description</label>
+                  <textarea
+                    value={editRoomDescription}
+                    onChange={e => setEditRoomDescription(e.target.value)}
+                    className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white h-16 mt-1"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2 rounded-xl text-xs uppercase"
+                >
+                  Save Room Details
+                </button>
+              </form>
+            ) : null}
+
+            {/* Invite Code Section */}
+            <div className="bg-slate-950/60 p-4 rounded-2xl border border-white/5 space-y-2">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold text-emerald-400 uppercase tracking-wider">Invite Code</span>
+                {isModerator && (
+                  <button
+                    onClick={async () => {
+                      const newCode = await regenerateRoomCode(activeRoomInfo);
+                      setChatRooms(prev => prev.map(r => r.id === activeRoomInfo.id ? { ...r, code: newCode } : r));
+                      showNotification(`Invite code regenerated: ${newCode}`);
+                    }}
+                    className="text-[10px] text-indigo-400 hover:underline flex items-center gap-1 font-bold"
+                  >
+                    Regenerate Code
+                  </button>
+                )}
+              </div>
+              <div className="flex justify-between items-center bg-slate-900 p-3 rounded-xl border border-white/10">
+                <span className="font-mono text-emerald-400 font-black text-lg tracking-widest">{activeRoomInfo.code || 'GLOBAL'}</span>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(activeRoomInfo.code || 'GLOBAL');
+                    setCopiedLink(true);
+                    setTimeout(() => setCopiedLink(false), 2000);
+                  }}
+                  className="bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  {copiedLink ? 'Copied!' : 'Copy Code'}
+                </button>
+              </div>
+            </div>
+
+            {/* Members List Section */}
+            <div className="bg-slate-950/60 p-4 rounded-2xl border border-white/5 space-y-3">
+              <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex justify-between items-center">
+                <span>Members ({(activeRoomInfo.members || []).length || 1})</span>
+              </h4>
+              <div className="space-y-2 max-h-48 overflow-y-auto scrollbar-thin pr-1">
+                {(activeRoomInfo.members || []).map(memberUid => {
+                  const studentInfo = students.find(s => s.uid === memberUid || s.id === memberUid);
+                  const memberName = studentInfo?.name || (memberUid === currentUser?.uid ? `${currentUser.name} (You)` : `User ${memberUid.slice(0, 8)}`);
+                  const isOwner = activeRoomInfo.creatorId === memberUid;
+                  const isMod = activeRoomInfo.moderators?.includes(memberUid) || isOwner;
+
+                  return (
+                    <div key={memberUid} className="flex justify-between items-center p-2.5 bg-slate-900 rounded-xl border border-white/5 text-xs text-white">
+                      <div className="flex items-center gap-2">
+                        <span className="w-6 h-6 rounded-full bg-indigo-600/30 text-indigo-300 flex items-center justify-center font-bold text-[10px]">
+                          {memberName.charAt(0)}
+                        </span>
+                        <span className="font-semibold">{memberName}</span>
+                        {isOwner && <span className="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.5 rounded font-bold">Owner</span>}
+                        {isMod && !isOwner && <span className="text-[9px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-1.5 py-0.5 rounded font-bold">Mod</span>}
+                      </div>
+
+                      {isModerator && memberUid !== currentUser?.uid && !isOwner && (
+                        <div className="flex gap-1.5">
+                          {!isMod && (
+                            <button
+                              onClick={async () => {
+                                const updated = {
+                                  ...activeRoomInfo,
+                                  moderators: [...(activeRoomInfo.moderators || []), memberUid]
+                                };
+                                setChatRooms(prev => prev.map(r => r.id === updated.id ? updated : r));
+                                await saveChatRoom(updated);
+                                showNotification(`Promoted ${memberName} to moderator.`);
+                              }}
+                              className="text-[10px] bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 px-2 py-1 rounded-lg font-bold"
+                            >
+                              Make Mod
+                            </button>
+                          )}
+                          <button
+                            onClick={async () => {
+                              const updated = {
+                                ...activeRoomInfo,
+                                members: (activeRoomInfo.members || []).filter(m => m !== memberUid),
+                                moderators: (activeRoomInfo.moderators || []).filter(m => m !== memberUid)
+                              };
+                              setChatRooms(prev => prev.map(r => r.id === updated.id ? updated : r));
+                              await saveChatRoom(updated);
+                              showNotification(`Removed ${memberName} from room.`);
+                            }}
+                            className="text-[10px] bg-rose-600/30 hover:bg-rose-600/50 text-rose-300 px-2 py-1 rounded-lg font-bold"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Danger Zone Actions */}
+            <div className="border-t border-white/10 pt-4 space-y-2">
+              {activeRoomInfo.id !== 'group-all' && (
+                <div className="flex gap-3">
+                  <button
+                    onClick={async () => {
+                      if (!currentUser) return;
+                      await leaveChatRoom(activeRoomInfo.id, currentUser.uid);
+                      setChatRooms(prev => prev.filter(r => r.id !== activeRoomInfo.id));
+                      setActiveChatTargetId('group-all');
+                      setShowGroupSettings(false);
+                      showNotification(`Left ${activeRoomInfo.name}`);
+                    }}
+                    className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5"
+                  >
+                    <LogOut className="w-3.5 h-3.5 text-rose-400" />
+                    Leave Room
+                  </button>
+
+                  {(isModerator || activeRoomInfo.creatorId === currentUser?.uid) && (
+                    <button
+                      onClick={async () => {
+                        if (!confirm(`Are you sure you want to delete room "${activeRoomInfo.name}"? This cannot be undone.`)) return;
+                        await deleteChatRoom(activeRoomInfo.id, currentUser?.uid);
+                        setChatRooms(prev => prev.filter(r => r.id !== activeRoomInfo.id));
+                        setActiveChatTargetId('group-all');
+                        setShowGroupSettings(false);
+                        showNotification(`Deleted room ${activeRoomInfo.name}`);
+                      }}
+                      className="flex-1 bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/30 text-rose-400 font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                      Delete Room
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
