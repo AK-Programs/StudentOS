@@ -323,18 +323,18 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
     e.preventDefault();
     if (!joinRoomCode.trim() || !currentUser) return;
 
-    const joined = await joinChatRoom(joinRoomCode.trim().toUpperCase(), currentUser.uid);
-    if (joined) {
+    const res = await joinChatRoom(joinRoomCode.trim().toUpperCase(), currentUser.uid);
+    if (res.success && res.room) {
       setChatRooms(prev => {
-        if (prev.some(r => r.id === joined.id)) return prev;
-        return [...prev, joined];
+        if (prev.some(r => r.id === res.room!.id)) return prev;
+        return [...prev, res.room!];
       });
-      setActiveChatTargetId(joined.id);
+      setActiveChatTargetId(res.room.id);
       setJoinRoomCode('');
       setIsCreatingRoom(false);
-      showNotification(`Joined room: ${joined.name}`);
+      showNotification(res.alreadyJoined ? `Already joined ${res.room.name}` : `Joined room: ${res.room.name}`);
     } else {
-      showNotification('Room code not found or invalid.');
+      showNotification(res.message || 'Room code not found or invalid.');
     }
   };
 
