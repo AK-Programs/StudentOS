@@ -14,6 +14,8 @@ import {
 } from '../lib/supabaseChat';
 import { saveAppNotification } from '../lib/notifications';
 import { supabase } from '../lib/supabase';
+import { presenceService, UserPresence } from '../lib/presenceService';
+import { soundService } from '../lib/soundService';
 
 interface ChatSystemProps {
   currentUser: UserProfile | null;
@@ -266,6 +268,54 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<any>(null);
 
+  // Phase 3 Realtime States: Presence, Typing, Mentions
+  const [onlineUsersMap, setOnlineUsersMap] = useState<Map<string, UserPresence>>(new Map());
+  const [typingUsers, setTypingUsers] = useState<Record<string, string>>({});
+  const [showMentionMenu, setShowMentionMenu] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState('');
+
+  // Online Presence Sync
+  useEffect(() => {
+    if (currentUser) {
+      presenceService.init({
+        uid: currentUser.uid,
+        name: currentUser.name,
+        email: currentUser.email,
+        role: currentUser.role,
+        avatar: currentUser.avatar
+      });
+      return presenceService.subscribe(setOnlineUsersMap);
+    }
+  }, [currentUser?.uid]);
+
+  // Realtime Typing Indicator Subscription
+  useEffect(() => {
+    if (!activeChatTargetId) return;
+    const typingChannel = supabase.channel(`chat_typing_${activeChatTargetId}`);
+    const typingTimers: Record<string, any> = {};
+
+    typingChannel.on('broadcast', { event: 'typing' }, (payload) => {
+      if (payload?.payload && payload.payload.uid !== currentUser?.uid) {
+        const { uid, name } = payload.payload;
+        setTypingUsers(prev => ({ ...prev, [uid]: name }));
+
+        if (typingTimers[uid]) clearTimeout(typingTimers[uid]);
+        typingTimers[uid] = setTimeout(() => {
+          setTypingUsers(prev => {
+            const next = { ...prev };
+            delete next[uid];
+            return next;
+          });
+        }, 2500);
+      }
+    }).subscribe();
+
+    return () => {
+      Object.values(typingTimers).forEach(clearTimeout);
+      supabase.removeChannel(typingChannel);
+    };
+  }, [activeChatTargetId, currentUser?.uid]);
+
   const chatScrollViewRef = useRef<HTMLDivElement>(null);
   const prevTargetIdRef = useRef<string>(activeChatTargetId);
   const prevChatsLengthRef = useRef<number>(chats.length);
@@ -495,6 +545,24 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
           linkTab: 'peer_chat'
         });
       }
+    }
+
+    // Check if message mentions users and send mention notification
+    if (messageText.includes('@')) {
+      availableUsersList.forEach(u => {
+        if (u.uid !== currentUser.uid && messageText.toLowerCase().includes(`@${u.name.toLowerCase()}`)) {
+          saveAppNotification({
+            id: `mention-${Date.now()}-${u.uid}`,
+            title: `You were mentioned by ${currentUser.name}`,
+            message: messageText.slice(0, 80),
+            type: 'mention',
+            createdAt: new Date().toISOString(),
+            isRead: false,
+            targetUserId: u.uid,
+            linkTab: 'peer_chat'
+          }).catch(console.error);
+        }
+      });
     }
   };
 
@@ -1063,9 +1131,22 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
                       <span className="text-[9px] text-indigo-400 uppercase font-black bg-indigo-500/10 px-1.5 py-0.2 rounded border border-indigo-500/20">
                         {senderUser?.role || msg.role}
                       </span>
-                      <span className="text-[9px] text-slate-500">
-                        {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-[9px] text-slate-500">
+                          {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                        {isMine && (
+                          <span className="text-[10px]" title={msg.readBy && msg.readBy.length > 1 ? 'Read' : msg.deliveredTo ? 'Delivered' : 'Sent'}>
+                            {msg.readBy && msg.readBy.length > 1 ? (
+                              <CheckCheck className="w-3.5 h-3.5 text-sky-400 inline" />
+                            ) : msg.deliveredTo && msg.deliveredTo.length > 0 ? (
+                              <CheckCheck className="w-3.5 h-3.5 text-slate-400 inline" />
+                            ) : (
+                              <Check className="w-3.5 h-3.5 text-slate-400 inline" />
+                            )}
+                          </span>
+                        )}
+                      </div>
                     </div>
 
                     {/* Reply Context preview */}
@@ -1126,10 +1207,16 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
                         </div>
                       )}
 
-                      {/* Actions toolbar on Hover */}
-                      <div className={`absolute top-1 ${isMine ? '-left-20' : '-right-20'} hidden group-hover:flex items-center gap-1 bg-slate-900 border border-white/10 p-1 rounded-xl shadow-xl z-10`}>
+                      {/* Actions toolbar on Hover with Quick Reactions */}
+                      <div className={`absolute top-1 ${isMine ? '-left-44' : '-right-44'} hidden group-hover:flex items-center gap-1 bg-slate-900 border border-white/10 p-1.5 rounded-2xl shadow-2xl z-10`}>
+                        {['👍', '❤️', '😂', '😮', '🎉'].map(emoji => (
+                          <button key={emoji} onClick={() => handleAddReaction(msg.id, emoji)} className="hover:scale-125 transition-transform p-0.5 text-xs" title={`React with ${emoji}`}>
+                            {emoji}
+                          </button>
+                        ))}
                         <button onClick={() => setReplyingTo(msg)} title="Reply" className="p-1 hover:text-indigo-400 text-slate-400"><Reply className="w-3 h-3" /></button>
                         <button onClick={() => setForwardingMsg(msg)} title="Forward" className="p-1 hover:text-indigo-400 text-slate-400"><Forward className="w-3 h-3" /></button>
+                        <button onClick={() => handleTogglePin(msg.id)} title="Pin Message" className="p-1 hover:text-amber-400 text-slate-400"><Pin className="w-3 h-3" /></button>
                         {isMine && <button onClick={() => { setEditingMsgId(msg.id); setEditText(msg.message); }} title="Edit" className="p-1 hover:text-indigo-400 text-slate-400"><Edit3 className="w-3 h-3" /></button>}
                         {(isMine || isModerator) && <button onClick={() => handleDeleteMessage(msg.id, true)} title="Delete Everyone" className="p-1 hover:text-rose-400 text-slate-400"><Trash2 className="w-3 h-3" /></button>}
                       </div>
@@ -1172,6 +1259,42 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
           </div>
         )}
 
+        {/* Typing indicator banner */}
+        {Object.keys(typingUsers).length > 0 && (
+          <div className="text-[11px] font-bold text-indigo-400 flex items-center gap-1.5 animate-pulse px-1 shrink-0">
+            <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-ping" />
+            <span>{Object.values(typingUsers).join(', ')} {Object.keys(typingUsers).length === 1 ? 'is' : 'are'} typing...</span>
+          </div>
+        )}
+
+        {/* Mention Autocomplete Menu */}
+        {showMentionMenu && (
+          <div className="bg-slate-950 border border-indigo-500/40 rounded-2xl p-2 max-h-40 overflow-y-auto space-y-1 shadow-2xl z-30 shrink-0">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-400 px-2 py-0.5">
+              Mention Member
+            </div>
+            {availableUsersList
+              .filter(u => u.name.toLowerCase().includes(mentionQuery) || u.role.toLowerCase().includes(mentionQuery))
+              .slice(0, 5)
+              .map(u => (
+                <button
+                  key={u.uid}
+                  type="button"
+                  onClick={() => {
+                    const words = newChatText.split(' ');
+                    words.pop();
+                    setNewChatText([...words, `@${u.name}`].join(' ') + ' ');
+                    setShowMentionMenu(false);
+                  }}
+                  className="w-full text-left px-3 py-1.5 hover:bg-indigo-600/30 rounded-xl text-xs text-white flex items-center justify-between transition-colors"
+                >
+                  <span className="font-bold text-indigo-300">@{u.name}</span>
+                  <span className="text-[10px] text-slate-400 capitalize">{u.role}</span>
+                </button>
+              ))}
+          </div>
+        )}
+
         {/* Input Bar */}
         <div className="pt-3 border-t border-white/10 space-y-2 shrink-0">
           
@@ -1209,10 +1332,38 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
             <input
               type="text"
               value={newChatText}
-              onChange={e => setNewChatText(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter') handleSendChat(); }}
+              onChange={e => {
+                const val = e.target.value;
+                setNewChatText(val);
+
+                // Broadcast typing event
+                if (currentUser && activeChatTargetId) {
+                  try {
+                    supabase.channel(`chat_typing_${activeChatTargetId}`).send({
+                      type: 'broadcast',
+                      event: 'typing',
+                      payload: { uid: currentUser.uid, name: currentUser.name }
+                    });
+                  } catch (_) {}
+                }
+
+                // Mention autocomplete trigger
+                const lastWord = val.split(' ').pop();
+                if (lastWord && lastWord.startsWith('@')) {
+                  setShowMentionMenu(true);
+                  setMentionQuery(lastWord.substring(1).toLowerCase());
+                } else {
+                  setShowMentionMenu(false);
+                }
+              }}
+              onKeyDown={e => { 
+                if (e.key === 'Enter') {
+                  setShowMentionMenu(false);
+                  handleSendChat();
+                } 
+              }}
               disabled={!canPostInChannel}
-              placeholder={canPostInChannel ? `Type a message in ${activeDisplayTitle}...` : "📢 Only teachers & admins can post in this channel"}
+              placeholder={canPostInChannel ? `Type a message in ${activeDisplayTitle}... (Use @ to mention)` : "📢 Only teachers & admins can post in this channel"}
               className="flex-1 bg-slate-950 border border-white/10 rounded-2xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
             />
 
