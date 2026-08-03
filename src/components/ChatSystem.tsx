@@ -403,7 +403,7 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    Array.from(files).forEach(file => {
+    Array.from(files).forEach((file: any) => {
       const reader = new FileReader();
       const isImg = file.type.startsWith('image/');
       const isVid = file.type.startsWith('video/');
@@ -428,7 +428,17 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
   // Start or open Direct Message
   const handleStartDirectMessage = async (targetUser: UserProfile) => {
     if (!currentUser) return;
-    const dmRoom = await getOrCreateDirectMessageRoom(currentUser, targetUser);
+    const dmRoom = await getOrCreateDirectMessageRoom({
+      uid: currentUser.uid,
+      name: currentUser.name,
+      avatar: currentUser.avatar,
+      role: currentUser.role
+    }, {
+      uid: targetUser.uid,
+      name: targetUser.name,
+      avatar: targetUser.avatar,
+      role: targetUser.role
+    });
     
     setChatRooms(prev => {
       if (prev.some(r => r.id === dmRoom.id)) return prev;
@@ -1232,7 +1242,7 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
                             className="bg-slate-950/80 border border-white/10 text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 text-slate-300 hover:border-indigo-500"
                           >
                             <span>{emoji}</span>
-                            <span className="font-bold text-[9px] text-indigo-400">{uids.length}</span>
+                            <span className="font-bold text-[9px] text-indigo-400">{(uids as any).length}</span>
                           </button>
                         ))}
                       </div>
