@@ -267,13 +267,40 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
   const timerRef = useRef<any>(null);
 
   const chatScrollViewRef = useRef<HTMLDivElement>(null);
+  const prevTargetIdRef = useRef<string>(activeChatTargetId);
+  const prevChatsLengthRef = useRef<number>(chats.length);
 
-  // Auto-scroll on new messages
+  // Auto-scroll on new messages or room switch
   useEffect(() => {
-    if (chatScrollViewRef.current) {
-      chatScrollViewRef.current.scrollTop = chatScrollViewRef.current.scrollHeight;
+    const el = chatScrollViewRef.current;
+    if (!el) return;
+
+    const targetChanged = prevTargetIdRef.current !== activeChatTargetId;
+    prevTargetIdRef.current = activeChatTargetId;
+
+    if (targetChanged) {
+      // Switched rooms -> scroll to bottom
+      el.scrollTop = el.scrollHeight;
+      prevChatsLengthRef.current = chats.length;
+      return;
     }
-  }, [chats, activeChatTargetId]);
+
+    const hasNewMessages = chats.length > prevChatsLengthRef.current;
+    prevChatsLengthRef.current = chats.length;
+
+    if (hasNewMessages) {
+      const roomMsgs = chats.filter(c => c.targetId === activeChatTargetId || (!c.targetId && activeChatTargetId === 'group-all'));
+      const lastMsg = roomMsgs[roomMsgs.length - 1];
+      const isMine = lastMsg && lastMsg.ownerUid === currentUser?.uid;
+
+      // User is considered near bottom if within 150px of bottom
+      const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
+
+      if (isMine || isNearBottom) {
+        el.scrollTop = el.scrollHeight;
+      }
+    }
+  }, [chats, activeChatTargetId, currentUser?.uid]);
 
   // Handle Voice Recording
   const startRecording = async () => {
@@ -663,14 +690,14 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
   const availableUsersList = allProfiles.length > 0 ? allProfiles : students;
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-12 gap-5 h-[720px] max-w-7xl mx-auto shadow-2xl animate-fadeIn font-sans">
+    <div className="grid grid-cols-1 md:grid-cols-12 gap-5 h-[calc(100vh-8.5rem)] md:h-[calc(100vh-9.5rem)] min-h-[500px] max-w-7xl mx-auto shadow-2xl animate-fadeIn font-sans">
       
       {/* Left Column: Chat Rooms & Direct Messages Sidebar */}
-      <div className={`md:col-span-4 bg-slate-900/90 border border-white/10 rounded-3xl p-4 flex flex-col justify-between ${showChatSidebarMobile ? 'block' : 'hidden md:flex'}`}>
+      <div className={`md:col-span-4 bg-slate-900/90 border border-white/10 rounded-3xl p-4 flex flex-col min-h-0 justify-between ${showChatSidebarMobile ? 'flex h-full' : 'hidden md:flex'}`}>
         <div className="space-y-3.5 flex-1 flex flex-col min-h-0">
           
           {/* Header & New Actions */}
-          <div className="flex justify-between items-center">
+          <div className="flex justify-between items-center shrink-0">
             <h3 className="font-black text-xs uppercase tracking-wider text-white flex items-center gap-1.5">
               <Megaphone className="w-4 h-4 text-indigo-400" />
               StudentOS Chat
@@ -696,7 +723,7 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
           </div>
 
           {/* Search Bar */}
-          <div className="relative">
+          <div className="relative shrink-0">
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
             <input
               type="text"
@@ -708,7 +735,7 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
           </div>
 
           {/* Sidebar Chat List (Separated DMs and Groups) */}
-          <div className="flex-1 overflow-y-auto space-y-3 pr-1 scrollbar-thin">
+          <div className="flex-1 min-h-0 overflow-y-auto space-y-3 pr-1 scrollbar-thin">
             
             {/* DIRECT MESSAGES SECTION */}
             <div className="space-y-1">
@@ -843,7 +870,7 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
         </div>
 
         {/* Footer info */}
-        <div className="pt-3 border-t border-white/10 flex justify-between items-center text-[11px] text-slate-400">
+        <div className="pt-3 border-t border-white/10 flex justify-between items-center text-[11px] text-slate-400 shrink-0">
           <span className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
             Live Sync
@@ -853,10 +880,10 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
       </div>
 
       {/* Right Column: Chat Dialog Box */}
-      <div className={`md:col-span-8 bg-slate-900/90 border border-white/10 rounded-3xl p-5 flex flex-col justify-between ${!showChatSidebarMobile ? 'flex' : 'hidden md:flex'}`}>
+      <div className={`md:col-span-8 bg-slate-900/90 border border-white/10 rounded-3xl p-5 flex flex-col min-h-0 justify-between ${!showChatSidebarMobile ? 'flex h-full' : 'hidden md:flex'}`}>
         
         {/* Active Header Bar */}
-        <div className="flex items-center justify-between border-b border-white/10 pb-3.5">
+        <div className="flex items-center justify-between border-b border-white/10 pb-3.5 shrink-0">
           <div className="flex items-center gap-3">
             <button
               onClick={() => setShowChatSidebarMobile(true)}
@@ -987,7 +1014,7 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
         <div 
           ref={chatScrollViewRef}
           id="chat-scroll-view"
-          className="flex-1 overflow-y-auto space-y-3 my-3 pr-2 scrollbar-thin"
+          className="flex-1 min-h-0 overflow-y-auto space-y-3 my-3 pr-2 scrollbar-thin"
         >
           {roomMessages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-slate-500 text-xs space-y-2">
@@ -1133,7 +1160,7 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
 
         {/* Replying context banner */}
         {replyingTo && (
-          <div className="bg-slate-950 border-t border-indigo-500/30 p-2.5 flex items-center justify-between text-xs text-slate-300 rounded-t-xl">
+          <div className="bg-slate-950 border-t border-indigo-500/30 p-2.5 flex items-center justify-between text-xs text-slate-300 rounded-t-xl shrink-0">
             <div className="flex items-center gap-2 truncate">
               <Reply className="w-3.5 h-3.5 text-indigo-400" />
               <span className="font-bold text-indigo-300">Replying to {replyingTo.name}: </span>
@@ -1146,7 +1173,7 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
         )}
 
         {/* Input Bar */}
-        <div className="pt-3 border-t border-white/10 space-y-2">
+        <div className="pt-3 border-t border-white/10 space-y-2 shrink-0">
           
           {/* Attached Files Preview */}
           {attachedFiles.length > 0 && (
