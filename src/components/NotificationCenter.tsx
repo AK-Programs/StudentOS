@@ -1,166 +1,301 @@
 import React, { useState, useEffect } from 'react';
-import { Bell, CheckCheck, Filter, AlertCircle, Calendar, BookOpen, Award, MessageSquare, Sparkles, X, ChevronRight } from 'lucide-react';
-import { AppNotification } from '../types';
-import { getAppNotifications, markNotificationAsRead, markAllNotificationsAsRead } from '../lib/notifications';
+import { 
+  Bell, 
+  CheckCheck, 
+  Trash2, 
+  Volume2, 
+  VolumeX, 
+  Megaphone, 
+  BookOpen, 
+  MessageSquare, 
+  AtSign, 
+  Award, 
+  Sparkles, 
+  X,
+  Filter,
+  Check
+} from 'lucide-react';
+import { AppNotification, UserProfile } from '../types';
+import { 
+  getAppNotifications, 
+  markNotificationAsRead, 
+  markAllNotificationsAsRead, 
+  deleteNotification,
+  triggerNotificationSound 
+} from '../lib/notifications';
+import { soundService } from '../lib/soundService';
+import { supabase } from '../lib/supabase';
 
 interface NotificationCenterProps {
-  userId?: string;
+  currentUser: UserProfile | null;
   onNavigateTab?: (tab: string) => void;
+  isOpen: boolean;
+  onClose: () => void;
 }
 
 export const NotificationCenter: React.FC<NotificationCenterProps> = ({
-  userId,
-  onNavigateTab
+  currentUser,
+  onNavigateTab,
+  isOpen,
+  onClose,
 }) => {
-  const [isOpen, setIsOpen] = useState(false);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
-  const [filter, setFilter] = useState<'all' | 'unread' | 'announcement' | 'assignment'>('all');
+  const [filter, setFilter] = useState<'all' | 'unread' | 'broadcast' | 'mention' | 'academic'>('all');
+  const [isMuted, setIsMuted] = useState<boolean>(soundService.getMuted());
 
   // Load notifications from Supabase
-  const loadNotifs = async () => {
-    const list = await getAppNotifications(userId);
-    setNotifications(list);
+  const loadNotifications = async () => {
+    if (!currentUser) return;
+    const data = await getAppNotifications(currentUser.uid);
+    setNotifications(data);
   };
 
   useEffect(() => {
-    loadNotifs();
-    const interval = setInterval(loadNotifs, 10000);
-    return () => clearInterval(interval);
-  }, [userId]);
+    loadNotifications();
 
-  const unreadCount = notifications.filter(n => !n.isRead).length;
+    // Subscribe to realtime notifications
+    const channel = supabase.channel('student-os-public');
+    channel.on('broadcast', { event: 'new_app_notification' }, (payload) => {
+      if (payload && payload.payload) {
+        const notif = payload.payload as AppNotification;
+        const isForMe = !notif.targetUserId || notif.targetUserId === 'all' || notif.targetUserId === currentUser?.uid;
+        if (isForMe) {
+          setNotifications((prev) => [notif, ...prev.filter((n) => n.id !== notif.id)]);
+          triggerNotificationSound(notif.type);
+        }
+      }
+    });
 
-  const handleMarkRead = async (id: string) => {
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentUser?.uid]);
+
+  const toggleSound = () => {
+    const muted = soundService.toggleMute();
+    setIsMuted(muted);
+  };
+
+  const handleMarkAsRead = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
     await markNotificationAsRead(id);
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
+    );
   };
 
   const handleMarkAllRead = async () => {
-    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
-    await markAllNotificationsAsRead(userId);
+    await markAllNotificationsAsRead(currentUser?.uid);
+    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
   };
 
-  const filteredNotifs = notifications.filter(n => {
-    if (filter === 'unread') return !n.isRead;
-    if (filter === 'announcement') return n.type === 'announcement';
-    if (filter === 'assignment') return n.type === 'assignment' || n.type === 'homework';
-    return true;
-  });
+  const handleDelete = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    await deleteNotification(id);
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+  };
 
-  const getNotifIcon = (type: string) => {
-    switch (type) {
-      case 'announcement': return <AlertCircle className="w-4 h-4 text-rose-400" />;
-      case 'assignment':
-      case 'homework': return <BookOpen className="w-4 h-4 text-indigo-400" />;
-      case 'exam':
-      case 'marks': return <Award className="w-4 h-4 text-amber-400" />;
-      case 'chat': return <MessageSquare className="w-4 h-4 text-teal-400" />;
-      default: return <Sparkles className="w-4 h-4 text-blue-400" />;
+  const handleNotificationClick = (notif: AppNotification) => {
+    if (!notif.isRead) {
+      markNotificationAsRead(notif.id);
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === notif.id ? { ...n, isRead: true } : n))
+      );
+    }
+    if (notif.linkTab && onNavigateTab) {
+      onNavigateTab(notif.linkTab);
+      onClose();
     }
   };
 
+  const unreadCount = notifications.filter((n) => !n.isRead).length;
+
+  const filteredNotifications = notifications.filter((n) => {
+    if (filter === 'unread') return !n.isRead;
+    if (filter === 'broadcast') return n.type === 'announcement' || n.type === 'substitute';
+    if (filter === 'mention') return n.type === 'mention' || n.type === 'chat';
+    if (filter === 'academic') return ['homework', 'assignment', 'exam', 'marks', 'resource'].includes(n.type);
+    return true;
+  });
+
+  const getTypeIcon = (type: string) => {
+    switch (type) {
+      case 'announcement':
+        return <Megaphone className="w-4 h-4 text-amber-400" />;
+      case 'mention':
+        return <AtSign className="w-4 h-4 text-purple-400" />;
+      case 'homework':
+      case 'assignment':
+        return <BookOpen className="w-4 h-4 text-emerald-400" />;
+      case 'chat':
+        return <MessageSquare className="w-4 h-4 text-indigo-400" />;
+      case 'exam':
+      case 'marks':
+        return <Award className="w-4 h-4 text-rose-400" />;
+      default:
+        return <Sparkles className="w-4 h-4 text-sky-400" />;
+    }
+  };
+
+  if (!isOpen) return null;
+
   return (
-    <div className="relative">
-      
-      {/* Trigger Bell Icon */}
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="relative p-2 rounded-xl bg-slate-900 border border-white/10 hover:bg-slate-800 text-slate-300 transition-all active:scale-95"
-        title="Notifications"
-      >
-        <Bell className="w-4 h-4" />
-        {unreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 bg-rose-500 text-white font-black text-[9px] w-4 h-4 rounded-full flex items-center justify-center animate-pulse border border-slate-950">
-            {unreadCount > 9 ? '9+' : unreadCount}
-          </span>
-        )}
-      </button>
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-sm animate-fadeIn">
+      {/* Backdrop Click */}
+      <div className="flex-1" onClick={onClose} />
 
-      {/* Popover Panel */}
-      {isOpen && (
-        <div className="absolute right-0 mt-3 w-80 sm:w-96 bg-slate-900 border border-white/10 rounded-3xl shadow-2xl p-4 z-50 animate-fadeIn space-y-3 font-sans">
-          
-          {/* Header */}
-          <div className="flex justify-between items-center border-b border-white/10 pb-3">
-            <div className="flex items-center gap-2">
-              <Bell className="w-4 h-4 text-indigo-400" />
-              <h3 className="font-extrabold text-sm text-white">StudentOS Notifications</h3>
-              {unreadCount > 0 && (
-                <span className="text-[10px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded-full font-bold">
-                  {unreadCount} unread
-                </span>
-              )}
+      {/* Drawer Container */}
+      <div className="w-full max-w-md bg-slate-900 border-l border-white/10 h-full flex flex-col shadow-2xl z-10 animate-slideLeft">
+        
+        {/* Header */}
+        <div className="p-4 border-b border-white/10 flex items-center justify-between bg-slate-950/80">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
+              <Bell className="w-5 h-5" />
             </div>
+            <div>
+              <h2 className="font-bold text-white text-base flex items-center gap-2">
+                Notifications
+                {unreadCount > 0 && (
+                  <span className="px-2 py-0.5 text-xs font-extrabold bg-indigo-600 text-white rounded-full animate-pulse">
+                    {unreadCount} new
+                  </span>
+                )}
+              </h2>
+              <p className="text-xs text-slate-400">Realtime activity & updates</p>
+            </div>
+          </div>
 
-            <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={toggleSound}
+              title={isMuted ? 'Unmute notification sounds' : 'Mute notification sounds'}
+              className={`p-2 rounded-xl border transition-all ${
+                isMuted
+                  ? 'bg-rose-500/10 border-rose-500/20 text-rose-400 hover:bg-rose-500/20'
+                  : 'bg-slate-800 border-white/10 text-slate-300 hover:text-white'
+              }`}
+            >
+              {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+            </button>
+
+            {unreadCount > 0 && (
               <button
                 onClick={handleMarkAllRead}
-                className="text-[10px] text-indigo-400 hover:text-indigo-300 font-bold flex items-center gap-1"
                 title="Mark all as read"
+                className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-white/10 text-xs font-semibold flex items-center gap-1"
               >
-                <CheckCheck className="w-3.5 h-3.5" />
-                Read all
+                <CheckCheck className="w-4 h-4 text-emerald-400" />
               </button>
-              <button onClick={() => setIsOpen(false)} className="text-slate-400 hover:text-white"><X className="w-4 h-4" /></button>
-            </div>
-          </div>
-
-          {/* Filters */}
-          <div className="flex gap-1 bg-slate-950 p-1 rounded-xl border border-white/5 text-[10px] font-bold">
-            {(['all', 'unread', 'announcement', 'assignment'] as const).map(f => (
-              <button
-                key={f}
-                onClick={() => setFilter(f)}
-                className={`flex-1 py-1 rounded-lg capitalize transition-all ${filter === f ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
-              >
-                {f}
-              </button>
-            ))}
-          </div>
-
-          {/* List */}
-          <div className="max-h-80 overflow-y-auto space-y-2 pr-1 scrollbar-thin">
-            {filteredNotifs.map(n => (
-              <div
-                key={n.id}
-                onClick={() => {
-                  handleMarkRead(n.id);
-                  if (n.linkTab && onNavigateTab) {
-                    onNavigateTab(n.linkTab);
-                    setIsOpen(false);
-                  }
-                }}
-                className={`p-3 rounded-2xl border transition-all cursor-pointer flex gap-3 ${!n.isRead ? 'bg-indigo-600/10 border-indigo-500/30 text-white' : 'bg-slate-950/40 border-white/5 text-slate-350 hover:bg-slate-950'}`}
-              >
-                <div className="p-2 bg-slate-900 rounded-xl border border-white/10 shrink-0 h-fit">
-                  {getNotifIcon(n.type)}
-                </div>
-                <div className="flex-1 min-w-0 space-y-1">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs font-bold truncate">{n.title}</span>
-                    <span className="text-[9px] text-slate-500 font-mono">
-                      {new Date(n.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-300 leading-snug">{n.message}</p>
-                  {n.targetClass && (
-                    <span className="inline-block text-[9px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-mono">
-                      Target: {n.targetClass}
-                    </span>
-                  )}
-                </div>
-              </div>
-            ))}
-
-            {filteredNotifs.length === 0 && (
-              <div className="text-center py-8 bg-slate-950/40 border border-white/5 rounded-2xl">
-                <p className="text-xs text-slate-500">No notifications found.</p>
-              </div>
             )}
+
+            <button
+              onClick={onClose}
+              className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white border border-white/10"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
         </div>
-      )}
 
+        {/* Filter Bar */}
+        <div className="p-3 border-b border-white/10 bg-slate-900/50 flex items-center gap-1.5 overflow-x-auto scrollbar-none text-xs">
+          <Filter className="w-3.5 h-3.5 text-slate-400 shrink-0 ml-1" />
+          {[
+            { id: 'all', label: 'All' },
+            { id: 'unread', label: `Unread (${unreadCount})` },
+            { id: 'broadcast', label: 'Announcements' },
+            { id: 'mention', label: 'Mentions & Chat' },
+            { id: 'academic', label: 'Academic' },
+          ].map((item) => (
+            <button
+              key={item.id}
+              onClick={() => setFilter(item.id as any)}
+              className={`px-3 py-1.5 rounded-lg whitespace-nowrap transition-all font-medium ${
+                filter === item.id
+                  ? 'bg-indigo-600 text-white font-semibold shadow-md'
+                  : 'bg-slate-800/80 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Notification List */}
+        <div className="flex-1 overflow-y-auto p-3 space-y-2.5 scrollbar-thin">
+          {filteredNotifications.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-slate-500 space-y-3 p-8 text-center">
+              <div className="p-4 rounded-full bg-slate-800/50 border border-white/5">
+                <Bell className="w-8 h-8 text-slate-600" />
+              </div>
+              <p className="text-sm font-medium text-slate-400">No notifications found</p>
+              <p className="text-xs text-slate-600">You are all caught up with school updates!</p>
+            </div>
+          ) : (
+            filteredNotifications.map((notif) => (
+              <div
+                key={notif.id}
+                onClick={() => handleNotificationClick(notif)}
+                className={`group relative p-3.5 rounded-2xl border transition-all cursor-pointer ${
+                  !notif.isRead
+                    ? 'bg-slate-800/90 border-indigo-500/40 shadow-lg shadow-indigo-950/20'
+                    : 'bg-slate-900/60 border-white/5 hover:border-white/20 hover:bg-slate-800/50'
+                }`}
+              >
+                {!notif.isRead && (
+                  <span className="absolute top-3.5 right-3.5 w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
+                )}
+
+                <div className="flex gap-3 items-start">
+                  <div className="p-2 rounded-xl bg-slate-950 border border-white/10 shrink-0">
+                    {getTypeIcon(notif.type)}
+                  </div>
+
+                  <div className="flex-1 min-w-0 pr-6">
+                    <h4 className="font-bold text-sm text-white group-hover:text-indigo-300 transition-colors truncate">
+                      {notif.title}
+                    </h4>
+                    <p className="text-xs text-slate-300 mt-1 line-clamp-2 leading-relaxed">
+                      {notif.message}
+                    </p>
+                    <div className="flex items-center gap-2 mt-2 text-[10px] text-slate-400">
+                      <span>{new Date(notif.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                      <span>•</span>
+                      <span className="capitalize">{notif.type}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Actions on Hover */}
+                <div className="absolute bottom-3 right-3 flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
+                  {!notif.isRead && (
+                    <button
+                      onClick={(e) => handleMarkAsRead(notif.id, e)}
+                      title="Mark as read"
+                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-emerald-500/20 text-slate-400 hover:text-emerald-400 border border-white/10"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  <button
+                    onClick={(e) => handleDelete(notif.id, e)}
+                    title="Delete notification"
+                    className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 border border-white/10"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="p-3 border-t border-white/10 bg-slate-950 text-center text-[11px] text-slate-500">
+          StudentOS Realtime Notification Engine
+        </div>
+      </div>
     </div>
   );
 };
