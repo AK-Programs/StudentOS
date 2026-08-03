@@ -225,7 +225,7 @@ export default function StudentMarksCenter({ currentUser, effectiveRole, showNot
       let totalScored = 0;
       let totalMax = 0;
       Object.entries(rec.marks).forEach(([sub, score]) => {
-        const sVal = parseFloat(score);
+        const sVal = parseFloat(score as any);
         if (!isNaN(sVal)) {
           totalScored += sVal;
           totalMax += rec.max_marks;
@@ -266,7 +266,7 @@ export default function StudentMarksCenter({ currentUser, effectiveRole, showNot
     const subjectAverages: Record<string, { scored: number; max: number }> = {};
     studentRecords.forEach(rec => {
       Object.entries(rec.marks).forEach(([sub, val]) => {
-        const score = parseFloat(val);
+        const score = parseFloat(val as any);
         if (!isNaN(score)) {
           if (!subjectAverages[sub]) {
             subjectAverages[sub] = { scored: 0, max: 0 };
@@ -319,7 +319,7 @@ export default function StudentMarksCenter({ currentUser, effectiveRole, showNot
     const subjectAverages: Record<string, { scored: number; max: number }> = {};
     studentRecords.forEach(rec => {
       Object.entries(rec.marks).forEach(([sub, val]) => {
-        const score = parseFloat(val);
+        const score = parseFloat(val as any);
         if (!isNaN(score)) {
           if (!subjectAverages[sub]) {
             subjectAverages[sub] = { scored: 0, max: 0 };
@@ -342,7 +342,7 @@ export default function StudentMarksCenter({ currentUser, effectiveRole, showNot
       let scoredSum = 0;
       let maxSum = 0;
       Object.entries(rec.marks).forEach(([_, val]) => {
-        const s = parseFloat(val);
+        const s = parseFloat(val as any);
         if (!isNaN(s)) {
           scoredSum += s;
           maxSum += rec.max_marks;
@@ -550,7 +550,7 @@ export default function StudentMarksCenter({ currentUser, effectiveRole, showNot
                       let totalScored = 0;
                       let totalMax = 0;
                       Object.entries(rec.marks).forEach(([_, val]) => {
-                        const s = parseFloat(val);
+                        const s = parseFloat(val as any);
                         if (!isNaN(s)) {
                           totalScored += s;
                           totalMax += rec.max_marks;
