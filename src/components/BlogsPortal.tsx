@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Edit, Trash2, Search, BookOpen, Clock, User, X, Check, Eye } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { sendNotificationToUsers } from '../firebase';
+import { saveAppNotification } from '../lib/notifications';
 
 const parseInlineMarkdown = (line: string) => {
   const parts = line.split(/(\*\*.*?\*\*|`.*?`)/g);
@@ -227,11 +227,38 @@ export const BlogsPortal = ({ currentUser, isSuperAdmin, showNotification }: any
     showNotification(isNew ? 'Blog post created successfully!' : 'Blog post updated!');
     
     if (postData.isPublished) {
-      sendNotificationToUsers({
+      const notifId = `blog_notif_${postData.id}_${Date.now()}`;
+      const notifObj = {
+        id: notifId,
         title: '📢 New Blog Published',
-        message: `"${postData.title}" has been published in campus blogs by ${postData.author}.`,
-        type: 'blog'
-      }).catch(e => console.error(e));
+        message: `"${postData.title}" has been published by ${postData.author}.`,
+        type: 'announcement' as const,
+        createdAt: new Date().toISOString(),
+        isRead: false,
+        targetUserId: 'all',
+        linkTab: 'blogs'
+      };
+
+      // 1. Save notification to database & broadcast event
+      saveAppNotification(notifObj).catch(e => console.error(e));
+
+      // 2. Broadcast live popup banner for all connected clients
+      try {
+        const channel = supabase.channel('student-os-public');
+        channel.send({
+          type: 'broadcast',
+          event: 'principal_live_broadcast',
+          payload: {
+            id: notifId,
+            title: '📢 New Blog Published',
+            message: `"${postData.title}" by ${postData.author}`,
+            senderName: postData.author,
+            priority: 'normal',
+            category: 'announcement',
+            createdAt: new Date().toISOString()
+          }
+        });
+      } catch (_) {}
     }
 
     setIsEditing(false);
@@ -278,11 +305,36 @@ export const BlogsPortal = ({ currentUser, isSuperAdmin, showNotification }: any
     showNotification(post.isPublished ? 'Post unpublished.' : 'Post published!');
     
     if (!post.isPublished) {
-       sendNotificationToUsers({
-         title: '📢 New Blog Published',
-         message: `"${post.title}" has been published in campus blogs by ${post.author}.`,
-         type: 'blog'
-       }).catch(e => console.error(e));
+      const notifId = `blog_notif_${post.id}_${Date.now()}`;
+      const notifObj = {
+        id: notifId,
+        title: '📢 New Blog Published',
+        message: `"${post.title}" has been published by ${post.author}.`,
+        type: 'announcement' as const,
+        createdAt: new Date().toISOString(),
+        isRead: false,
+        targetUserId: 'all',
+        linkTab: 'blogs'
+      };
+
+      saveAppNotification(notifObj).catch(e => console.error(e));
+
+      try {
+        const channel = supabase.channel('student-os-public');
+        channel.send({
+          type: 'broadcast',
+          event: 'principal_live_broadcast',
+          payload: {
+            id: notifId,
+            title: '📢 New Blog Published',
+            message: `"${post.title}" by ${post.author}`,
+            senderName: post.author,
+            priority: 'normal',
+            category: 'announcement',
+            createdAt: new Date().toISOString()
+          }
+        });
+      } catch (_) {}
     }
 
     fetchPosts();
