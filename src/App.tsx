@@ -49,6 +49,9 @@ import { SportsActivitiesPortal } from './components/SportsActivitiesPortal';
 import { SubstituteHub } from './components/SubstituteHub';
 import { ChatSystem } from './components/ChatSystem';
 import { NotificationCenter } from './components/NotificationCenter';
+import { BroadcastModal } from './components/BroadcastModal';
+import { LiveBroadcastBanner } from './components/LiveBroadcastBanner';
+import { CollaborativeLectureNotes } from './components/CollaborativeLectureNotes';
 import { MOCK_QUIZZES, AI_PERSONAS, INITIAL_ANNOUNCEMENTS, INITIAL_FEEDBACK, INITIAL_MATERIALS, MOCK_SCHEDULES } from './mockData';
 
 // Stub Integrations
@@ -588,6 +591,8 @@ export default function App() {
   const [materials, setMaterials] = useState<MaterialResource[]>([]);
   const [feedbackPosts, setFeedbackPosts] = useState<FeedbackPost[]>([]);
   const [students, setStudents] = useState<UserProfile[]>([]);
+  const [isBroadcastModalOpen, setIsBroadcastModalOpen] = useState<boolean>(false);
+  const [notesViewMode, setNotesViewMode] = useState<'vault' | 'collaborative'>('collaborative');
   const [chats, setChats] = useState<ChatMessage[]>([]);
   const [chatRooms, setChatRooms] = useState<ChatRoom[]>([]);
   const [isCreatingRoom, setIsCreatingRoom] = useState<boolean>(false);
@@ -2004,13 +2009,13 @@ What can I clarify today?` }
           if (threads && threads.length > 0) {
             setAiThreads(prev => {
               const map = new Map(prev.map(t => [t.id, t]));
-              for (const remote of threads) {
-                const local = map.get(remote.id);
+              for (const remote of threads as any[]) {
+                const local: any = map.get(remote.id);
                 if (!local || remote.messages.length >= local.messages.length) {
                   map.set(remote.id, remote);
                 }
               }
-              return Array.from(map.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+              return Array.from(map.values()).sort((a: any, b: any) => (b.createdAt || 0) - (a.createdAt || 0));
             });
           }
         }).catch(console.error);
@@ -6236,6 +6241,9 @@ ${roleLabel}: ${userQuery}`;
               </div>
             )}
             
+            {/* Live Broadcast Banner */}
+            <LiveBroadcastBanner currentUser={currentUser} />
+
             {/* Global Workspace Header bar */}
             <header className="sticky top-0 z-40 px-6 py-4 flex items-center justify-between border-b border-white/5 backdrop-blur-xl bg-slate-950/40">
               <div className="flex items-center gap-4">
@@ -6463,6 +6471,18 @@ ${roleLabel}: ${userQuery}`;
                   <Clock className="w-4 h-4" />
                   <span>{clock}</span>
                 </div>
+
+                {/* Broadcast Action Button */}
+                {['super_admin', 'admin', 'teacher', 'coordinator'].includes(effectiveRole) && (
+                  <button
+                    onClick={() => setIsBroadcastModalOpen(true)}
+                    className="p-2 px-3 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-lg shadow-indigo-600/20 transition-all active:scale-95"
+                    title="Send School/Class Broadcast Announcement"
+                  >
+                    <Send className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">Broadcast</span>
+                  </button>
+                )}
 
                 {/* Notification Center */}
                 <div className="relative">
@@ -7286,10 +7306,40 @@ ${roleLabel}: ${userQuery}`;
                 </div>
               )}
 
-              {/* Tab: Structured Vault Notes View */}
+              {/* Tab: Structured Vault & Collaborative Notes View */}
               {activeTab === 'notes' && (
                 <div className="space-y-6 animate-fadeIn">
                   
+                  {/* Notes Header Mode Selector */}
+                  <div className="flex items-center justify-between bg-slate-900/80 p-2 rounded-2xl border border-white/5">
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setNotesViewMode('collaborative')}
+                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                          notesViewMode === 'collaborative'
+                            ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg'
+                            : 'text-slate-400 hover:text-white hover:bg-white/5'
+                        }`}
+                      >
+                        <span>📝 Collaborative Lecture Notes</span>
+                        <span className="text-[9px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded-md uppercase tracking-wider font-extrabold">Realtime Docs</span>
+                      </button>
+                      <button
+                        onClick={() => setNotesViewMode('vault')}
+                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                          notesViewMode === 'vault'
+                            ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg'
+                            : 'text-slate-400 hover:text-white hover:bg-white/5'
+                        }`}
+                      >
+                        <span>🔒 Personal Vault Canvas</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {notesViewMode === 'collaborative' ? (
+                    <CollaborativeLectureNotes currentUser={currentUser} />
+                  ) : (
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
                     
                     {/* Notion Sidebar List: 4 Cols */}
@@ -7743,6 +7793,7 @@ ${activeNote.content}`);
                     </div>
 
                   </div>
+                  )}
 
                 </div>
               )}
@@ -11296,6 +11347,15 @@ Could you please guide me step-by-step on how to solve this, explaining the theo
             </div>
           </div>
         </div>
+      )}
+
+      {isBroadcastModalOpen && (
+        <BroadcastModal
+          currentUser={currentUser}
+          effectiveRole={effectiveRole}
+          onClose={() => setIsBroadcastModalOpen(false)}
+          showNotification={showNotification}
+        />
       )}
 
     </div>
