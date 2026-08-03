@@ -4,6 +4,7 @@ import { uploadFileToStorage } from '../lib/storageHelper';
 import { Plus, Trash2, Edit2, Download, FileText, Image as ImageIcon, UploadCloud } from 'lucide-react';
 import { AssignmentUploadForm } from './AssignmentUploadForm';
 import { getSupabaseResources, saveSupabaseResource, deleteSupabaseResource } from '../lib/supabaseResources';
+import { supabase } from '../lib/supabase';
 
 export default function SimpleResourceManager({ 
   type, title, emoji, currentUser, effectiveRole, showNotification, goBack 
@@ -33,6 +34,16 @@ export default function SimpleResourceManager({
 
   useEffect(() => {
     fetchItems();
+
+    // Subscribe to realtime material updates
+    const channel = supabase.channel('materials_hub_channel');
+    channel.on('broadcast', { event: 'materials_updated' }, () => {
+      fetchItems();
+    }).subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [type]);
 
   const fetchItems = async () => {
@@ -115,16 +126,16 @@ export default function SimpleResourceManager({
         showNotification(`Uploading ${selectedFiles.length} photos securely...`);
         for (const file of selectedFiles) {
           console.log("FILE OBJECT", file, file?.name, file?.size, file?.type);
-          const { url, path } = await uploadFileToStorage(file, `${type}/${fTargetGrade || 'all-grades'}`);
+          const { url, path } = await uploadFileToStorage(file, 'materials');
           finalGalleryUrls.push({ url, name: file.name });
         }
         showNotification(`✓ ${selectedFiles.length} photos uploaded successfully!`);
       } else if (selectedFile) {
         console.log("FILE OBJECT", selectedFile, selectedFile?.name, selectedFile?.size, selectedFile?.type);
         console.log("UPLOAD FUNCTION", uploadFileToStorage);
-        console.log("bucket", "StudentOS", "path", `${type}/${fTargetGrade || 'all-grades'}/${selectedFile.name}`, "supabaseUrl", (import.meta as any).env.VITE_SUPABASE_URL);
+        console.log("bucket", "materials", "path", `uploads/${selectedFile.name}`, "supabaseUrl", (import.meta as any).env.VITE_SUPABASE_URL);
 
-        const { url, path } = await uploadFileToStorage(selectedFile, `${type}/${fTargetGrade || 'all-grades'}`);
+        const { url, path } = await uploadFileToStorage(selectedFile, 'materials');
         fileUrl = url;
         storagePath = path;
       }
