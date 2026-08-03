@@ -1,5 +1,24 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { Stage, Layer, Line, Rect, Circle, RegularPolygon, Arrow, Group, Text, Ellipse, Star, Transformer, Image as KonvaImage } from 'react-konva';
+import { 
+  Stage as StageComp, Layer as LayerComp, Line as LineComp, Rect as RectComp, 
+  Circle as CircleComp, RegularPolygon as RegularPolygonComp, Arrow as ArrowComp, 
+  Group as GroupComp, Text as TextComp, Ellipse as EllipseComp, Star as StarComp, 
+  Transformer as TransformerComp, Image as KonvaImageComp 
+} from 'react-konva';
+
+const Stage = StageComp as any;
+const Layer = LayerComp as any;
+const Line = LineComp as any;
+const Rect = RectComp as any;
+const Circle = CircleComp as any;
+const RegularPolygon = RegularPolygonComp as any;
+const Arrow = ArrowComp as any;
+const Group = GroupComp as any;
+const Text = TextComp as any;
+const Ellipse = EllipseComp as any;
+const Star = StarComp as any;
+const Transformer = TransformerComp as any;
+const KonvaImage = KonvaImageComp as any;
 import { 
   Download, Eraser, MousePointer2, Pen, PenTool, Square, Circle as CircleIcon, 
   Triangle, Minus, ChevronDown, Trash2, Sliders, Settings2, Plus, Copy,
