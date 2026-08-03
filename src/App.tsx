@@ -1354,10 +1354,11 @@ export default function App() {
                                window.location.search.includes('code=') || 
                                window.location.hash.includes('id_token=');
       
-      if (event === 'SIGNED_IN' && !currentUser && session) {
-        try {
-          sessionStorage.removeItem('s_os_startup_shown');
-        } catch (_) {}
+      const isAlreadyShown = (() => {
+        try { return sessionStorage.getItem('s_os_startup_shown') === 'true'; } catch (_) { return false; }
+      })();
+
+      if (event === 'SIGNED_IN' && !currentUser && session && !isAlreadyShown) {
         setShowStartup(true);
         setFirebaseLoading(true);
         setDataLoading(true);
@@ -1533,13 +1534,15 @@ export default function App() {
 
   // Simulates progress and rotating messages for Startup Screen
   useEffect(() => {
+    let alreadyShown = false;
     try {
-      const shown = sessionStorage.getItem('s_os_startup_shown');
-      if (shown === 'true') {
-        setShowStartup(false);
-        return;
-      }
+      alreadyShown = sessionStorage.getItem('s_os_startup_shown') === 'true';
     } catch (_) {}
+
+    if (alreadyShown) {
+      setShowStartup(false);
+      return;
+    }
 
     if (firebaseLoading || dataLoading) {
       setLoadingProgress(0);
@@ -11353,6 +11356,7 @@ Could you please guide me step-by-step on how to solve this, explaining the theo
         <BroadcastModal
           currentUser={currentUser}
           effectiveRole={effectiveRole}
+          isOpen={isBroadcastModalOpen}
           onClose={() => setIsBroadcastModalOpen(false)}
           showNotification={showNotification}
         />
