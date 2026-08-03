@@ -1,14 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Send, Image as ImageIcon, Paperclip, Mic, Square, Smile, Reply, Forward, 
+  Send, Image as ImageIcon, Paperclip, Mic, MicOff, Square, Smile, Reply, Forward, 
   Trash2, Edit3, Pin, Shield, QrCode, UserPlus, LogOut, Settings, X, Search, 
-  CheckCheck, Check, Volume2, AlertTriangle, Info, Sparkles, Filter, Bell,
-  Copy, Link, Eye, UserCheck, Flame, ThumbsUp, Heart, Trophy, Megaphone,
-  BookOpen, Users, Hash, MoreHorizontal
+  CheckCheck, Check, Volume2, VolumeX, Video, VideoOff, Phone, PhoneOff, PhoneIncoming, PhoneOutgoing,
+  AlertTriangle, Info, Sparkles, Filter, Bell, Copy, Link, Eye, UserCheck, Flame, ThumbsUp, Heart,
+  Trophy, Megaphone, BookOpen, Users, Hash, MoreHorizontal, ArrowLeft, Monitor, User as UserIcon
 } from 'lucide-react';
 import { ChatMessage, ChatRoom, UserRole, HouseType, ChatAttachment, UserProfile } from '../types';
 import { moderateChatMessage } from '../lib/aiModeration';
-import { savePeerMessage, deletePeerMessage, saveChatRoom, joinChatRoom, leaveChatRoom, deleteChatRoom, regenerateRoomCode, getPeerMessages } from '../lib/supabaseChat';
+import { 
+  savePeerMessage, deletePeerMessage, saveChatRoom, joinChatRoom, leaveChatRoom, 
+  deleteChatRoom, regenerateRoomCode, getPeerMessages, getAllUserProfiles, getOrCreateDirectMessageRoom 
+} from '../lib/supabaseChat';
 import { saveAppNotification } from '../lib/notifications';
 import { supabase } from '../lib/supabase';
 
@@ -25,6 +28,17 @@ interface ChatSystemProps {
   students?: UserProfile[];
 }
 
+interface ActiveCall {
+  callId: string;
+  targetUser: UserProfile;
+  type: 'audio' | 'video';
+  mode: 'outgoing' | 'incoming' | 'connected';
+  startTime?: number;
+  isMuted: boolean;
+  isVideoOff: boolean;
+  isScreenSharing: boolean;
+}
+
 export const ChatSystem: React.FC<ChatSystemProps> = ({
   currentUser,
   effectiveRole,
@@ -37,16 +51,82 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
   showNotification,
   students = []
 }) => {
+  // Sidebar & Navigation states
   const [chatSearchQuery, setChatSearchQuery] = useState('');
   const [messageSearchQuery, setMessageSearchQuery] = useState('');
   const [newChatText, setNewChatText] = useState('');
   const [showChatSidebarMobile, setShowChatSidebarMobile] = useState(true);
 
+  // User Profiles Map (resolves any UUID to full name, avatar, role, phone, email)
+  const [allProfiles, setAllProfiles] = useState<UserProfile[]>([]);
+  const [userMap, setUserMap] = useState<Map<string, UserProfile>>(new Map());
+
+  // Load User Profiles from Supabase user_profiles
+  useEffect(() => {
+    let isMounted = true;
+    const load = async () => {
+      const profiles = await getAllUserProfiles();
+      if (!isMounted) return;
+      setAllProfiles(profiles);
+
+      const map = new Map<string, UserProfile>();
+      students.forEach(s => {
+        const uid = s.uid || (s as any).id;
+        if (uid) map.set(uid, s);
+      });
+      profiles.forEach(p => {
+        if (p.uid) map.set(p.uid, p);
+      });
+      if (currentUser?.uid) {
+        map.set(currentUser.uid, currentUser);
+      }
+      setUserMap(map);
+    };
+    load();
+    return () => { isMounted = false; };
+  }, [students, currentUser]);
+
+  // Helper to resolve user info reliably without displaying UUIDs
+  const resolveUser = (uid?: string): UserProfile => {
+    if (!uid) {
+      return { uid: 'unknown', name: 'StudentOS Member', role: 'student', email: '' };
+    }
+    if (userMap.has(uid)) {
+      return userMap.get(uid)!;
+    }
+    if (currentUser && currentUser.uid === uid) {
+      return currentUser;
+    }
+    const foundInStudents = students.find(s => s.uid === uid || (s as any).id === uid);
+    if (foundInStudents) return foundInStudents;
+
+    const foundInProfiles = allProfiles.find(p => p.uid === uid);
+    if (foundInProfiles) return foundInProfiles;
+
+    // Clean fallback name (e.g. from email or formatted index) without raw UUID
+    let cleanName = 'StudentOS Member';
+    if (uid.includes('@')) {
+      cleanName = uid.split('@')[0];
+    } else if (uid.length > 8) {
+      cleanName = `Member ${uid.slice(0, 5).toUpperCase()}`;
+    }
+
+    return {
+      uid,
+      name: cleanName,
+      role: 'student',
+      email: '',
+      avatar: ''
+    };
+  };
+
   // Group creation & QR states
   const [isCreatingRoom, setIsCreatingRoom] = useState(false);
+  const [showNewDmModal, setShowNewDmModal] = useState(false);
+  const [userSearchQuery, setUserSearchQuery] = useState('');
   const [joinRoomCode, setJoinRoomCode] = useState('');
   const [newRoomName, setNewRoomName] = useState('');
-  const [newRoomType, setNewRoomType] = useState<'group' | 'friend' | 'channel'>('group');
+  const [newRoomType, setNewRoomType] = useState<'group' | 'channel'>('group');
   const [newChannelCategory, setNewChannelCategory] = useState<'principal' | 'teacher' | 'class' | 'house' | 'club' | 'event'>('class');
   const [newRoomIcon, setNewRoomIcon] = useState('💬');
   const [newRoomDescription, setNewRoomDescription] = useState('');
@@ -59,13 +139,21 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
   const [showQrModal, setShowQrModal] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
 
+  // Member Profile Card Modal
+  const [selectedProfileUser, setSelectedProfileUser] = useState<UserProfile | null>(null);
+
+  // Voice & Video Calls State
+  const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
+  const [callDuration, setCallDuration] = useState(0);
+  const callTimerRef = useRef<any>(null);
+  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+  const localMediaStreamRef = useRef<MediaStream | null>(null);
+
   // Active Room Realtime Subscription Hook
   useEffect(() => {
     if (!activeChatTargetId) return;
 
     const channelName = `room_channel_${activeChatTargetId}`;
-    console.log('[REALTIME-ROOM] Subscribing to active room channel:', channelName);
-
     const roomChannel = supabase.channel(channelName);
 
     roomChannel
@@ -83,6 +171,39 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
           });
         }
       })
+      .on('broadcast', { event: 'call_invite' }, (payload) => {
+        const data = payload.payload;
+        if (data && data.targetUid === currentUser?.uid) {
+          const caller = resolveUser(data.callerUid);
+          setActiveCall({
+            callId: data.callId,
+            targetUser: caller,
+            type: data.callType || 'audio',
+            mode: 'incoming',
+            isMuted: false,
+            isVideoOff: false,
+            isScreenSharing: false
+          });
+        }
+      })
+      .on('broadcast', { event: 'call_accepted' }, (payload) => {
+        if (activeCall && payload.payload?.callId === activeCall.callId) {
+          setActiveCall(prev => prev ? { ...prev, mode: 'connected', startTime: Date.now() } : null);
+          showNotification('Call connected!');
+        }
+      })
+      .on('broadcast', { event: 'call_rejected' }, (payload) => {
+        if (activeCall && payload.payload?.callId === activeCall.callId) {
+          setActiveCall(null);
+          showNotification('Call declined or ended.');
+        }
+      })
+      .on('broadcast', { event: 'call_ended' }, (payload) => {
+        if (activeCall && payload.payload?.callId === activeCall.callId) {
+          setActiveCall(null);
+          showNotification('Call ended.');
+        }
+      })
       .on('postgres_changes', {
         event: '*',
         schema: 'public',
@@ -96,10 +217,24 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
       .subscribe();
 
     return () => {
-      console.log('[REALTIME-ROOM] Unsubscribing from room channel:', channelName);
       supabase.removeChannel(roomChannel);
     };
-  }, [activeChatTargetId, setChats]);
+  }, [activeChatTargetId, currentUser?.uid, setChats]);
+
+  // Call Duration Timer Effect
+  useEffect(() => {
+    if (activeCall?.mode === 'connected') {
+      callTimerRef.current = setInterval(() => {
+        setCallDuration(prev => prev + 1);
+      }, 1000);
+    } else {
+      setCallDuration(0);
+      if (callTimerRef.current) clearInterval(callTimerRef.current);
+    }
+    return () => {
+      if (callTimerRef.current) clearInterval(callTimerRef.current);
+    };
+  }, [activeCall?.mode]);
 
   // Message interaction states
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
@@ -131,9 +266,6 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
   const audioChunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<any>(null);
 
-  // Typing indicator state
-  const [isTyping, setIsTyping] = useState(false);
-  const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const chatScrollViewRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll on new messages
@@ -216,6 +348,70 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
     });
   };
 
+  // Start or open Direct Message
+  const handleStartDirectMessage = async (targetUser: UserProfile) => {
+    if (!currentUser) return;
+    const dmRoom = await getOrCreateDirectMessageRoom(currentUser, targetUser);
+    
+    setChatRooms(prev => {
+      if (prev.some(r => r.id === dmRoom.id)) return prev;
+      return [...prev, dmRoom];
+    });
+
+    setActiveChatTargetId(dmRoom.id);
+    setShowNewDmModal(false);
+    setShowChatSidebarMobile(false);
+    showNotification(`Chat opened with ${targetUser.name}`);
+  };
+
+  // Start Call (Voice or Video)
+  const handleStartCall = async (targetUser: UserProfile, type: 'audio' | 'video') => {
+    if (!currentUser) return;
+    const callId = `call-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    setActiveCall({
+      callId,
+      targetUser,
+      type,
+      mode: 'outgoing',
+      isMuted: false,
+      isVideoOff: false,
+      isScreenSharing: false
+    });
+
+    try {
+      supabase.channel(`room_channel_${activeChatTargetId}`).send({
+        type: 'broadcast',
+        event: 'call_invite',
+        payload: {
+          callId,
+          callerUid: currentUser.uid,
+          targetUid: targetUser.uid,
+          callType: type
+        }
+      });
+    } catch (_) {}
+
+    showNotification(`Calling ${targetUser.name}...`);
+  };
+
+  // End Call
+  const handleEndCall = () => {
+    if (activeCall) {
+      try {
+        supabase.channel(`room_channel_${activeChatTargetId}`).send({
+          type: 'broadcast',
+          event: 'call_ended',
+          payload: { callId: activeCall.callId }
+        });
+      } catch (_) {}
+    }
+    if (localMediaStreamRef.current) {
+      localMediaStreamRef.current.getTracks().forEach(t => t.stop());
+    }
+    setActiveCall(null);
+    showNotification('Call ended.');
+  };
+
   // Send Chat Message
   const handleSendChat = async () => {
     if ((!newChatText.trim() && attachedFiles.length === 0) || !currentUser) return;
@@ -256,19 +452,22 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
     // Save to Supabase
     await savePeerMessage(newMsg);
 
-    // Create Notification if message is @mention or direct message
-    if (activeChatTargetId.startsWith('friend-')) {
-      const friendUid = activeChatTargetId.replace('friend-', '');
-      await saveAppNotification({
-        id: `notif-${Date.now()}`,
-        title: `New Direct Message from ${currentUser.name}`,
-        message: messageText.slice(0, 60),
-        type: 'chat',
-        createdAt: new Date().toISOString(),
-        isRead: false,
-        targetUserId: friendUid,
-        linkTab: 'peer_chat'
-      });
+    // Create Notification if DM
+    if (activeChatTargetId.startsWith('dm_')) {
+      const uids = activeChatTargetId.replace('dm_', '').split('_');
+      const friendUid = uids.find(id => id !== currentUser.uid);
+      if (friendUid) {
+        await saveAppNotification({
+          id: `notif-${Date.now()}`,
+          title: `New Message from ${currentUser.name}`,
+          message: messageText.slice(0, 60),
+          type: 'chat',
+          createdAt: new Date().toISOString(),
+          isRead: false,
+          targetUserId: friendUid,
+          linkTab: 'peer_chat'
+        });
+      }
     }
   };
 
@@ -413,14 +612,31 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
     showNotification(`Created ${newRoomType}: ${newRoom.name} (Code: ${code})`);
   };
 
+  // Active Room Resolution
   const activeRoomInfo = chatRooms.find(r => r.id === activeChatTargetId) || {
     id: 'group-all',
-    name: 'All Students Group',
+    name: 'General Lounge',
     type: 'group' as const,
     icon: '🌍',
-    description: 'General chat for all students',
+    description: 'School-wide lounge for students and teachers',
     code: 'GLOBAL'
   };
+
+  // Compute DM target profile if active room is a Direct Message
+  const isDirectMessage = activeRoomInfo.type === 'friend' || activeRoomInfo.id.startsWith('dm_');
+  let dmOtherUser: UserProfile | null = null;
+  if (isDirectMessage && activeRoomInfo.members) {
+    const otherUid = activeRoomInfo.members.find(m => m !== currentUser?.uid);
+    if (otherUid) {
+      dmOtherUser = resolveUser(otherUid);
+    }
+  }
+
+  const activeDisplayTitle = isDirectMessage && dmOtherUser ? dmOtherUser.name : activeRoomInfo.name;
+  const activeDisplayIcon = isDirectMessage && dmOtherUser ? (dmOtherUser.avatar || '👤') : activeRoomInfo.icon;
+  const activeDisplayDesc = isDirectMessage && dmOtherUser 
+    ? `${dmOtherUser.role.toUpperCase()} • ${dmOtherUser.grade || 'Campus Member'}` 
+    : activeRoomInfo.description;
 
   const isBroadcastChannel = activeRoomInfo.type === 'channel';
   const isModerator = (activeRoomInfo.moderators || []).includes(currentUser?.uid || '') || activeRoomInfo.creatorId === currentUser?.uid;
@@ -439,26 +655,44 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
 
   const pinnedMessages = roomMessages.filter(m => m.isPinned);
 
+  // Categorize Chat Rooms into Direct Messages and Group Rooms
+  const dmRooms = chatRooms.filter(r => r.type === 'friend' || r.id.startsWith('dm_'));
+  const groupRooms = chatRooms.filter(r => r.type !== 'friend' && !r.id.startsWith('dm_'));
+
+  // Available Users list for starting new DMs
+  const availableUsersList = allProfiles.length > 0 ? allProfiles : students;
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-12 gap-5 h-[720px] max-w-7xl mx-auto shadow-2xl animate-fadeIn font-sans">
       
-      {/* Left Column: Chat Rooms List (Groups, Direct Messages, Channels) */}
+      {/* Left Column: Chat Rooms & Direct Messages Sidebar */}
       <div className={`md:col-span-4 bg-slate-900/90 border border-white/10 rounded-3xl p-4 flex flex-col justify-between ${showChatSidebarMobile ? 'block' : 'hidden md:flex'}`}>
-        <div className="space-y-4 flex-1 flex flex-col min-h-0">
+        <div className="space-y-3.5 flex-1 flex flex-col min-h-0">
           
-          {/* Header & Create Button */}
+          {/* Header & New Actions */}
           <div className="flex justify-between items-center">
-            <h3 className="font-black text-sm uppercase tracking-wider text-white flex items-center gap-2">
+            <h3 className="font-black text-xs uppercase tracking-wider text-white flex items-center gap-1.5">
               <Megaphone className="w-4 h-4 text-indigo-400" />
-              School Channels & Chats
+              StudentOS Chat
             </h3>
-            <button
-              onClick={() => setIsCreatingRoom(true)}
-              className="bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] px-3 py-1.5 rounded-xl font-extrabold uppercase transition-all shadow-md active:scale-95 flex items-center gap-1"
-            >
-              <UserPlus className="w-3 h-3" />
-              New / Join
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setShowNewDmModal(true)}
+                title="Start Direct Message"
+                className="bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] px-2.5 py-1.5 rounded-xl font-bold uppercase transition-all shadow-md active:scale-95 flex items-center gap-1"
+              >
+                <UserPlus className="w-3 h-3" />
+                <span className="hidden sm:inline">DM</span>
+              </button>
+              <button
+                onClick={() => setIsCreatingRoom(true)}
+                title="Create or Join Group"
+                className="bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] px-2.5 py-1.5 rounded-xl font-bold uppercase transition-all shadow-md active:scale-95 flex items-center gap-1"
+              >
+                <Users className="w-3 h-3" />
+                <span className="hidden sm:inline">Group</span>
+              </button>
+            </div>
           </div>
 
           {/* Search Bar */}
@@ -468,47 +702,143 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
               type="text"
               value={chatSearchQuery}
               onChange={(e) => setChatSearchQuery(e.target.value)}
-              placeholder="Search groups, friends, channels..."
+              placeholder="Search users, groups, or phone..."
               className="w-full bg-slate-950 border border-white/10 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
             />
           </div>
 
-          {/* Rooms List */}
-          <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 scrollbar-thin">
-            {chatRooms
-              .filter(room => {
-                if (!chatSearchQuery) return true;
-                return room.name.toLowerCase().includes(chatSearchQuery.toLowerCase()) || 
-                       room.type.toLowerCase().includes(chatSearchQuery.toLowerCase());
-              })
-              .map((room) => {
-                const isActive = activeChatTargetId === room.id;
-                let badgeStyle = "bg-indigo-500/10 text-indigo-400 border-indigo-500/20";
-                if (room.type === "friend") badgeStyle = "bg-teal-500/10 text-teal-400 border-teal-500/20";
-                if (room.type === "channel") badgeStyle = "bg-rose-500/10 text-rose-400 border-rose-500/20";
+          {/* Sidebar Chat List (Separated DMs and Groups) */}
+          <div className="flex-1 overflow-y-auto space-y-3 pr-1 scrollbar-thin">
+            
+            {/* DIRECT MESSAGES SECTION */}
+            <div className="space-y-1">
+              <div className="flex justify-between items-center px-1 py-1">
+                <span className="text-[10px] font-black uppercase text-teal-400 tracking-wider flex items-center gap-1">
+                  <UserIcon className="w-3 h-3" />
+                  Direct Messages ({dmRooms.length})
+                </span>
+                <button
+                  onClick={() => setShowNewDmModal(true)}
+                  className="text-[10px] text-teal-400 hover:underline font-bold"
+                >
+                  + New
+                </button>
+              </div>
 
-                return (
-                  <button
-                    key={room.id}
-                    onClick={() => {
-                      setActiveChatTargetId(room.id);
-                      setShowChatSidebarMobile(false);
-                    }}
-                    className={`w-full text-left p-3 rounded-2xl border transition-all flex items-center gap-3 ${isActive ? 'bg-indigo-600/20 border-indigo-500/50 text-white shadow-lg' : 'bg-slate-950/40 border-white/5 hover:border-white/10 hover:bg-slate-950/70 text-slate-300'}`}
-                  >
-                    <span className="text-xl shrink-0">{room.icon}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex justify-between items-center">
-                        <span className="text-xs font-bold truncate">{room.name}</span>
-                        <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md border ${badgeStyle}`}>
-                          {room.type}
-                        </span>
+              {dmRooms.length === 0 ? (
+                <p className="text-[10px] text-slate-500 italic px-2 py-1">No direct messages yet. Click + New to chat!</p>
+              ) : (
+                dmRooms
+                  .filter(r => {
+                    if (!chatSearchQuery) return true;
+                    const otherUid = (r.members || []).find(m => m !== currentUser?.uid);
+                    const user = otherUid ? resolveUser(otherUid) : null;
+                    const query = chatSearchQuery.toLowerCase();
+                    return r.name.toLowerCase().includes(query) || 
+                           (user && (user.name.toLowerCase().includes(query) || user.email.toLowerCase().includes(query)));
+                  })
+                  .map(room => {
+                    const isActive = activeChatTargetId === room.id;
+                    const otherUid = (room.members || []).find(m => m !== currentUser?.uid);
+                    const otherUser = otherUid ? resolveUser(otherUid) : null;
+                    const displayName = otherUser ? otherUser.name : room.name;
+
+                    // Get last message in this room
+                    const lastMsg = chats.filter(c => c.targetId === room.id).pop();
+
+                    return (
+                      <button
+                        key={room.id}
+                        onClick={() => {
+                          setActiveChatTargetId(room.id);
+                          setShowChatSidebarMobile(false);
+                        }}
+                        className={`w-full text-left p-2.5 rounded-2xl border transition-all flex items-center gap-2.5 ${isActive ? 'bg-teal-600/20 border-teal-500/50 text-white shadow-lg' : 'bg-slate-950/40 border-white/5 hover:border-white/10 hover:bg-slate-950/70 text-slate-300'}`}
+                      >
+                        <div className="relative shrink-0">
+                          {otherUser?.avatar || otherUser?.photoURL ? (
+                            <img src={otherUser.avatar || otherUser.photoURL} alt="" className="w-9 h-9 rounded-full object-cover border border-white/10" />
+                          ) : (
+                            <div className="w-9 h-9 rounded-full bg-teal-600/30 text-teal-300 font-black text-xs flex items-center justify-center border border-teal-500/30">
+                              {displayName.charAt(0).toUpperCase()}
+                            </div>
+                          )}
+                          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 border border-slate-900 absolute bottom-0 right-0" />
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs font-bold truncate text-white">{displayName}</span>
+                            {lastMsg && (
+                              <span className="text-[9px] text-slate-500 shrink-0">
+                                {new Date(lastMsg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-slate-400 truncate mt-0.5">
+                            {lastMsg ? lastMsg.message : (otherUser ? `${otherUser.role.toUpperCase()} • ${otherUser.grade || 'Direct Message'}` : 'Start conversation')}
+                          </p>
+                        </div>
+                      </button>
+                    );
+                  })
+              )}
+            </div>
+
+            {/* GROUP ROOMS SECTION */}
+            <div className="space-y-1 border-t border-white/10 pt-2.5">
+              <div className="flex justify-between items-center px-1 py-1">
+                <span className="text-[10px] font-black uppercase text-indigo-400 tracking-wider flex items-center gap-1">
+                  <Hash className="w-3 h-3" />
+                  Groups & Channels ({groupRooms.length})
+                </span>
+                <button
+                  onClick={() => setIsCreatingRoom(true)}
+                  className="text-[10px] text-indigo-400 hover:underline font-bold"
+                >
+                  + Create
+                </button>
+              </div>
+
+              {groupRooms
+                .filter(room => {
+                  if (!chatSearchQuery) return true;
+                  return room.name.toLowerCase().includes(chatSearchQuery.toLowerCase()) || 
+                         room.type.toLowerCase().includes(chatSearchQuery.toLowerCase());
+                })
+                .map((room) => {
+                  const isActive = activeChatTargetId === room.id;
+                  let badgeStyle = "bg-indigo-500/10 text-indigo-400 border-indigo-500/20";
+                  if (room.type === "channel") badgeStyle = "bg-rose-500/10 text-rose-400 border-rose-500/20";
+
+                  const lastMsg = chats.filter(c => c.targetId === room.id || (!c.targetId && room.id === 'group-all')).pop();
+
+                  return (
+                    <button
+                      key={room.id}
+                      onClick={() => {
+                        setActiveChatTargetId(room.id);
+                        setShowChatSidebarMobile(false);
+                      }}
+                      className={`w-full text-left p-2.5 rounded-2xl border transition-all flex items-center gap-2.5 ${isActive ? 'bg-indigo-600/20 border-indigo-500/50 text-white shadow-lg' : 'bg-slate-950/40 border-white/5 hover:border-white/10 hover:bg-slate-950/70 text-slate-300'}`}
+                    >
+                      <span className="text-xl shrink-0 p-1.5 bg-slate-900 border border-white/10 rounded-xl">{room.icon}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-bold truncate text-white">{room.name}</span>
+                          <span className={`text-[8px] font-black uppercase px-1.5 py-0.5 rounded-md border ${badgeStyle}`}>
+                            {room.type}
+                          </span>
+                        </div>
+                        <p className="text-[10px] text-slate-400 truncate mt-0.5">
+                          {lastMsg ? `${lastMsg.name.split(' ')[0]}: ${lastMsg.message}` : room.description}
+                        </p>
                       </div>
-                      <p className="text-[10px] text-slate-400 truncate mt-0.5">{room.description}</p>
-                    </div>
-                  </button>
-                );
-              })}
+                    </button>
+                  );
+                })}
+            </div>
+
           </div>
         </div>
 
@@ -516,9 +846,9 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
         <div className="pt-3 border-t border-white/10 flex justify-between items-center text-[11px] text-slate-400">
           <span className="flex items-center gap-1.5">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            Live Sync Active
+            Live Sync
           </span>
-          <span className="font-bold text-indigo-400">{currentUser?.name}</span>
+          <span className="font-bold text-indigo-400 truncate max-w-[150px]">{currentUser?.name}</span>
         </div>
       </div>
 
@@ -530,30 +860,71 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
           <div className="flex items-center gap-3">
             <button
               onClick={() => setShowChatSidebarMobile(true)}
-              className="md:hidden p-1.5 bg-white/5 rounded-lg border border-white/10 text-white text-[11px]"
+              className="md:hidden p-1.5 bg-white/5 rounded-lg border border-white/10 text-white text-[11px] flex items-center gap-1"
             >
-              ← Channels
+              <ArrowLeft className="w-3.5 h-3.5" />
+              Chats
             </button>
-            <span className="text-2xl">{activeRoomInfo.icon}</span>
-            <div>
-              <div className="flex items-center gap-2">
-                <h4 className="font-black text-sm text-white">{activeRoomInfo.name}</h4>
-                {activeRoomInfo.type === 'channel' && (
-                  <span className="text-[9px] bg-rose-500/10 text-rose-400 border border-rose-500/20 px-2 py-0.5 rounded-full font-bold">
-                    📢 School Broadcast
-                  </span>
-                )}
-              </div>
-              <p className="text-[10px] text-slate-400 mt-0.5">{activeRoomInfo.description}</p>
-              {activeRoomInfo.code && (
-                <span className="text-[10px] font-mono text-emerald-400 font-bold">
-                  Code: {activeRoomInfo.code}
-                </span>
+
+            {/* Clickable Avatar or Icon to view profile or details */}
+            <button
+              onClick={() => {
+                if (isDirectMessage && dmOtherUser) {
+                  setSelectedProfileUser(dmOtherUser);
+                } else {
+                  setEditRoomName(activeRoomInfo.name);
+                  setEditRoomDescription(activeRoomInfo.description || '');
+                  setEditRoomIcon(activeRoomInfo.icon || '💬');
+                  setShowGroupSettings(true);
+                }
+              }}
+              className="flex items-center gap-2.5 text-left hover:opacity-80 transition-opacity"
+            >
+              {typeof activeDisplayIcon === 'string' && activeDisplayIcon.length > 2 ? (
+                <img src={activeDisplayIcon} alt="" className="w-10 h-10 rounded-2xl object-cover border border-white/10" />
+              ) : (
+                <span className="text-2xl p-1.5 bg-slate-950 border border-white/10 rounded-2xl">{activeDisplayIcon}</span>
               )}
-            </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="font-black text-sm text-white">{activeDisplayTitle}</h4>
+                  {isDirectMessage && (
+                    <span className="text-[9px] bg-teal-500/10 text-teal-400 border border-teal-500/20 px-2 py-0.5 rounded-full font-bold">
+                      Direct Message
+                    </span>
+                  )}
+                  {activeRoomInfo.type === 'channel' && (
+                    <span className="text-[9px] bg-rose-500/10 text-rose-400 border border-rose-500/20 px-2 py-0.5 rounded-full font-bold">
+                      📢 Broadcast Channel
+                    </span>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-400 mt-0.5">{activeDisplayDesc}</p>
+              </div>
+            </button>
           </div>
 
           <div className="flex items-center gap-2">
+            {/* Call Buttons for Direct Messages or Groups */}
+            {isDirectMessage && dmOtherUser && (
+              <>
+                <button
+                  onClick={() => handleStartCall(dmOtherUser!, 'audio')}
+                  title="Voice Call"
+                  className="p-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 rounded-xl border border-emerald-500/30 transition-all"
+                >
+                  <Phone className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => handleStartCall(dmOtherUser!, 'video')}
+                  title="Video Call"
+                  className="p-2 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 rounded-xl border border-indigo-500/30 transition-all"
+                >
+                  <Video className="w-4 h-4" />
+                </button>
+              </>
+            )}
+
             {/* Search messages toggle */}
             <div className="relative hidden sm:block">
               <input
@@ -561,33 +932,37 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
                 value={messageSearchQuery}
                 onChange={e => setMessageSearchQuery(e.target.value)}
                 placeholder="Search messages..."
-                className="bg-slate-950 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-36 focus:w-48 transition-all"
+                className="bg-slate-950 border border-white/10 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 w-32 focus:w-44 transition-all"
               />
             </div>
 
-            {/* QR Code button */}
-            <button
-              onClick={() => setShowQrModal(true)}
-              title="Group QR Code & Invite"
-              className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-white/10 transition-all"
-            >
-              <QrCode className="w-4 h-4" />
-            </button>
+            {/* Group QR Modal Trigger */}
+            {!isDirectMessage && (
+              <button
+                onClick={() => setShowQrModal(true)}
+                title="Group QR Code & Code"
+                className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-white/10 transition-all"
+              >
+                <QrCode className="w-4 h-4" />
+              </button>
+            )}
 
             {/* Settings button */}
-            <button
-              onClick={() => {
-                setEditRoomName(activeRoomInfo.name);
-                setEditRoomDescription(activeRoomInfo.description || '');
-                setEditRoomIcon(activeRoomInfo.icon || '💬');
-                setShowGroupSettings(true);
-              }}
-              title="Group Settings"
-              className="p-2 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 rounded-xl border border-indigo-500/30 transition-all flex items-center gap-1.5 text-xs font-bold"
-            >
-              <Settings className="w-4 h-4" />
-              <span className="hidden sm:inline">Settings</span>
-            </button>
+            {!isDirectMessage && (
+              <button
+                onClick={() => {
+                  setEditRoomName(activeRoomInfo.name);
+                  setEditRoomDescription(activeRoomInfo.description || '');
+                  setEditRoomIcon(activeRoomInfo.icon || '💬');
+                  setShowGroupSettings(true);
+                }}
+                title="Group Settings"
+                className="p-2 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 rounded-xl border border-indigo-500/30 transition-all flex items-center gap-1 text-xs font-bold"
+              >
+                <Settings className="w-4 h-4" />
+                <span className="hidden sm:inline">Settings</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -599,235 +974,486 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
               <span className="font-bold">Pinned:</span>
               <span className="truncate">{pinnedMessages[0].message}</span>
             </div>
-            <span className="text-[9px] font-mono text-amber-400/80 shrink-0">({pinnedMessages.length} pinned)</span>
+            <button
+              onClick={() => handleTogglePin(pinnedMessages[0].id)}
+              className="text-[10px] text-amber-400 underline font-bold shrink-0 ml-2"
+            >
+              Unpin
+            </button>
           </div>
         )}
 
-        {/* Chat Feed */}
-        <div ref={chatScrollViewRef} className="flex-1 overflow-y-auto my-3 space-y-3 pr-1 bg-slate-950/60 p-4 rounded-2xl border border-white/5 shadow-inner scrollbar-thin">
-          
-          <div className="p-3 bg-white/5 rounded-xl border border-white/5 text-center text-[10px] text-slate-400 font-medium">
-            🛡️ Encrypted StudentOS Communication System. All messages are moderated for student safety.
-          </div>
-
-          {roomMessages.map((c) => {
-            const isMine = c.ownerUid === currentUser?.uid;
-
-            return (
-              <div
-                key={c.id}
-                onTouchStart={() => handleTouchStartMessage(c)}
-                onTouchEnd={handleTouchEndMessage}
-                onTouchMove={handleTouchEndMessage}
-                onContextMenu={(e) => { e.preventDefault(); setActiveMenuMsg(c); }}
-                className={`group relative p-3.5 rounded-2xl border max-w-[85%] space-y-1.5 animate-fadeIn flex flex-col ${isMine ? 'ml-auto bg-indigo-600/15 border-indigo-500/30 text-white' : 'mr-auto bg-slate-900 border-white/10 text-slate-200'}`}
-              >
-                {/* Header info */}
-                <div className="flex items-center justify-between gap-3 text-xs">
-                  <span className={`font-bold ${c.role === 'teacher' || c.role === 'principal' ? 'text-amber-400' : 'text-indigo-400'}`}>
-                    {c.name} <span className="text-[10px] text-slate-400 font-normal">({c.role}{c.house ? ` • ${c.house}` : ''})</span>
-                  </span>
-                  <div className="flex items-center gap-1">
-                    {c.isPinned && <Pin className="w-3 h-3 text-amber-400 shrink-0" />}
-                    <button
-                      onClick={(e) => { e.stopPropagation(); setActiveMenuMsg(c); }}
-                      title="Options"
-                      className="p-0.5 hover:bg-white/10 rounded text-slate-400 hover:text-white"
-                    >
-                      <MoreHorizontal className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Reply Reference if present */}
-                {c.replyToId && (
-                  <div className="p-2 bg-black/30 border-l-2 border-indigo-400 rounded text-[11px] text-slate-300 italic">
-                    <span className="font-bold text-indigo-300 not-italic block">Replying to {c.replyToSender}:</span>
-                    <p className="truncate">{c.replyToText}</p>
-                  </div>
-                )}
-
-                {/* Message Content or Edit Input */}
-                {editingMsgId === c.id ? (
-                  <div className="flex gap-2 my-1">
-                    <input
-                      type="text"
-                      value={editText}
-                      onChange={e => setEditText(e.target.value)}
-                      className="flex-1 bg-slate-950 border border-white/10 rounded-lg px-2.5 py-1 text-xs text-white"
-                    />
-                    <button onClick={() => handleSaveEdit(c.id)} className="bg-emerald-600 text-white text-[10px] px-2 py-1 rounded-lg font-bold">Save</button>
-                    <button onClick={() => setEditingMsgId(null)} className="bg-slate-800 text-slate-300 text-[10px] px-2 py-1 rounded-lg">Cancel</button>
-                  </div>
-                ) : (
-                  <p className="text-xs leading-relaxed whitespace-pre-wrap">{c.message}</p>
-                )}
-
-                {/* Attachments preview */}
-                {c.attachments && c.attachments.length > 0 && (
-                  <div className="space-y-2 pt-1">
-                    {c.attachments.map((att, idx) => (
-                      <div key={idx} className="rounded-xl overflow-hidden border border-white/10 bg-black/40 p-2 text-xs">
-                        {att.type === 'image' && (
-                          <img src={att.url} alt={att.name} className="max-h-48 rounded-lg object-cover w-full" />
-                        )}
-                        {att.type === 'audio' && (
-                          <audio controls src={att.url} className="w-full h-8" />
-                        )}
-                        {att.type === 'video' && (
-                          <video controls src={att.url} className="max-h-48 rounded-lg w-full" />
-                        )}
-                        {(att.type === 'pdf' || att.type === 'file') && (
-                          <a href={att.url} download={att.name} className="flex items-center gap-2 text-indigo-400 hover:underline">
-                            <Paperclip className="w-4 h-4" />
-                            <span className="truncate">{att.name} ({att.size || 'Attachment'})</span>
-                          </a>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Reactions List */}
-                {c.reactions && Object.keys(c.reactions).length > 0 && (
-                  <div className="flex flex-wrap gap-1 pt-1">
-                    {Object.entries(c.reactions).map(([emoji, users]) => (
-                      <button
-                        key={emoji}
-                        onClick={() => handleAddReaction(c.id, emoji)}
-                        className={`text-[10px] px-2 py-0.5 rounded-full border flex items-center gap-1 ${users.includes(currentUser?.uid || '') ? 'bg-indigo-600/30 border-indigo-500 text-indigo-200' : 'bg-slate-950/40 border-white/10 text-slate-300'}`}
-                      >
-                        <span>{emoji}</span>
-                        <span className="font-bold">{users.length}</span>
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {/* Footer time & receipt status */}
-                <div className="flex items-center justify-between text-[9px] text-slate-400 pt-1 font-mono">
-                  <span>
-                    {new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    {c.isEdited && ' (edited)'}
-                  </span>
-                  <div className="flex items-center gap-1">
-                    {isMine && (
-                      <CheckCheck className="w-3 h-3 text-emerald-400" />
-                    )}
-                  </div>
-                </div>
-
-                {/* Action Toolbar on Hover */}
-                <div className="absolute -top-3 right-2 hidden group-hover:flex items-center gap-1 bg-slate-900 border border-white/10 rounded-xl p-1 shadow-lg z-10">
-                  <button onClick={() => setReplyingTo(c)} title="Reply" className="p-1 hover:bg-white/10 rounded text-slate-300"><Reply className="w-3.5 h-3.5" /></button>
-                  <button onClick={() => handleAddReaction(c.id, '👍')} className="p-1 hover:bg-white/10 rounded text-amber-400 text-xs">👍</button>
-                  <button onClick={() => handleAddReaction(c.id, '❤️')} className="p-1 hover:bg-white/10 rounded text-rose-400 text-xs">❤️</button>
-                  <button onClick={() => handleAddReaction(c.id, '🚀')} className="p-1 hover:bg-white/10 rounded text-indigo-400 text-xs">🚀</button>
-                  <button onClick={() => setForwardingMsg(c)} title="Forward" className="p-1 hover:bg-white/10 rounded text-slate-300"><Forward className="w-3.5 h-3.5" /></button>
-                  <button onClick={() => handleTogglePin(c.id)} title="Pin" className="p-1 hover:bg-white/10 rounded text-amber-400"><Pin className="w-3.5 h-3.5" /></button>
-                  
-                  {isMine && (
-                    <>
-                      <button onClick={() => { setEditingMsgId(c.id); setEditText(c.message); }} title="Edit" className="p-1 hover:bg-white/10 rounded text-indigo-300"><Edit3 className="w-3.5 h-3.5" /></button>
-                      <button onClick={() => handleDeleteMessage(c.id, true)} title="Delete Everyone" className="p-1 hover:bg-white/10 rounded text-rose-400"><Trash2 className="w-3.5 h-3.5" /></button>
-                    </>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-
-          {roomMessages.length === 0 && (
-            <div className="text-center py-12 bg-slate-900/40 border border-slate-800 rounded-2xl">
-              <Megaphone className="w-8 h-8 text-slate-600 mx-auto mb-2" />
-              <p className="text-xs text-slate-400">No messages in this channel yet.</p>
+        {/* Chat Messages Log View */}
+        <div 
+          ref={chatScrollViewRef}
+          id="chat-scroll-view"
+          className="flex-1 overflow-y-auto space-y-3 my-3 pr-2 scrollbar-thin"
+        >
+          {roomMessages.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-slate-500 text-xs space-y-2">
+              <Sparkles className="w-8 h-8 text-indigo-400/40 animate-bounce" />
+              <p className="font-medium">No messages yet in this room.</p>
+              <p className="text-[10px] text-slate-600">Be the first to say hello!</p>
             </div>
+          ) : (
+            roomMessages.map((msg) => {
+              const isMine = msg.ownerUid === currentUser?.uid;
+              const senderUser = resolveUser(msg.ownerUid);
+              const displayName = senderUser ? senderUser.name : msg.name;
+
+              return (
+                <div
+                  key={msg.id}
+                  onTouchStart={() => handleTouchStartMessage(msg)}
+                  onTouchEnd={handleTouchEndMessage}
+                  className={`flex items-start gap-2.5 ${isMine ? 'flex-row-reverse' : 'flex-row'}`}
+                >
+                  {/* Sender Avatar - Click to open Profile Card */}
+                  <button
+                    onClick={() => setSelectedProfileUser(senderUser)}
+                    title={`View profile of ${displayName}`}
+                    className="shrink-0 hover:scale-105 transition-transform"
+                  >
+                    {senderUser?.avatar || senderUser?.photoURL ? (
+                      <img src={senderUser.avatar || senderUser.photoURL} alt="" className="w-8 h-8 rounded-full object-cover border border-white/10" />
+                    ) : (
+                      <div className="w-8 h-8 rounded-full bg-indigo-600/30 text-indigo-300 font-extrabold text-xs flex items-center justify-center border border-indigo-500/30">
+                        {displayName.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                  </button>
+
+                  <div className={`max-w-[75%] space-y-1 ${isMine ? 'items-end' : 'items-start'}`}>
+                    
+                    {/* Header info */}
+                    <div className={`flex items-center gap-1.5 text-[10px] ${isMine ? 'justify-end' : 'justify-start'}`}>
+                      <button
+                        onClick={() => setSelectedProfileUser(senderUser)}
+                        className="font-bold text-slate-300 hover:text-indigo-400 transition-colors"
+                      >
+                        {displayName}
+                      </button>
+                      <span className="text-[9px] text-indigo-400 uppercase font-black bg-indigo-500/10 px-1.5 py-0.2 rounded border border-indigo-500/20">
+                        {senderUser?.role || msg.role}
+                      </span>
+                      <span className="text-[9px] text-slate-500">
+                        {new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+
+                    {/* Reply Context preview */}
+                    {msg.replyToText && (
+                      <div className="bg-slate-950/60 border-l-2 border-indigo-500 p-1.5 rounded-r-lg text-[10px] text-slate-400 italic">
+                        <span className="font-bold text-indigo-300">{msg.replyToSender}: </span>
+                        <span>{msg.replyToText}</span>
+                      </div>
+                    )}
+
+                    {/* Main Bubble */}
+                    <div className={`p-3 rounded-2xl text-xs relative group ${isMine ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-slate-950 border border-white/10 text-slate-200 rounded-tl-none'}`}>
+                      
+                      {/* Flagged warning badge */}
+                      {msg.flaggedReason && (
+                        <div className="text-[9px] bg-rose-500/20 border border-rose-500/30 text-rose-300 px-2 py-0.5 rounded-md mb-1 font-bold flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3" />
+                          <span>Safety Flag: {msg.flaggedReason}</span>
+                        </div>
+                      )}
+
+                      {/* Editing state vs Text */}
+                      {editingMsgId === msg.id ? (
+                        <div className="space-y-2">
+                          <textarea
+                            value={editText}
+                            onChange={e => setEditText(e.target.value)}
+                            className="w-full bg-slate-900 border border-white/20 rounded-xl p-2 text-xs text-white"
+                          />
+                          <div className="flex gap-2 justify-end">
+                            <button onClick={() => setEditingMsgId(null)} className="text-[10px] text-slate-400">Cancel</button>
+                            <button onClick={() => handleSaveEdit(msg.id)} className="text-[10px] bg-indigo-500 text-white px-2 py-1 rounded-lg font-bold">Save</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="whitespace-pre-wrap break-words leading-relaxed">{msg.message}</p>
+                      )}
+
+                      {/* Attachments rendering */}
+                      {msg.attachments && msg.attachments.length > 0 && (
+                        <div className="mt-2 space-y-1.5">
+                          {msg.attachments.map((att, i) => (
+                            <div key={i} className="rounded-xl overflow-hidden border border-white/10 bg-black/20 p-1.5">
+                              {att.type === 'image' && (
+                                <img src={att.url} alt={att.name} className="max-h-48 rounded-lg object-cover w-full" />
+                              )}
+                              {att.type === 'audio' && (
+                                <audio controls src={att.url} className="w-full h-8" />
+                              )}
+                              {att.type === 'pdf' && (
+                                <a href={att.url} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-indigo-300 hover:underline text-[11px] font-bold">
+                                  <Paperclip className="w-3.5 h-3.5" />
+                                  <span>{att.name}</span>
+                                </a>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Actions toolbar on Hover */}
+                      <div className={`absolute top-1 ${isMine ? '-left-20' : '-right-20'} hidden group-hover:flex items-center gap-1 bg-slate-900 border border-white/10 p-1 rounded-xl shadow-xl z-10`}>
+                        <button onClick={() => setReplyingTo(msg)} title="Reply" className="p-1 hover:text-indigo-400 text-slate-400"><Reply className="w-3 h-3" /></button>
+                        <button onClick={() => setForwardingMsg(msg)} title="Forward" className="p-1 hover:text-indigo-400 text-slate-400"><Forward className="w-3 h-3" /></button>
+                        {isMine && <button onClick={() => { setEditingMsgId(msg.id); setEditText(msg.message); }} title="Edit" className="p-1 hover:text-indigo-400 text-slate-400"><Edit3 className="w-3 h-3" /></button>}
+                        {(isMine || isModerator) && <button onClick={() => handleDeleteMessage(msg.id, true)} title="Delete Everyone" className="p-1 hover:text-rose-400 text-slate-400"><Trash2 className="w-3 h-3" /></button>}
+                      </div>
+                    </div>
+
+                    {/* Reactions display */}
+                    {msg.reactions && Object.keys(msg.reactions).length > 0 && (
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {Object.entries(msg.reactions).map(([emoji, uids]) => (
+                          <button
+                            key={emoji}
+                            onClick={() => handleAddReaction(msg.id, emoji)}
+                            className="bg-slate-950/80 border border-white/10 text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1 text-slate-300 hover:border-indigo-500"
+                          >
+                            <span>{emoji}</span>
+                            <span className="font-bold text-[9px] text-indigo-400">{uids.length}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                  </div>
+                </div>
+              );
+            })
           )}
         </div>
 
-        {/* Input Bar or Channel Restricted Banner */}
-        {!canPostInChannel ? (
-          <div className="p-3 bg-rose-500/10 border border-rose-500/20 rounded-2xl text-center text-xs text-rose-400 font-bold flex items-center justify-center gap-2">
-            <Shield className="w-4 h-4" />
-            Announcement Channel — Only teachers & admins can post messages here.
-          </div>
-        ) : (
-          <div className="space-y-2">
-            
-            {/* Replying banner */}
-            {replyingTo && (
-              <div className="flex items-center justify-between bg-indigo-600/15 border border-indigo-500/30 rounded-xl px-3 py-1.5 text-xs text-indigo-200">
-                <span className="truncate">Replying to <strong>{replyingTo.name}</strong>: "{replyingTo.message}"</span>
-                <button onClick={() => setReplyingTo(null)} className="text-slate-400 hover:text-white"><X className="w-3.5 h-3.5" /></button>
-              </div>
-            )}
-
-            {/* Attached files preview bar */}
-            {attachedFiles.length > 0 && (
-              <div className="flex flex-wrap gap-2 p-2 bg-slate-950 rounded-xl border border-white/5">
-                {attachedFiles.map((f, i) => (
-                  <div key={i} className="flex items-center gap-2 bg-slate-800 px-2.5 py-1 rounded-lg text-xs text-slate-200">
-                    <Paperclip className="w-3 h-3 text-indigo-400" />
-                    <span className="truncate max-w-[120px]">{f.name}</span>
-                    <button onClick={() => setAttachedFiles(prev => prev.filter((_, idx) => idx !== i))} className="text-slate-400 hover:text-white"><X className="w-3 h-3" /></button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Input Bar */}
-            <div className="flex items-center gap-2 bg-slate-950 p-2 rounded-2xl border border-white/10 shadow-lg">
-              
-              {/* File Attachment Button */}
-              <label className="p-2 text-slate-400 hover:text-indigo-400 hover:bg-white/5 rounded-xl cursor-pointer transition-colors">
-                <Paperclip className="w-4 h-4" />
-                <input type="file" multiple onChange={handleFileUpload} className="hidden" />
-              </label>
-
-              {/* Voice Record Button */}
-              {isRecordingAudio ? (
-                <button
-                  onClick={stopRecording}
-                  className="flex items-center gap-1.5 bg-rose-600 text-white text-xs px-3 py-1.5 rounded-xl font-bold animate-pulse"
-                >
-                  <Square className="w-3.5 h-3.5" />
-                  Stop ({recordingTime}s)
-                </button>
-              ) : (
-                <button
-                  onClick={startRecording}
-                  title="Voice Note"
-                  className="p-2 text-slate-400 hover:text-rose-400 hover:bg-white/5 rounded-xl transition-colors"
-                >
-                  <Mic className="w-4 h-4" />
-                </button>
-              )}
-
-              {/* Text Area Input */}
-              <input
-                type="text"
-                value={newChatText}
-                onChange={e => setNewChatText(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleSendChat()}
-                placeholder="Type a message or share an announcement..."
-                className="flex-1 bg-transparent border-0 focus:outline-none text-xs text-white px-2 font-medium"
-              />
-
-              {/* Send Button */}
-              <button
-                onClick={handleSendChat}
-                className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs uppercase px-4 py-2.5 rounded-xl transition-all flex items-center gap-1.5 shadow-md active:scale-95"
-              >
-                <Send className="w-3.5 h-3.5" />
-                Send
-              </button>
+        {/* Replying context banner */}
+        {replyingTo && (
+          <div className="bg-slate-950 border-t border-indigo-500/30 p-2.5 flex items-center justify-between text-xs text-slate-300 rounded-t-xl">
+            <div className="flex items-center gap-2 truncate">
+              <Reply className="w-3.5 h-3.5 text-indigo-400" />
+              <span className="font-bold text-indigo-300">Replying to {replyingTo.name}: </span>
+              <span className="truncate italic text-slate-400">{replyingTo.message}</span>
             </div>
+            <button onClick={() => setReplyingTo(null)} className="text-slate-400 hover:text-white p-1">
+              <X className="w-3.5 h-3.5" />
+            </button>
           </div>
         )}
 
+        {/* Input Bar */}
+        <div className="pt-3 border-t border-white/10 space-y-2">
+          
+          {/* Attached Files Preview */}
+          {attachedFiles.length > 0 && (
+            <div className="flex flex-wrap gap-2 pb-2">
+              {attachedFiles.map((f, i) => (
+                <div key={i} className="bg-slate-950 border border-white/10 px-2.5 py-1 rounded-xl text-[10px] text-slate-300 flex items-center gap-2">
+                  <span className="font-bold">{f.name}</span>
+                  <button onClick={() => setAttachedFiles(prev => prev.filter((_, idx) => idx !== i))} className="text-rose-400 hover:text-rose-300">
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="flex items-center gap-2">
+            {/* Upload Attachment */}
+            <label className="p-2.5 bg-slate-950 hover:bg-slate-800 border border-white/10 text-slate-400 hover:text-white rounded-2xl cursor-pointer transition-colors">
+              <Paperclip className="w-4 h-4" />
+              <input type="file" multiple onChange={handleFileUpload} className="hidden" />
+            </label>
+
+            {/* Mic / Voice Note Record Button */}
+            <button
+              onClick={isRecordingAudio ? stopRecording : startRecording}
+              className={`p-2.5 rounded-2xl border transition-all ${isRecordingAudio ? 'bg-rose-600 text-white border-rose-500 animate-pulse' : 'bg-slate-950 border-white/10 text-slate-400 hover:text-white hover:bg-slate-800'}`}
+              title={isRecordingAudio ? "Stop Recording" : "Record Voice Note"}
+            >
+              <Mic className="w-4 h-4" />
+            </button>
+
+            {/* Input Text Box */}
+            <input
+              type="text"
+              value={newChatText}
+              onChange={e => setNewChatText(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleSendChat(); }}
+              disabled={!canPostInChannel}
+              placeholder={canPostInChannel ? `Type a message in ${activeDisplayTitle}...` : "📢 Only teachers & admins can post in this channel"}
+              className="flex-1 bg-slate-950 border border-white/10 rounded-2xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
+            />
+
+            {/* Send Button */}
+            <button
+              onClick={handleSendChat}
+              disabled={!canPostInChannel || (!newChatText.trim() && attachedFiles.length === 0)}
+              className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-white p-2.5 rounded-2xl font-bold transition-all shadow-lg active:scale-95"
+            >
+              <Send className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
       </div>
 
-      {/* Create / Join Modal */}
+      {/* MEMBER PROFILE CARD MODAL */}
+      {selectedProfileUser && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-slate-900 border border-white/10 rounded-3xl max-w-sm w-full p-6 shadow-2xl relative space-y-4 text-center">
+            <button
+              onClick={() => setSelectedProfileUser(null)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white p-1 rounded-full bg-white/5"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            {/* Profile Header & Avatar */}
+            <div className="flex flex-col items-center space-y-2 pt-2">
+              <div className="relative">
+                {selectedProfileUser.avatar || selectedProfileUser.photoURL ? (
+                  <img src={selectedProfileUser.avatar || selectedProfileUser.photoURL} alt="" className="w-20 h-20 rounded-full object-cover border-2 border-indigo-500/50 shadow-xl" />
+                ) : (
+                  <div className="w-20 h-20 rounded-full bg-indigo-600/30 text-indigo-300 font-black text-2xl flex items-center justify-center border-2 border-indigo-500/50 shadow-xl">
+                    {selectedProfileUser.name.charAt(0).toUpperCase()}
+                  </div>
+                )}
+                <span className="w-4 h-4 rounded-full bg-emerald-400 border-2 border-slate-900 absolute bottom-1 right-1" title="Online" />
+              </div>
+
+              <h3 className="text-lg font-black text-white">{selectedProfileUser.name}</h3>
+              <span className="text-[10px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-3 py-1 rounded-full font-bold uppercase tracking-wider">
+                {selectedProfileUser.role}
+              </span>
+            </div>
+
+            {/* Details Grid */}
+            <div className="bg-slate-950/60 p-4 rounded-2xl border border-white/5 text-left space-y-2 text-xs text-slate-300">
+              <div className="flex justify-between border-b border-white/5 pb-1.5">
+                <span className="text-slate-500 font-bold">Email:</span>
+                <span className="text-white font-medium truncate max-w-[180px]">{selectedProfileUser.email || 'N/A'}</span>
+              </div>
+              <div className="flex justify-between border-b border-white/5 pb-1.5">
+                <span className="text-slate-500 font-bold">Phone:</span>
+                <span className="text-emerald-400 font-mono font-bold">{selectedProfileUser.phone || 'Not provided'}</span>
+              </div>
+              <div className="flex justify-between border-b border-white/5 pb-1.5">
+                <span className="text-slate-500 font-bold">Class / Grade:</span>
+                <span className="text-white font-medium">{selectedProfileUser.grade ? `${selectedProfileUser.grade} - ${selectedProfileUser.section || ''}` : 'School Campus'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-bold">House:</span>
+                <span className="text-indigo-400 font-bold">{selectedProfileUser.house || 'Ruby'}</span>
+              </div>
+            </div>
+
+            {/* Direct Action Buttons */}
+            {selectedProfileUser.uid !== currentUser?.uid && (
+              <div className="flex gap-2 pt-2">
+                <button
+                  onClick={() => {
+                    setSelectedProfileUser(null);
+                    handleStartDirectMessage(selectedProfileUser);
+                  }}
+                  className="flex-1 bg-teal-600 hover:bg-teal-500 text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-lg"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  Message
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedProfileUser(null);
+                    handleStartCall(selectedProfileUser, 'audio');
+                  }}
+                  className="p-2.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 rounded-xl"
+                  title="Voice Call"
+                >
+                  <Phone className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedProfileUser(null);
+                    handleStartCall(selectedProfileUser, 'video');
+                  }}
+                  className="p-2.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 border border-indigo-500/30 rounded-xl"
+                  title="Video Call"
+                >
+                  <Video className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* VOICE & VIDEO CALL OVERLAY MODAL */}
+      {activeCall && (
+        <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-slate-900 border border-white/10 rounded-3xl max-w-lg w-full p-6 shadow-2xl relative flex flex-col items-center space-y-6">
+            
+            {/* Header */}
+            <div className="text-center space-y-1">
+              <span className="text-[10px] uppercase font-black tracking-widest text-indigo-400 bg-indigo-500/10 px-3 py-1 rounded-full border border-indigo-500/20">
+                {activeCall.type === 'video' ? '📹 Video Call' : '📞 Voice Call'} • {activeCall.mode.toUpperCase()}
+              </span>
+              <h3 className="text-xl font-black text-white mt-2">{activeCall.targetUser.name}</h3>
+              <p className="text-xs text-emerald-400 font-mono font-bold">
+                {activeCall.mode === 'connected' ? `Connected (${Math.floor(callDuration / 60)}:${(callDuration % 60).toString().padStart(2, '0')})` : 'Ringing...'}
+              </p>
+            </div>
+
+            {/* Video or Avatar Display */}
+            <div className="w-full h-56 bg-slate-950 rounded-2xl border border-white/10 flex items-center justify-center relative overflow-hidden">
+              {activeCall.type === 'video' ? (
+                <div className="w-full h-full flex items-center justify-center bg-indigo-950/40">
+                  <Video className="w-16 h-16 text-indigo-400/40 animate-pulse" />
+                  <span className="absolute bottom-3 left-3 text-[10px] text-slate-400 bg-slate-900/80 px-2 py-1 rounded-md">
+                    Camera Stream Active
+                  </span>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center space-y-3">
+                  <div className="w-24 h-24 rounded-full bg-indigo-600/30 border-4 border-indigo-500/50 flex items-center justify-center animate-pulse">
+                    <span className="text-3xl font-black text-white">{activeCall.targetUser.name.charAt(0)}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Incoming Call Answer/Reject Buttons */}
+            {activeCall.mode === 'incoming' ? (
+              <div className="flex gap-4 w-full">
+                <button
+                  onClick={() => {
+                    setActiveCall(prev => prev ? { ...prev, mode: 'connected', startTime: Date.now() } : null);
+                    try {
+                      supabase.channel(`room_channel_${activeChatTargetId}`).send({
+                        type: 'broadcast',
+                        event: 'call_accepted',
+                        payload: { callId: activeCall.callId }
+                      });
+                    } catch (_) {}
+                  }}
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-3 rounded-2xl text-xs uppercase flex items-center justify-center gap-2 shadow-lg"
+                >
+                  <Phone className="w-4 h-4" />
+                  Accept Call
+                </button>
+                <button
+                  onClick={handleEndCall}
+                  className="flex-1 bg-rose-600 hover:bg-rose-500 text-white font-bold py-3 rounded-2xl text-xs uppercase flex items-center justify-center gap-2 shadow-lg"
+                >
+                  <PhoneOff className="w-4 h-4" />
+                  Decline
+                </button>
+              </div>
+            ) : (
+              /* Active Controls */
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={() => setActiveCall(prev => prev ? { ...prev, isMuted: !prev.isMuted } : null)}
+                  className={`p-3.5 rounded-2xl border transition-all ${activeCall.isMuted ? 'bg-rose-600 text-white border-rose-500' : 'bg-slate-800 text-slate-300 border-white/10'}`}
+                  title={activeCall.isMuted ? "Unmute" : "Mute"}
+                >
+                  {activeCall.isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+                </button>
+
+                {activeCall.type === 'video' && (
+                  <button
+                    onClick={() => setActiveCall(prev => prev ? { ...prev, isVideoOff: !prev.isVideoOff } : null)}
+                    className={`p-3.5 rounded-2xl border transition-all ${activeCall.isVideoOff ? 'bg-rose-600 text-white border-rose-500' : 'bg-slate-800 text-slate-300 border-white/10'}`}
+                    title={activeCall.isVideoOff ? "Turn Camera On" : "Turn Camera Off"}
+                  >
+                    {activeCall.isVideoOff ? <VideoOff className="w-5 h-5" /> : <Video className="w-5 h-5" />}
+                  </button>
+                )}
+
+                <button
+                  onClick={handleEndCall}
+                  className="p-3.5 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl shadow-xl transition-all"
+                  title="End Call"
+                >
+                  <PhoneOff className="w-5 h-5" />
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* START NEW DIRECT MESSAGE MODAL */}
+      {showNewDmModal && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-slate-900 border border-white/10 rounded-3xl max-w-md w-full p-6 shadow-2xl relative space-y-4">
+            <button
+              onClick={() => setShowNewDmModal(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white p-1 rounded-full bg-white/5"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="flex items-center gap-2">
+              <UserPlus className="w-5 h-5 text-teal-400" />
+              <h3 className="text-base font-black text-white">Start Direct Message</h3>
+            </div>
+
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-3" />
+              <input
+                type="text"
+                value={userSearchQuery}
+                onChange={e => setUserSearchQuery(e.target.value)}
+                placeholder="Search by Name, Email, Phone, or Role..."
+                className="w-full bg-slate-950 border border-white/10 rounded-xl pl-9 pr-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
+              />
+            </div>
+
+            <div className="max-h-60 overflow-y-auto space-y-1.5 pr-1 scrollbar-thin">
+              {availableUsersList
+                .filter(u => u.uid !== currentUser?.uid)
+                .filter(u => {
+                  if (!userSearchQuery) return true;
+                  const q = userSearchQuery.toLowerCase();
+                  return u.name.toLowerCase().includes(q) || 
+                         u.email.toLowerCase().includes(q) || 
+                         (u.phone && u.phone.includes(q)) ||
+                         u.role.toLowerCase().includes(q);
+                })
+                .map(user => (
+                  <button
+                    key={user.uid}
+                    onClick={() => handleStartDirectMessage(user)}
+                    className="w-full text-left p-2.5 bg-slate-950/60 hover:bg-slate-950 border border-white/5 hover:border-teal-500/40 rounded-xl flex items-center justify-between transition-all"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      {user.avatar || user.photoURL ? (
+                        <img src={user.avatar || user.photoURL} alt="" className="w-8 h-8 rounded-full object-cover border border-white/10" />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-teal-600/30 text-teal-300 font-bold text-xs flex items-center justify-center border border-teal-500/30">
+                          {user.name.charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <div>
+                        <h4 className="text-xs font-bold text-white">{user.name}</h4>
+                        <p className="text-[10px] text-slate-400">{user.email || user.role}</p>
+                      </div>
+                    </div>
+                    <span className="text-[9px] bg-teal-500/10 text-teal-400 border border-teal-500/20 px-2 py-0.5 rounded-full font-bold">
+                      Chat
+                    </span>
+                  </button>
+                ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CREATE / JOIN GROUP MODAL */}
       {isCreatingRoom && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fadeIn">
           <div className="bg-slate-900 border border-white/10 rounded-3xl max-w-md w-full p-6 shadow-2xl relative space-y-4">
@@ -838,81 +1464,50 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
               <X className="w-4 h-4" />
             </button>
 
-            <div>
-              <h3 className="text-base font-black text-white">Join Existing Room</h3>
-              <p className="text-xs text-slate-400 mt-1">Enter a 6-character room code to join an existing group.</p>
-            </div>
+            <h3 className="text-base font-black text-white">Create or Join Group Room</h3>
 
-            <form onSubmit={handleJoinRoom} className="flex gap-2">
-              <input
-                type="text"
-                value={joinRoomCode}
-                onChange={e => setJoinRoomCode(e.target.value.toUpperCase())}
-                placeholder="Enter Code (e.g. A1B2C3)"
-                maxLength={6}
-                required
-                className="flex-1 bg-slate-950 border border-white/10 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-500 uppercase tracking-widest font-mono"
-              />
-              <button type="submit" className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-xl text-xs">
-                Join
-              </button>
+            {/* Join via Code */}
+            <form onSubmit={handleJoinRoom} className="space-y-2 bg-slate-950/60 p-3.5 rounded-2xl border border-white/5">
+              <h4 className="text-xs font-bold text-emerald-400 uppercase tracking-wider">Join Existing Group</h4>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={joinRoomCode}
+                  onChange={e => setJoinRoomCode(e.target.value)}
+                  placeholder="Enter 6-digit Code"
+                  className="flex-1 bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white uppercase"
+                />
+                <button
+                  type="submit"
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-xl text-xs uppercase"
+                >
+                  Join
+                </button>
+              </div>
             </form>
 
-            <div className="h-px bg-white/10 my-3" />
+            <div className="text-center text-[10px] text-slate-500 uppercase font-black">OR</div>
 
-            <div>
-              <h3 className="text-base font-black text-white">Create New Channel or Group</h3>
-              <p className="text-xs text-slate-400 mt-1">Setup a class chat room, house channel, or interest group.</p>
-            </div>
-
-            <form onSubmit={handleCreateRoomSubmit} className="space-y-3">
+            {/* Create New Group */}
+            <form onSubmit={handleCreateRoomSubmit} className="space-y-3 bg-slate-950/60 p-3.5 rounded-2xl border border-white/5">
+              <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-wider">Create New Group</h4>
+              
               <div>
-                <label className="text-[10px] font-bold text-slate-400 uppercase">Room Type</label>
-                <select
-                  value={newRoomType}
-                  onChange={e => setNewRoomType(e.target.value as any)}
-                  className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white mt-1"
-                >
-                  <option value="group">👥 Study Group</option>
-                  <option value="channel">📢 School Channel (Broadcast)</option>
-                  <option value="friend">💬 Direct Message Room</option>
-                </select>
-              </div>
-
-              {newRoomType === 'channel' && (
-                <div>
-                  <label className="text-[10px] font-bold text-slate-400 uppercase">Channel Category</label>
-                  <select
-                    value={newChannelCategory}
-                    onChange={e => setNewChannelCategory(e.target.value as any)}
-                    className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white mt-1"
-                  >
-                    <option value="principal">🏛️ Principal Official Announcements</option>
-                    <option value="teacher">👩‍🏫 Teacher Announcements</option>
-                    <option value="class">🏫 Class Announcement (e.g. Class 9A)</option>
-                    <option value="house">🏆 House Alliance (Ruby/Emerald)</option>
-                    <option value="club">🤖 Club Channel (Robotics/Debate)</option>
-                    <option value="event">🎉 Event Channel (Sports Day/Fest)</option>
-                  </select>
-                </div>
-              )}
-
-              <div>
-                <label className="text-[10px] font-bold text-slate-400 uppercase">Name & Icon</label>
+                <label className="text-[10px] font-bold text-slate-400 uppercase">Room Icon & Name</label>
                 <div className="flex gap-2 mt-1">
                   <input
                     type="text"
                     value={newRoomIcon}
                     onChange={e => setNewRoomIcon(e.target.value)}
-                    className="w-12 bg-slate-950 border border-white/10 rounded-xl px-2 py-2 text-center text-sm"
+                    className="w-12 bg-slate-900 border border-white/10 rounded-xl px-2 py-2 text-center text-sm text-white"
                   />
                   <input
                     type="text"
                     value={newRoomName}
                     onChange={e => setNewRoomName(e.target.value)}
-                    placeholder="Room Name (e.g. Robotics Club)"
+                    placeholder="Group Name"
                     required
-                    className="flex-1 bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white"
+                    className="flex-1 bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white"
                   />
                 </div>
               </div>
@@ -922,50 +1517,18 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
                 <textarea
                   value={newRoomDescription}
                   onChange={e => setNewRoomDescription(e.target.value)}
-                  placeholder="Short room guidelines or info..."
-                  className="w-full bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white h-16 mt-1"
+                  placeholder="What is this group for?"
+                  className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white h-16 mt-1"
                 />
               </div>
 
-              <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 rounded-xl text-xs uppercase tracking-wider">
-                Create Room
+              <button
+                type="submit"
+                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 rounded-xl text-xs uppercase"
+              >
+                Create Group
               </button>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* QR Code & Invite Modal */}
-      {showQrModal && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-slate-900 border border-white/10 rounded-3xl max-w-sm w-full p-6 text-center space-y-4 relative">
-            <button onClick={() => setShowQrModal(false)} className="absolute top-4 right-4 text-slate-400"><X className="w-4 h-4" /></button>
-            <span className="text-4xl">{activeRoomInfo.icon}</span>
-            <h3 className="font-extrabold text-lg text-white">{activeRoomInfo.name}</h3>
-            
-            <div className="p-4 bg-white rounded-2xl flex items-center justify-center mx-auto w-44 h-44 shadow-lg">
-              <QrCode className="w-36 h-36 text-slate-900" />
-            </div>
-
-            <div className="bg-slate-950 border border-white/10 rounded-xl p-3 space-y-1 text-left">
-              <span className="text-[10px] text-slate-400 uppercase font-bold">Invite Code:</span>
-              <div className="flex justify-between items-center">
-                <span className="font-mono text-emerald-400 font-extrabold text-base tracking-widest">{activeRoomInfo.code || 'STUDENTOS'}</span>
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(activeRoomInfo.code || 'STUDENTOS');
-                    setCopiedLink(true);
-                    setTimeout(() => setCopiedLink(false), 2000);
-                  }}
-                  className="text-xs text-indigo-400 flex items-center gap-1 hover:underline"
-                >
-                  <Copy className="w-3.5 h-3.5" />
-                  {copiedLink ? 'Copied!' : 'Copy Code'}
-                </button>
-              </div>
-            </div>
-
-            <p className="text-[10px] text-slate-400">Invite links expire in 24 hours. Scan QR to join room directly.</p>
           </div>
         </div>
       )}
@@ -994,7 +1557,7 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
             </div>
 
             {/* Editable Room Info (Moderators / Admins) */}
-            {isModerator ? (
+            {isModerator && (
               <form
                 onSubmit={async (e) => {
                   e.preventDefault();
@@ -1046,7 +1609,7 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
                   Save Room Details
                 </button>
               </form>
-            ) : null}
+            )}
 
             {/* Invite Code Section */}
             <div className="bg-slate-950/60 p-4 rounded-2xl border border-white/5 space-y-2">
@@ -1088,21 +1651,28 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
               </h4>
               <div className="space-y-2 max-h-48 overflow-y-auto scrollbar-thin pr-1">
                 {(activeRoomInfo.members || []).map(memberUid => {
-                  const studentInfo = students.find(s => s.uid === memberUid || s.id === memberUid);
-                  const memberName = studentInfo?.name || (memberUid === currentUser?.uid ? `${currentUser.name} (You)` : `User ${memberUid.slice(0, 8)}`);
+                  const memberUser = resolveUser(memberUid);
+                  const memberName = memberUid === currentUser?.uid ? `${memberUser.name} (You)` : memberUser.name;
                   const isOwner = activeRoomInfo.creatorId === memberUid;
                   const isMod = activeRoomInfo.moderators?.includes(memberUid) || isOwner;
 
                   return (
                     <div key={memberUid} className="flex justify-between items-center p-2.5 bg-slate-900 rounded-xl border border-white/5 text-xs text-white">
-                      <div className="flex items-center gap-2">
-                        <span className="w-6 h-6 rounded-full bg-indigo-600/30 text-indigo-300 flex items-center justify-center font-bold text-[10px]">
-                          {memberName.charAt(0)}
-                        </span>
+                      <button
+                        onClick={() => setSelectedProfileUser(memberUser)}
+                        className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+                      >
+                        {memberUser.avatar || memberUser.photoURL ? (
+                          <img src={memberUser.avatar || memberUser.photoURL} alt="" className="w-6 h-6 rounded-full object-cover" />
+                        ) : (
+                          <span className="w-6 h-6 rounded-full bg-indigo-600/30 text-indigo-300 flex items-center justify-center font-bold text-[10px]">
+                            {memberName.charAt(0)}
+                          </span>
+                        )}
                         <span className="font-semibold">{memberName}</span>
                         {isOwner && <span className="text-[9px] bg-amber-500/20 text-amber-300 border border-amber-500/30 px-1.5 py-0.5 rounded font-bold">Owner</span>}
                         {isMod && !isOwner && <span className="text-[9px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-1.5 py-0.5 rounded font-bold">Mod</span>}
-                      </div>
+                      </button>
 
                       {isModerator && memberUid !== currentUser?.uid && !isOwner && (
                         <div className="flex gap-1.5">
@@ -1115,7 +1685,7 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
                                 };
                                 setChatRooms(prev => prev.map(r => r.id === updated.id ? updated : r));
                                 await saveChatRoom(updated);
-                                showNotification(`Promoted ${memberName} to moderator.`);
+                                showNotification(`Promoted ${memberUser.name} to moderator.`);
                               }}
                               className="text-[10px] bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 px-2 py-1 rounded-lg font-bold"
                             >
@@ -1131,7 +1701,7 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
                               };
                               setChatRooms(prev => prev.map(r => r.id === updated.id ? updated : r));
                               await saveChatRoom(updated);
-                              showNotification(`Removed ${memberName} from room.`);
+                              showNotification(`Removed ${memberUser.name} from room.`);
                             }}
                             className="text-[10px] bg-rose-600/30 hover:bg-rose-600/50 text-rose-300 px-2 py-1 rounded-lg font-bold"
                           >
@@ -1187,137 +1757,81 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
         </div>
       )}
 
-      {/* Forwarding Modal */}
-      {forwardingMsg && (
+      {/* QR CODE MODAL */}
+      {showQrModal && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-slate-900 border border-white/10 rounded-3xl max-w-sm w-full p-6 space-y-4 relative">
-            <button onClick={() => setForwardingMsg(null)} className="absolute top-4 right-4 text-slate-400"><X className="w-4 h-4" /></button>
-            <h3 className="font-extrabold text-sm text-white">Forward Message To:</h3>
-            <p className="text-xs text-slate-400 italic bg-slate-950 p-2.5 rounded-xl border border-white/5">"{forwardingMsg.message}"</p>
-            
-            <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
-              {chatRooms.map(room => (
-                <button
-                  key={room.id}
-                  onClick={() => handleForwardMessage(room.id)}
-                  className="w-full text-left p-2.5 rounded-xl bg-slate-950 hover:bg-indigo-600/20 border border-white/5 flex items-center gap-2 text-xs text-white"
-                >
-                  <span>{room.icon}</span>
-                  <span>{room.name}</span>
-                </button>
-              ))}
+          <div className="bg-slate-900 border border-white/10 rounded-3xl max-w-sm w-full p-6 shadow-2xl relative space-y-4 text-center">
+            <button
+              onClick={() => setShowQrModal(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white p-1 rounded-full bg-white/5"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <h3 className="text-base font-black text-white flex items-center justify-center gap-2">
+              <QrCode className="w-5 h-5 text-indigo-400" />
+              Group Invite Code
+            </h3>
+
+            <div className="p-6 bg-white rounded-2xl flex items-center justify-center shadow-inner my-2">
+              <div className="text-center space-y-2">
+                <span className="text-4xl">📱</span>
+                <p className="font-mono text-2xl font-black text-slate-900 tracking-widest">{activeRoomInfo.code || 'GLOBAL'}</p>
+                <p className="text-[10px] text-slate-500 font-semibold">Scan or Share code to join</p>
+              </div>
             </div>
+
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(activeRoomInfo.code || 'GLOBAL');
+                setCopiedLink(true);
+                setTimeout(() => setCopiedLink(false), 2000);
+              }}
+              className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-2 shadow-lg"
+            >
+              <Copy className="w-4 h-4" />
+              {copiedLink ? 'Code Copied!' : 'Copy Code'}
+            </button>
           </div>
         </div>
       )}
 
-      {/* Mobile / Touch Context Menu Bottom Sheet */}
-      {activeMenuMsg && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 z-50 animate-fadeIn">
-          <div className="bg-slate-900 border border-white/10 rounded-t-3xl sm:rounded-3xl max-w-sm w-full p-5 space-y-4 shadow-2xl relative">
-            <button onClick={() => setActiveMenuMsg(null)} className="absolute top-4 right-4 text-slate-400 hover:text-white p-1 rounded-full bg-white/5">
+      {/* FORWARDING MODAL */}
+      {forwardingMsg && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-slate-900 border border-white/10 rounded-3xl max-w-md w-full p-6 shadow-2xl relative space-y-4">
+            <button
+              onClick={() => setForwardingMsg(null)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white p-1 rounded-full bg-white/5"
+            >
               <X className="w-4 h-4" />
             </button>
 
-            <div>
-              <span className="text-[10px] font-extrabold uppercase text-indigo-400 tracking-wider">Message Actions</span>
-              <p className="text-xs text-slate-300 italic truncate mt-1 bg-slate-950 p-2.5 rounded-xl border border-white/5">
-                "{activeMenuMsg.message}"
-              </p>
+            <h3 className="text-base font-black text-white flex items-center gap-2">
+              <Forward className="w-4 h-4 text-indigo-400" />
+              Forward Message
+            </h3>
+
+            <div className="p-3 bg-slate-950 rounded-xl border border-white/10 text-xs text-slate-300 italic">
+              "{forwardingMsg.message}"
             </div>
 
-            {/* Quick Reactions Bar */}
-            <div>
-              <span className="text-[10px] font-bold text-slate-400 uppercase">React:</span>
-              <div className="flex gap-2 mt-1.5 justify-between bg-slate-950 p-2 rounded-xl border border-white/5">
-                {['👍', '❤️', '😂', '😮', '🔥', '🚀', '💯'].map(emoji => (
-                  <button
-                    key={emoji}
-                    onClick={() => {
-                      handleAddReaction(activeMenuMsg.id, emoji);
-                      setActiveMenuMsg(null);
-                    }}
-                    className="text-lg hover:scale-125 transition-transform p-1"
-                  >
-                    {emoji}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Select destination room:</p>
 
-            {/* Action Buttons Grid */}
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <button
-                onClick={() => {
-                  setReplyingTo(activeMenuMsg);
-                  setActiveMenuMsg(null);
-                }}
-                className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-950 hover:bg-indigo-600/20 border border-white/10 text-slate-200 font-medium"
-              >
-                <Reply className="w-4 h-4 text-indigo-400" />
-                <span>Reply</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(activeMenuMsg.message);
-                  showNotification('Copied message text!');
-                  setActiveMenuMsg(null);
-                }}
-                className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-950 hover:bg-indigo-600/20 border border-white/10 text-slate-200 font-medium"
-              >
-                <Copy className="w-4 h-4 text-emerald-400" />
-                <span>Copy</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  setForwardingMsg(activeMenuMsg);
-                  setActiveMenuMsg(null);
-                }}
-                className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-950 hover:bg-indigo-600/20 border border-white/10 text-slate-200 font-medium"
-              >
-                <Forward className="w-4 h-4 text-amber-400" />
-                <span>Forward</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  handleTogglePin(activeMenuMsg.id);
-                  setActiveMenuMsg(null);
-                }}
-                className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-950 hover:bg-indigo-600/20 border border-white/10 text-slate-200 font-medium"
-              >
-                <Pin className="w-4 h-4 text-amber-400" />
-                <span>{activeMenuMsg.isPinned ? 'Unpin' : 'Pin'}</span>
-              </button>
-
-              {activeMenuMsg.ownerUid === currentUser?.uid && (
+            <div className="max-h-60 overflow-y-auto space-y-1.5 pr-1 scrollbar-thin">
+              {chatRooms.map(room => (
                 <button
-                  onClick={() => {
-                    setEditingMsgId(activeMenuMsg.id);
-                    setEditText(activeMenuMsg.message);
-                    setActiveMenuMsg(null);
-                  }}
-                  className="flex items-center gap-2 p-2.5 rounded-xl bg-slate-950 hover:bg-indigo-600/20 border border-white/10 text-indigo-300 font-medium"
+                  key={room.id}
+                  onClick={() => handleForwardMessage(room.id)}
+                  className="w-full text-left p-2.5 bg-slate-950/60 hover:bg-indigo-600/20 border border-white/5 hover:border-indigo-500/40 rounded-xl flex items-center justify-between transition-all text-xs text-white"
                 >
-                  <Edit3 className="w-4 h-4 text-indigo-400" />
-                  <span>Edit</span>
+                  <span className="font-bold flex items-center gap-2">
+                    <span>{room.icon}</span>
+                    <span>{room.name}</span>
+                  </span>
+                  <span className="text-[10px] text-indigo-400 font-bold uppercase">Send</span>
                 </button>
-              )}
-
-              {(activeMenuMsg.ownerUid === currentUser?.uid || isModerator) && (
-                <button
-                  onClick={() => {
-                    handleDeleteMessage(activeMenuMsg.id, true);
-                    setActiveMenuMsg(null);
-                  }}
-                  className="flex items-center gap-2 p-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 text-rose-400 col-span-2 font-medium"
-                >
-                  <Trash2 className="w-4 h-4 text-rose-400" />
-                  <span>Delete for Everyone</span>
-                </button>
-              )}
+              ))}
             </div>
           </div>
         </div>
