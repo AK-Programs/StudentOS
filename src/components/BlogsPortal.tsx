@@ -138,45 +138,25 @@ export const BlogsPortal = ({ currentUser, isSuperAdmin, showNotification }: any
   const fetchPosts = async () => {
     setIsLoading(true);
     try {
-      // 1. Read custom local blogs first
-      let localCustom: BlogPost[] = [];
-      try {
-        const cached = localStorage.getItem('s_os_custom_blogs');
-        if (cached && cached !== "undefined") {
-          const parsed = JSON.parse(cached);
-          if (Array.isArray(parsed)) {
-            localCustom = parsed;
-          }
-        }
-      } catch (e) {
-        console.error('Failed to read local custom blogs:', e);
-      }
-
-      // 2. Query Supabase
       let fetched: BlogPost[] = [];
-      try {
-        const { data, error } = await supabase.from('blogs').select('*').order('created_at', { ascending: false });
-        if (error) {
-          if (error.code !== '42P01') throw error;
-        } else if (data) {
-          fetched = data.map((item: any) => ({
-            id: item.id || `blog-${Date.now()}-${Math.random()}`,
-            title: item.title || '',
-            content: item.content || '',
-            author: item.author || 'Anonymous',
-            authorId: item.author_id || 'anonymous',
-            tags: Array.isArray(item.tags) ? item.tags : [],
-            imageUrl: item.image_url || 'https://images.unsplash.com/photo-1516321497487-e288fb19713f?q=80&w=800&auto=format&fit=crop',
-            isPublished: !!item.is_published,
-            createdAt: Number(item.created_at || Date.now())
-          }));
-        }
-      } catch (sbErr) {
-        console.warn('Supabase fetch blogs failed, relying on local-first:', sbErr);
+      const { data, error } = await supabase.from('blogs').select('*').order('created_at', { ascending: false });
+      
+      if (!error && data) {
+        fetched = data.map((item: any) => ({
+          id: item.id || `blog-${Date.now()}-${Math.random()}`,
+          title: item.title || '',
+          content: item.content || '',
+          author: item.author || 'Anonymous',
+          authorId: item.author_id || 'anonymous',
+          tags: Array.isArray(item.tags) ? item.tags : [],
+          imageUrl: item.image_url || 'https://images.unsplash.com/photo-1516321497487-e288fb19713f?q=80&w=800&auto=format&fit=crop',
+          isPublished: !!item.is_published,
+          createdAt: Number(item.created_at || Date.now())
+        }));
       }
 
-      // 3. Merge starter tutorials, custom local posts, and fetched posts
-      const allPosts = [...starterTutorials as BlogPost[], ...localCustom, ...fetched];
+      // Merge starter tutorials and fetched posts
+      const allPosts = [...starterTutorials as BlogPost[], ...fetched];
       
       // Deduplicate by ID and filter out invalid/malformed posts
       const validPosts = allPosts.filter(p => p && typeof p === 'object' && p.id);
@@ -191,6 +171,16 @@ export const BlogsPortal = ({ currentUser, isSuperAdmin, showNotification }: any
 
   useEffect(() => {
     fetchPosts();
+
+    // Subscribe to realtime blog updates
+    const channel = supabase.channel('blogs_channel');
+    channel.on('broadcast', { event: 'blog_updated' }, () => {
+      fetchPosts();
+    }).subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   const handleSave = async () => {
@@ -211,21 +201,6 @@ export const BlogsPortal = ({ currentUser, isSuperAdmin, showNotification }: any
       createdAt: currentPost.createdAt || Date.now()
     };
 
-    // 1. Save to local storage first
-    try {
-      const cached = localStorage.getItem('s_os_custom_blogs');
-      let localCustom: BlogPost[] = cached && cached !== "undefined" ? JSON.parse(cached) : [];
-      if (isNew) {
-        localCustom = [postData as BlogPost, ...localCustom];
-      } else {
-        localCustom = localCustom.map(p => p.id === postData.id ? (postData as BlogPost) : p);
-      }
-      localStorage.setItem('s_os_custom_blogs', JSON.stringify(localCustom));
-    } catch (e) {
-      console.error('Failed to save blog post to localStorage:', e);
-    }
-
-    // 2. Sync to Supabase
     const dbPostData = {
       id: postData.id,
       title: postData.title,
@@ -240,11 +215,13 @@ export const BlogsPortal = ({ currentUser, isSuperAdmin, showNotification }: any
 
     try {
       const { error } = await supabase.from('blogs').upsert([dbPostData]);
-      if (error && error.code !== '42P01') {
+      if (error) {
         throw error;
       }
     } catch (err) {
-      console.warn('Supabase blog sync offline fallback active:', err);
+      console.error('Failed to sync blog to Supabase:', err);
+      showNotification('Error saving blog post.');
+      return;
     }
 
     showNotification(isNew ? 'Blog post created successfully!' : 'Blog post updated!');
@@ -259,53 +236,43 @@ export const BlogsPortal = ({ currentUser, isSuperAdmin, showNotification }: any
 
     setIsEditing(false);
     setCurrentPost(null);
+    try {
+      supabase.channel('blogs_channel').send({ type: 'broadcast', event: 'blog_updated' });
+    } catch (_) {}
     fetchPosts();
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this post?')) return;
     
-    // 1. Delete from local storage
-    try {
-      const cached = localStorage.getItem('s_os_custom_blogs');
-      let localCustom: BlogPost[] = cached && cached !== "undefined" ? JSON.parse(cached) : [];
-      localCustom = localCustom.filter(p => p.id !== id);
-      localStorage.setItem('s_os_custom_blogs', JSON.stringify(localCustom));
-    } catch (e) {
-      console.error('Failed to delete blog post from localStorage:', e);
-    }
-
     // 2. Delete from Supabase
     try {
       const { error } = await supabase.from('blogs').delete().eq('id', id);
-      if (error && error.code !== '42P01') throw error;
+      if (error) throw error;
     } catch (err) {
-      console.warn('Supabase blog delete offline fallback active:', err);
+      console.error('Failed to delete blog from Supabase:', err);
+      showNotification('Error deleting blog post.');
+      return;
     }
 
     showNotification('Blog post deleted.');
+    try {
+      supabase.channel('blogs_channel').send({ type: 'broadcast', event: 'blog_updated' });
+    } catch (_) {}
     fetchPosts();
   };
 
   const handlePublishToggle = async (post: BlogPost) => {
     const updatedPost = { ...post, isPublished: !post.isPublished };
 
-    // 1. Update local storage
-    try {
-      const cached = localStorage.getItem('s_os_custom_blogs');
-      let localCustom: BlogPost[] = cached && cached !== "undefined" ? JSON.parse(cached) : [];
-      localCustom = localCustom.map(p => p.id === post.id ? updatedPost : p);
-      localStorage.setItem('s_os_custom_blogs', JSON.stringify(localCustom));
-    } catch (e) {
-      console.error('Failed to update publication status in localStorage:', e);
-    }
-
     // 2. Sync to Supabase
     try {
       const { error } = await supabase.from('blogs').update({ is_published: !post.isPublished }).eq('id', post.id);
-      if (error && error.code !== '42P01') throw error;
+      if (error) throw error;
     } catch (err) {
-      console.warn('Supabase publish toggle offline fallback active:', err);
+      console.error('Failed to update publication status in Supabase:', err);
+      showNotification('Error updating blog post status.');
+      return;
     }
 
     showNotification(post.isPublished ? 'Post unpublished.' : 'Post published!');
