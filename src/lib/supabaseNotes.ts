@@ -11,16 +11,18 @@ export async function getVaultNotes(userId: string): Promise<VaultNote[]> {
       throw error;
     }
     if (data) {
-       return data.map(n => ({
-         id: n.id,
-         title: n.title,
-         content: n.content,
-         createdAt: n.created_at || new Date().toLocaleDateString(),
-         subject: n.subject || '',
-         icon: n.icon || '📝',
-         coverBg: n.cover_bg || 'bg-gradient-to-r from-violet-600 to-indigo-900',
-         userId: n.user_id
-       }));
+       return data
+         .filter(n => n.title !== '__SYSTEM_NOTIFICATION__' && !n.id.startsWith('notif_') && !n.id.startsWith('chat_'))
+         .map(n => ({
+           id: n.id,
+           title: n.title,
+           content: n.content,
+           createdAt: n.created_at || new Date().toLocaleDateString(),
+           subject: n.subject || '',
+           icon: n.icon || '📝',
+           coverBg: n.cover_bg || 'bg-gradient-to-r from-violet-600 to-indigo-900',
+           userId: n.user_id
+         }));
     }
   } catch (err) {
     console.error("Failed to get notes from supabase", err);
