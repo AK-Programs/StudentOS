@@ -3,7 +3,7 @@ import { AppNotification } from '../types';
 import { soundService } from './soundService';
 
 /**
- * Fetch notifications from Supabase
+ * Fetch notifications from Supabase 
  */
 export async function getAppNotifications(userId?: string): Promise<AppNotification[]> {
   console.log('[SUPABASE-NOTIFS] Fetching notifications from Supabase...');
