@@ -10,14 +10,25 @@ interface CollaborativeLectureNotesProps {
   subject?: string;
 }
 
+const AVAILABLE_SUBJECTS = [
+  'Mathematics',
+  'Chemistry',
+  'Biology',
+  'Physics',
+  'English',
+  'Computer Science',
+  'Economics'
+];
+
 export const CollaborativeLectureNotes: React.FC<CollaborativeLectureNotesProps> = ({
   currentUser,
   lectureId = 'global_lecture_notes_default',
-  lectureTitle = 'Live Physics & Science Collaborative Lecture Notes',
-  subject = 'Physics',
+  lectureTitle = 'Live Collaborative Lecture Notes',
+  subject = 'Mathematics',
 }) => {
   const [content, setContent] = useState<string>('');
   const [title, setTitle] = useState<string>(lectureTitle);
+  const [currentSubject, setCurrentSubject] = useState<string>(subject);
   const [isSaving, setIsSaving] = useState(false);
   const [lastSavedTime, setLastSavedTime] = useState<string>('');
   const [activeEditors, setActiveEditors] = useState<{ uid: string; name: string; avatar?: string }[]>([]);
@@ -30,17 +41,34 @@ export const CollaborativeLectureNotes: React.FC<CollaborativeLectureNotesProps>
   useEffect(() => {
     const loadNote = async () => {
       try {
-        const { data } = await supabase
-          .from('notes')
+        let noteData = null;
+        // 1. Try lecture_notes table
+        const { data: lectureData, error: lErr } = await supabase
+          .from('lecture_notes')
           .select('*')
           .eq('id', lectureId)
           .single();
 
-        if (data) {
-          setTitle(data.title || lectureTitle);
-          setContent(data.content || '');
-          if (data.created_at) {
-            setLastSavedTime(new Date(data.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+        if (!lErr && lectureData) {
+          noteData = lectureData;
+        } else {
+          // 2. Fallback to notes table
+          const { data: vaultData } = await supabase
+            .from('notes')
+            .select('*')
+            .eq('id', lectureId)
+            .single();
+          if (vaultData) noteData = vaultData;
+        }
+
+        if (noteData) {
+          setTitle(noteData.title || lectureTitle);
+          setContent(noteData.content || '');
+          if (noteData.subject) {
+            setCurrentSubject(noteData.subject);
+          }
+          if (noteData.created_at) {
+            setLastSavedTime(new Date(noteData.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
           }
         }
       } catch (_) {}
@@ -67,6 +95,9 @@ export const CollaborativeLectureNotes: React.FC<CollaborativeLectureNotesProps>
         setContent(payload.payload.content);
         if (payload.payload.title) {
           setTitle(payload.payload.title);
+        }
+        if (payload.payload.subject) {
+          setCurrentSubject(payload.payload.subject);
         }
       }
     });
@@ -109,7 +140,15 @@ export const CollaborativeLectureNotes: React.FC<CollaborativeLectureNotesProps>
   const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const newText = e.target.value;
     setContent(newText);
+    saveAndBroadcast(newText, title, currentSubject);
+  };
 
+  const handleSubjectChange = (newSub: string) => {
+    setCurrentSubject(newSub);
+    saveAndBroadcast(content, title, newSub);
+  };
+
+  const saveAndBroadcast = (newText: string, newTitle: string, newSubject: string) => {
     // Broadcast live change to peers immediately
     if (channelRef.current) {
       channelRef.current.send({
@@ -117,7 +156,8 @@ export const CollaborativeLectureNotes: React.FC<CollaborativeLectureNotesProps>
         event: 'note_content_changed',
         payload: {
           content: newText,
-          title,
+          title: newTitle,
+          subject: newSubject,
           senderUid: currentUser?.uid,
         },
       });
@@ -131,16 +171,21 @@ export const CollaborativeLectureNotes: React.FC<CollaborativeLectureNotesProps>
 
     debounceTimerRef.current = setTimeout(async () => {
       try {
-        await supabase.from('notes').upsert({
+        const payload = {
           id: lectureId,
-          title,
+          title: newTitle,
           content: newText,
-          subject,
+          subject: newSubject,
           icon: '📝',
           cover_bg: 'bg-indigo-900',
           user_id: currentUser?.uid || 'shared',
           created_at: new Date().toISOString(),
-        });
+        };
+
+        const { error: lErr } = await supabase.from('lecture_notes').upsert(payload);
+        if (lErr) {
+          await supabase.from('notes').upsert(payload);
+        }
         setIsSaving(false);
         setLastSavedTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
       } catch (err) {
@@ -163,11 +208,25 @@ export const CollaborativeLectureNotes: React.FC<CollaborativeLectureNotesProps>
             <input
               type="text"
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setTitle(val);
+                saveAndBroadcast(content, val, currentSubject);
+              }}
               className="bg-transparent font-black text-white text-base focus:outline-none focus:border-b border-indigo-500"
             />
-            <div className="flex items-center gap-2 text-xs text-slate-400 mt-0.5">
-              <span className="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-semibold">{subject}</span>
+            <div className="flex items-center gap-2 text-xs text-slate-400 mt-1">
+              <select
+                value={currentSubject}
+                onChange={(e) => handleSubjectChange(e.target.value)}
+                className="px-2.5 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-extrabold text-xs border border-indigo-500/30 focus:outline-none cursor-pointer"
+              >
+                {AVAILABLE_SUBJECTS.map((sub) => (
+                  <option key={sub} value={sub} className="bg-slate-900 text-white">
+                    {sub}
+                  </option>
+                ))}
+              </select>
               <span>•</span>
               <span className="flex items-center gap-1">
                 <Clock className="w-3 h-3 text-slate-500" />
