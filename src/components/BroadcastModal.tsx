@@ -6,19 +6,24 @@ import { supabase } from '../lib/supabase';
 
 interface BroadcastModalProps {
   currentUser: UserProfile | null;
-  isOpen: boolean;
+  effectiveRole?: string;
+  isOpen?: boolean;
   onClose: () => void;
   onBroadcastSent?: () => void;
+  showNotification?: (msg: string) => void;
 }
 
 export const BroadcastModal: React.FC<BroadcastModalProps> = ({
   currentUser,
-  isOpen,
+  effectiveRole,
+  isOpen = true,
   onClose,
   onBroadcastSent,
+  showNotification,
 }) => {
-  const isPrincipal = currentUser?.role === 'admin' || currentUser?.role === 'super_admin' || currentUser?.role === 'coordinator';
-  const isTeacher = currentUser?.role === 'teacher';
+  const role = effectiveRole || currentUser?.role || 'student';
+  const isPrincipal = role === 'admin' || role === 'super_admin' || role === 'coordinator';
+  const isTeacher = role === 'teacher';
 
   const [title, setTitle] = useState('');
   const [message, setMessage] = useState('');
@@ -78,6 +83,16 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
         event: 'principal_live_broadcast',
         payload: broadcastPayload,
       });
+
+      await channel.send({
+        type: 'broadcast',
+        event: 'new_app_notification',
+        payload: newNotif,
+      });
+
+      if (showNotification) {
+        showNotification('📢 Realtime broadcast published successfully to all devices!');
+      }
 
       // Clear form
       setTitle('');
