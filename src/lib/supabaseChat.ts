@@ -1,5 +1,65 @@
 import { supabase } from './supabase';
-import { ChatMessage, ChatRoom } from '../types';
+import { ChatMessage, ChatRoom, UserProfile } from '../types';
+
+let cachedProfiles: UserProfile[] = [];
+let lastFetchTime = 0;
+
+export async function getAllUserProfiles(): Promise<UserProfile[]> {
+  const now = Date.now();
+  if (cachedProfiles.length > 0 && now - lastFetchTime < 10000) {
+    return cachedProfiles;
+  }
+
+  try {
+    const { data, error } = await supabase.from('user_profiles').select('*');
+    if (!error && data && data.length > 0) {
+      cachedProfiles = data.map(item => ({
+        uid: item.uid || item.id,
+        name: item.name || 'StudentOS Member',
+        email: item.email || '',
+        role: item.role || 'student',
+        avatar: item.photo_url || '',
+        photoURL: item.photo_url || '',
+        grade: item.grade || '',
+        section: item.section || '',
+        house: item.house || '',
+        department: item.department || '',
+        specialtySubject: item.specialty_subject || '',
+        designation: item.designation || '',
+        phone: item.raw_data?.phone || (item as any).phone || '',
+        bio: item.bio || '',
+        lastLogin: item.updated_at ? new Date(item.updated_at).getTime() : Date.now()
+      }));
+      lastFetchTime = now;
+      return cachedProfiles;
+    }
+  } catch (err) {
+    console.warn('[SUPABASE-CHAT] Error fetching user profiles:', err);
+  }
+  return cachedProfiles;
+}
+
+export async function getOrCreateDirectMessageRoom(
+  user1: { uid: string; name: string; avatar?: string; role?: string },
+  user2: { uid: string; name: string; avatar?: string; role?: string }
+): Promise<ChatRoom> {
+  const sortedUids = [user1.uid, user2.uid].sort();
+  const dmRoomId = `dm_${sortedUids[0]}_${sortedUids[1]}`;
+
+  const dmRoom: ChatRoom = {
+    id: dmRoomId,
+    name: `${user1.name} & ${user2.name}`,
+    type: 'friend',
+    icon: '👤',
+    description: `Private 1-on-1 conversation between ${user1.name} and ${user2.name}`,
+    creatorId: user1.uid,
+    members: [user1.uid, user2.uid],
+    moderators: [user1.uid, user2.uid]
+  };
+
+  await saveChatRoom(dmRoom);
+  return dmRoom;
+}
 
 export interface AiBuddyThread {
   id: string;
