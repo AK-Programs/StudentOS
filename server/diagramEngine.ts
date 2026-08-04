@@ -1,18 +1,4 @@
-import { GoogleGenAI } from '@google/genai';
-
-let aiInstance: GoogleGenAI | null = null;
-function getGoogleGenAI(): GoogleGenAI | null {
-  if (aiInstance) return aiInstance;
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return null;
-  try {
-    aiInstance = new GoogleGenAI({ apiKey });
-    return aiInstance;
-  } catch (err) {
-    console.error('Error initializing Gemini AI in diagramEngine:', err);
-    return null;
-  }
-}
+import { getAIClient } from './aiClient';
 
 // Helper to sanitize query
 function cleanQuery(query: string): string {
@@ -391,10 +377,9 @@ export async function generateMermaidDiagram(query: string, retries = 1): Promis
   const fallback = getSmartFallbackMermaid(cleanQ);
 
   try {
-    const aiGen = getGoogleGenAI();
+    const aiGen = getAIClient();
     if (aiGen) {
       const prompt = `You are a world-class educational diagram software engineer.
-Generate a accurate, structured, domain-specific Mermaid.js diagram for topic: "${cleanQ}".
 
 REQUIREMENTS:
 1. SELECT THE BEST MERMAID DIAGRAM SYNTAX FOR THIS TOPIC:
@@ -477,10 +462,9 @@ export async function generateSvgDiagram(query: string, subject = 'general', ret
   const fallback = getSmartFallbackSvg(cleanQ, subject);
 
   try {
-    const aiGen = getGoogleGenAI();
+    const aiGen = getAIClient();
     if (aiGen) {
       const prompt = `You are a master vector graphics artist and scientific textbook illustrator.
-Create a rich, dynamic, visually impressive inline SVG diagram for educational topic: "${cleanQ}" (Subject: ${subject}).
 
 DIAGRAM DESIGN GUIDELINES:
 1. DYNAMIC TOPIC-SPECIFIC STRUCTURE & LAYOUT:
@@ -572,10 +556,9 @@ export async function generateCanvasElements(query: string, type = 'diagram', re
   ];
 
   try {
-    const aiGen = getGoogleGenAI();
+    const aiGen = getAIClient();
     if (aiGen) {
       const prompt = `You are an educational whiteboard generator.
-Create a rich ${type.toUpperCase()} layout for: "${cleanQ}".
 
 Generate 8-15 connected whiteboard elements tailored specifically to "${cleanQ}".
 
