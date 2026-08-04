@@ -240,7 +240,7 @@ export function clearChatCache() {
  */
 export async function getPeerMessages(force = false): Promise<ChatMessage[]> {
   const now = Date.now();
-  if (!force && cachedPeerMessages.length > 0 && now - lastPeerMessagesFetch < 3000) {
+  if (!force && cachedPeerMessages.length > 0 && now - lastPeerMessagesFetch < 30000) {
     return cachedPeerMessages;
   }
   if (peerMessagesPromise) {
@@ -431,7 +431,7 @@ export async function deletePeerMessage(messageId: string): Promise<void> {
 export async function getChatRooms(userId?: string, force = false): Promise<ChatRoom[]> {
   const cacheKey = userId || 'all';
   const now = Date.now();
-  if (!force && cachedRoomsMap.has(cacheKey) && now - (lastRoomsFetchTime.get(cacheKey) || 0) < 3000) {
+  if (!force && cachedRoomsMap.has(cacheKey) && now - (lastRoomsFetchTime.get(cacheKey) || 0) < 30000) {
     return cachedRoomsMap.get(cacheKey)!;
   }
   if (chatRoomsPromises.has(cacheKey)) {
