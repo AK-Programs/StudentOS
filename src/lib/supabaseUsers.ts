@@ -65,11 +65,24 @@ function isValidUUID(str: string): boolean {
   return uuidRegex.test(str);
 }
 
+// In-memory profile cache to prevent duplicate queries
+const profileCache = new Map<string, { profile: UserProfile; timestamp: number }>();
+const CACHE_TTL_MS = 30000; // 30 seconds
+
 /**
  * Fetches a user profile from Supabase user_profiles table.
  * If not found, falls back to old `users` table for legacy compatibility.
  */
-export async function getSupabaseUserProfile(uid: string, email?: string): Promise<UserProfile | null> {
+export async function getSupabaseUserProfile(uid: string, email?: string, forceRefresh = false): Promise<UserProfile | null> {
+  const cacheKey = uid || email || '';
+  const now = Date.now();
+  if (!forceRefresh && cacheKey && profileCache.has(cacheKey)) {
+    const cached = profileCache.get(cacheKey)!;
+    if (now - cached.timestamp < CACHE_TTL_MS) {
+      return cached.profile;
+    }
+  }
+
   console.log('[SUPABASE-USERS] Fetching profile for uid:', uid, 'email:', email);
   let data: any = null;
 
@@ -141,6 +154,9 @@ export async function getSupabaseUserProfile(uid: string, email?: string): Promi
     saveSupabaseUserProfile(profile).catch(err => console.error("Failed to migrate legacy profile", err));
   }
 
+  if (profile.uid) profileCache.set(profile.uid, { profile, timestamp: Date.now() });
+  if (profile.email) profileCache.set(profile.email.toLowerCase(), { profile, timestamp: Date.now() });
+
   return profile;
 }
 
@@ -190,7 +206,10 @@ export async function saveSupabaseUserProfile(profile: UserProfile): Promise<Use
 
     if (error) throw error;
     
-    return mapSupabaseUserToProfile(data);
+    const savedProfile = mapSupabaseUserToProfile(data);
+    if (savedProfile.uid) profileCache.set(savedProfile.uid, { profile: savedProfile, timestamp: Date.now() });
+    if (savedProfile.email) profileCache.set(savedProfile.email.toLowerCase(), { profile: savedProfile, timestamp: Date.now() });
+    return savedProfile;
   } catch (error) {
     console.error('[SUPABASE-USERS] Failed to save user profile:', error);
     throw error;
