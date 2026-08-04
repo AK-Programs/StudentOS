@@ -131,7 +131,10 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
           data = await response.json();
         } catch (_) {
           const text = await response.text().catch(() => '');
-          data = { code: text || `graph TD\n  Start[${aiPromptQuery}] --> Concept1[Primary Mechanism]` };
+          const words = aiPromptQuery.replace(/[^a-zA-Z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 2);
+          const k1 = words[0] ? (words[0].charAt(0).toUpperCase() + words[0].slice(1)) : 'Initiation';
+          const k2 = words[1] ? (words[1].charAt(0).toUpperCase() + words[1].slice(1)) : 'Reaction';
+          data = { code: text || `flowchart TD\n  Start[${aiPromptQuery} Fundamentals] --> Concept1[${k1} & ${k2} Pathways]` };
         }
         const mermaidCode = data.mermaid || data.code;
         if (mermaidCode) {
@@ -169,7 +172,11 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
               const mermaidModule = await import('mermaid');
               const mermaid: any = mermaidModule.default || mermaidModule;
               const safeId = `mermaid_safe_${Date.now()}`;
-              const cleanFallback = `graph TD\n  Start[${aiPromptQuery}] --> Step1[Primary Mechanism / Law]\n  Step1 --> Step2[Key Observations]\n  Step2 --> Output[Practical Applications]`;
+              const words = aiPromptQuery.replace(/[^a-zA-Z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 2);
+              const k1 = words[0] ? (words[0].charAt(0).toUpperCase() + words[0].slice(1)) : 'Initiation';
+              const k2 = words[1] ? (words[1].charAt(0).toUpperCase() + words[1].slice(1)) : 'Reaction';
+              const k3 = words[2] ? (words[2].charAt(0).toUpperCase() + words[2].slice(1)) : 'Synthesis';
+              const cleanFallback = `flowchart TD\n  Start[${aiPromptQuery} Fundamentals] --> Step1[${k1} Activation]\n  Step1 --> Step2[${k2} Dynamic Pathway]\n  Step2 --> Output[${k3} Synthesis & Equilibrium]`;
               const { svg } = await mermaid.render(safeId, cleanFallback);
               const img = new Image();
               img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
