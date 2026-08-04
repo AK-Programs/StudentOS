@@ -58,6 +58,7 @@ export async function saveAppNotification(notif: AppNotification): Promise<void>
       type: notif.type,
       created_at: notif.createdAt ? new Date(notif.createdAt).toISOString() : new Date().toISOString(),
       is_read: notif.isRead,
+      read: notif.isRead,
       target_user_id: notif.targetUserId || 'all',
       target_class: notif.targetClass || null,
       link_tab: notif.linkTab || null
@@ -87,7 +88,7 @@ export async function saveAppNotification(notif: AppNotification): Promise<void>
  */
 export async function markNotificationAsRead(notifId: string): Promise<void> {
   try {
-    await supabase.from('notifications').update({ is_read: true }).eq('id', notifId);
+    await supabase.from('notifications').update({ is_read: true, read: true }).eq('id', notifId);
   } catch (err) {
     console.warn('[SUPABASE-NOTIFS] Error marking notification read:', err);
   }
@@ -99,9 +100,9 @@ export async function markNotificationAsRead(notifId: string): Promise<void> {
 export async function markAllNotificationsAsRead(userId?: string): Promise<void> {
   try {
     if (userId) {
-      await supabase.from('notifications').update({ is_read: true }).or(`target_user_id.eq.${userId},target_user_id.eq.all`);
+      await supabase.from('notifications').update({ is_read: true, read: true }).or(`target_user_id.eq.${userId},target_user_id.eq.all`);
     } else {
-      await supabase.from('notifications').update({ is_read: true }).eq('target_user_id', 'all');
+      await supabase.from('notifications').update({ is_read: true, read: true }).eq('target_user_id', 'all');
     }
   } catch (err) {
     console.warn('[SUPABASE-NOTIFS] Error marking all read:', err);
