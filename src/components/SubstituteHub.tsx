@@ -63,10 +63,10 @@ export const SubstituteHub = ({ currentUser, effectiveRole, showNotification }: 
   useEffect(() => {
     const fetchStorage = async () => {
       try {
-        const { data: swapsData } = await supabase.from('substitute_hub').select('data').eq('id', 'global_swaps').single();
+        const { data: swapsData } = await supabase.from('substitute_hub').select('data').eq('id', 'global_swaps').maybeSingle();
         if (swapsData && swapsData.data) setSwaps(JSON.parse(swapsData.data));
         
-        const { data: emergData } = await supabase.from('substitute_hub').select('data').eq('id', 'global_emergencies').single();
+        const { data: emergData } = await supabase.from('substitute_hub').select('data').eq('id', 'global_emergencies').maybeSingle();
         if (emergData && emergData.data) setEmergencies(JSON.parse(emergData.data));
       } catch(e){}
     };
@@ -96,7 +96,7 @@ export const SubstituteHub = ({ currentUser, effectiveRole, showNotification }: 
   useEffect(() => {
     const loadData = async () => {
       try {
-        const { data, error } = await supabase.from('substitute_hub').select('data').eq('id', 'global_substitutes').single();
+        const { data, error } = await supabase.from('substitute_hub').select('data').eq('id', 'global_substitutes').maybeSingle();
         if (error) throw error;
         if (data && data.data) {
           setAssignments(JSON.parse(data.data));
@@ -175,7 +175,7 @@ export const SubstituteHub = ({ currentUser, effectiveRole, showNotification }: 
     // Trigger local broadcast notification
     try {
       try {
-        const { data: notifData } = await supabase.from('substitute_hub').select('data').eq('id', 'global_alerts').single();
+        const { data: notifData } = await supabase.from('substitute_hub').select('data').eq('id', 'global_alerts').maybeSingle();
         const currentAlerts = notifData && notifData.data ? JSON.parse(notifData.data) : [];
         const newAlert = {
           id: `notif-${Date.now()}`,
