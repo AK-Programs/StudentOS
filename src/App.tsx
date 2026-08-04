@@ -1785,11 +1785,16 @@ What can I clarify today?` }
     if (!currentUser || activeTab !== 'feedback') return;
     const loadFeedbacks = async () => {
       try {
-        const { data, error } = await supabase.from('global_data').select('*').eq('id', '__global_feedbacks__').single();
+        const { data } = await supabase.from('global_data').select('*').eq('id', '__global_feedbacks__').maybeSingle();
         if (data && data.content) {
           setFeedbackPosts(JSON.parse(data.content));
         } else {
           setFeedbackPosts(INITIAL_FEEDBACK);
+          await supabase.from('global_data').upsert({
+            id: '__global_feedbacks__',
+            content: JSON.stringify(INITIAL_FEEDBACK),
+            updated_at: new Date().toISOString()
+          }).catch(() => {});
         }
       } catch (e) {
         setFeedbackPosts(INITIAL_FEEDBACK);
@@ -1803,11 +1808,16 @@ What can I clarify today?` }
     if (!currentUser || activeTab !== 'dashboard') return;
     const loadAnnouncements = async () => {
       try {
-        const { data } = await supabase.from('global_data').select('*').eq('id', '__global_announcements__').single();
+        const { data } = await supabase.from('global_data').select('*').eq('id', '__global_announcements__').maybeSingle();
         if (data && data.content) {
           setAnnouncements(JSON.parse(data.content));
         } else {
           setAnnouncements(INITIAL_ANNOUNCEMENTS);
+          await supabase.from('global_data').upsert({
+            id: '__global_announcements__',
+            content: JSON.stringify(INITIAL_ANNOUNCEMENTS),
+            updated_at: new Date().toISOString()
+          }).catch(() => {});
         }
       } catch (e) {
         setAnnouncements(INITIAL_ANNOUNCEMENTS);
