@@ -47,7 +47,7 @@ export const CollaborativeLectureNotes: React.FC<CollaborativeLectureNotesProps>
           .from('lecture_notes')
           .select('*')
           .eq('id', lectureId)
-          .single();
+          .maybeSingle();
 
         if (!lErr && lectureData) {
           noteData = lectureData;
@@ -57,7 +57,7 @@ export const CollaborativeLectureNotes: React.FC<CollaborativeLectureNotesProps>
             .from('notes')
             .select('*')
             .eq('id', lectureId)
-            .single();
+            .maybeSingle();
           if (vaultData) noteData = vaultData;
         }
 
