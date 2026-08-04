@@ -9,7 +9,7 @@ import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 import { WebSocketServer, WebSocket as WSWebSocket } from 'ws';
-import { generateMermaidDiagram, generateSvgDiagram, generateCanvasElements } from './server/diagramEngine.js';
+import { generateMermaidDiagram, generateSvgDiagram, generateCanvasElements, getSmartFallbackMermaid, getSmartFallbackSvg } from './server/diagramEngine.js';
 
 dotenv.config();
 
@@ -18,27 +18,8 @@ const PORT = 3000;
 
 app.use(express.json({ limit: '10mb' }));
 
-// Shared Gemini SDK Client lazy setup
-let aiInstance: GoogleGenAI | null = null;
-export function getGoogleGenAI(): GoogleGenAI | null {
-  if (aiInstance) return aiInstance;
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return null;
-  try {
-    aiInstance = new GoogleGenAI({
-      apiKey: apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        },
-      },
-    });
-    return aiInstance;
-  } catch (err) {
-    console.error('Failed to initialize Gemini SDK Client:', err);
-    return null;
-  }
-}
+import { getGoogleGenAI } from './server/aiClient.js';
+export { getGoogleGenAI };
 
 function sanitizeHistory(history: any[] = []): { role: 'user' | 'assistant'; content: string }[] {
   if (!Array.isArray(history) || history.length === 0) return [];
@@ -407,17 +388,21 @@ app.post('/api/ai/diagram', async (req, res) => {
 app.post('/api/ai/mermaid', async (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   try {
-    const { query } = req.body || {};
-    if (!query) return res.status(400).json({ success: false, error: 'Query is required' });
+    const query = req.body?.query || req.body?.prompt || req.body?.topic || '';
+    if (!query || typeof query !== 'string' || !query.trim()) {
+      return res.status(400).json({ success: false, error: 'Query is required' });
+    }
     const result = await generateMermaidDiagram(query);
-    return res.json(result);
+    return res.status(200).json(result);
   } catch (err: any) {
     console.error('[AI Server] Mermaid error:', err);
-    return res.json({
+    const rawQuery = req.body?.query || req.body?.prompt || req.body?.topic || 'Concept Architecture';
+    const fallbackCode = getSmartFallbackMermaid(rawQuery);
+    return res.status(200).json({
       success: true,
-      mermaid: `graph TD\n  Start[${req.body?.query || 'Concept'}] --> Step1[Processing]\n  Step1 --> Step2[Verification]`,
-      code: `graph TD\n  Start[${req.body?.query || 'Concept'}] --> Step1[Processing]\n  Step1 --> Step2[Verification]`,
-      title: req.body?.query || 'Diagram'
+      mermaid: fallbackCode,
+      code: fallbackCode,
+      title: rawQuery
     });
   }
 });
@@ -426,17 +411,23 @@ app.post('/api/ai/mermaid', async (req, res) => {
 app.post('/api/ai/svg-diagram', async (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   try {
-    const { query, subject = 'general' } = req.body || {};
-    if (!query) return res.status(400).json({ success: false, error: 'Query is required' });
+    const query = req.body?.query || req.body?.prompt || req.body?.topic || '';
+    const subject = req.body?.subject || 'general';
+    if (!query || typeof query !== 'string' || !query.trim()) {
+      return res.status(400).json({ success: false, error: 'Query is required' });
+    }
     const result = await generateSvgDiagram(query, subject);
-    return res.json(result);
+    return res.status(200).json(result);
   } catch (err: any) {
     console.error('[AI Server] SVG Diagram error:', err);
-    return res.json({
+    const rawQuery = req.body?.query || req.body?.prompt || req.body?.topic || 'Educational Diagram';
+    const subject = req.body?.subject || 'general';
+    const fallbackSvg = getSmartFallbackSvg(rawQuery, subject);
+    return res.status(200).json({
       success: true,
-      svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 400"><rect width="600" height="400" fill="#0f172a"/><text x="300" y="200" fill="#ffffff" font-size="20" text-anchor="middle">${req.body?.query || 'Diagram'}</text></svg>`,
-      title: req.body?.query || 'Diagram',
-      subject: req.body?.subject || 'general'
+      svg: fallbackSvg,
+      title: rawQuery,
+      subject
     });
   }
 });
