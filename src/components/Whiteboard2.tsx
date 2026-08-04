@@ -131,8 +131,7 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
           data = await response.json();
         } catch (_) {
           const text = await response.text().catch(() => '');
-          // Use mindmap format with the actual topic as the root - no generic labels
-          data = { code: text || `mindmap\n  root(("${aiPromptQuery}"))\n    Key Concepts\n      What is ${aiPromptQuery}?\n      Main Components\n    How It Works\n      Relationships\n      Cause and Effect\n    Applications\n      Real-World Examples\n      Modern Uses` };
+          data = { code: text || `graph TD\n  Start[${aiPromptQuery}] --> Concept1[Primary Mechanism]` };
         }
         const mermaidCode = data.mermaid || data.code;
         if (mermaidCode) {
@@ -165,38 +164,8 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
             };
             setAiTip(`🧜‍♂️ Educational Mermaid diagram inserted for "${aiPromptQuery}"`);
           } catch(mErr) {
-            console.warn("Mermaid execution notice, rendering safe fallback:", mErr);
-            try {
-              const mermaidModule = await import('mermaid');
-              const mermaid: any = mermaidModule.default || mermaidModule;
-              const safeId = `mermaid_safe_${Date.now()}`;
-              // Use a simple flowchart with the actual topic name - no generic labels
-              const cleanFallback = `flowchart TD\n  A["${aiPromptQuery}"] --> B["Definition & Overview"]\n  A --> C["Main Components"]\n  A --> D["How It Works"]\n  B --> E["Key Characteristics"]\n  C --> F["Real-World Applications"]`;
-              const { svg } = await mermaid.render(safeId, cleanFallback);
-              const img = new Image();
-              img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
-              img.onload = () => {
-                const svgShape: ShapeObj = {
-                  id: `mermaid-${Date.now()}`,
-                  type: 'svg_node',
-                  x: 100,
-                  y: 100,
-                  width: 520,
-                  height: 380,
-                  stroke: '#818cf8',
-                  strokeWidth: 0,
-                  imageObj: img
-                };
-                setSlides(prev => {
-                  const updated = [...prev];
-                  updated[activeSlideIdx].shapes = [...(updated[activeSlideIdx].shapes || []), svgShape];
-                  return updated;
-                });
-              };
-              setAiTip(`🧜‍♂️ Educational Mermaid diagram inserted for "${aiPromptQuery}"`);
-            } catch (retryErr) {
-              console.error("Mermaid fallback render error:", retryErr);
-            }
+            console.error("Mermaid generation or render error:", mErr);
+            setAiTip(`❌ Mermaid could not render diagram. Check console.`);
           }
         }
       } else if (effectiveTool === 'svg') {
@@ -234,38 +203,9 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
           } else {
             throw new Error('No SVG returned');
           }
-        } catch (_) {
-          // Instant Multi-Node Canvas Fallback Mode
-          const now = Date.now();
-          const words = aiPromptQuery.split(/\s+/).filter(w => w.length > 2);
-          const t1 = words[0] ? words[0] : 'Input Stage';
-          const t2 = words[1] ? words[1] : 'Processing';
-          const t3 = words[2] ? words[2] : 'Execution';
-          const fallbackShapes: ShapeObj[] = [
-            { id: `rect-${now}-0`, type: 'rect', x: 260, y: 80, width: 240, height: 50, fill: '#1e1b4b', stroke: '#6366f1', strokeWidth: 2, text: `Topic: ${aiPromptQuery}` },
-            { id: `rect-${now}-1`, type: 'rect', x: 100, y: 170, width: 180, height: 50, fill: '#064e3b', stroke: '#10b981', strokeWidth: 2, text: `1. ${t1}` },
-            { id: `rect-${now}-2`, type: 'rect', x: 300, y: 170, width: 180, height: 50, fill: '#4c1d95', stroke: '#c084fc', strokeWidth: 2, text: `2. ${t2}` },
-            { id: `rect-${now}-3`, type: 'rect', x: 500, y: 170, width: 180, height: 50, fill: '#701a75', stroke: '#f472b6', strokeWidth: 2, text: `3. ${t3}` },
-            { id: `rect-${now}-4`, type: 'rect', x: 100, y: 260, width: 180, height: 45, fill: '#1e293b', stroke: '#38bdf8', strokeWidth: 2, text: 'Sub-Process A' },
-            { id: `rect-${now}-5`, type: 'rect', x: 300, y: 260, width: 180, height: 45, fill: '#881337', stroke: '#f43f5e', strokeWidth: 2, text: 'Feedback Loop' },
-            { id: `rect-${now}-6`, type: 'rect', x: 500, y: 260, width: 180, height: 45, fill: '#78350f', stroke: '#fbbf24', strokeWidth: 2, text: 'System Application' },
-            { id: `rect-${now}-7`, type: 'rect', x: 220, y: 350, width: 340, height: 55, fill: '#065f46', stroke: '#34d399', strokeWidth: 2.5, text: `Final Output & Synthesis` },
-            { id: `arrow-${now}-8`, type: 'arrow', x: 0, y: 0, points: [380, 130, 190, 170], stroke: '#10b981', strokeWidth: 2 },
-            { id: `arrow-${now}-9`, type: 'arrow', x: 0, y: 0, points: [380, 130, 390, 170], stroke: '#c084fc', strokeWidth: 2 },
-            { id: `arrow-${now}-10`, type: 'arrow', x: 0, y: 0, points: [380, 130, 590, 170], stroke: '#f472b6', strokeWidth: 2 },
-            { id: `arrow-${now}-11`, type: 'arrow', x: 0, y: 0, points: [190, 220, 190, 260], stroke: '#38bdf8', strokeWidth: 2 },
-            { id: `arrow-${now}-12`, type: 'arrow', x: 0, y: 0, points: [390, 220, 390, 260], stroke: '#f43f5e', strokeWidth: 2 },
-            { id: `arrow-${now}-13`, type: 'arrow', x: 0, y: 0, points: [590, 220, 590, 260], stroke: '#fbbf24', strokeWidth: 2 },
-            { id: `arrow-${now}-14`, type: 'arrow', x: 0, y: 0, points: [190, 305, 390, 350], stroke: '#34d399', strokeWidth: 2 },
-            { id: `arrow-${now}-15`, type: 'arrow', x: 0, y: 0, points: [390, 305, 390, 350], stroke: '#34d399', strokeWidth: 2 },
-            { id: `arrow-${now}-16`, type: 'arrow', x: 0, y: 0, points: [590, 305, 390, 350], stroke: '#34d399', strokeWidth: 2 }
-          ];
-          setSlides(prev => {
-            const updated = [...prev];
-            updated[activeSlideIdx].shapes = [...(updated[activeSlideIdx].shapes || []), ...fallbackShapes];
-            return updated;
-          });
-          setAiTip(`🧩 Dynamic Concept Map generated for "${aiPromptQuery}"`);
+        } catch (err) {
+          console.error('SVG Generation Error:', err);
+          setAiTip(`❌ AI engine could not generate diagram. Check server logs.`);
         }
       } else {
         try {
@@ -298,19 +238,9 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
             return updated;
           });
           setAiTip(`🪄 AI Assistant generated a diagram for "${aiPromptQuery}"`);
-        } catch (_) {
-          // Instant Canvas Fallback Mode
-          const fallbackShapes: ShapeObj[] = [
-            { id: `rect-${Date.now()}-0`, type: 'rect', x: 120, y: 120, width: 220, height: 60, fill: '#312e81', stroke: '#818cf8', strokeWidth: 2, text: aiPromptQuery },
-            { id: `circle-${Date.now()}-1`, type: 'circle', x: 230, y: 280, radius: 45, fill: '#831843', stroke: '#ec4899', strokeWidth: 2, text: 'Process' },
-            { id: `arrow-${Date.now()}-2`, type: 'arrow', x: 0, y: 0, points: [220, 180, 220, 235], stroke: '#ffffff', strokeWidth: 2 }
-          ];
-          setSlides(prev => {
-            const updated = [...prev];
-            updated[activeSlideIdx].shapes = [...(updated[activeSlideIdx].shapes || []), ...fallbackShapes];
-            return updated;
-          });
-          setAiTip(`🧩 Canvas Diagram Mode generated for "${aiPromptQuery}"`);
+        } catch (err) {
+          console.error('Canvas Diagram Error:', err);
+          setAiTip(`❌ AI engine could not generate diagram. Check server logs.`);
         }
       }
     } catch (e) {
