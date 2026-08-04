@@ -713,13 +713,18 @@ export const StudentOSJarvis: React.FC<StudentOSJarvisProps> = ({
   const queryJarvisAIStream = async (command: string): Promise<{ responseText: string; action: string; targetValue?: string }> => {
     try {
       let aiText = '';
+      
+      // Build RAG Context from StudentOS
+      const { data: materialsData } = await supabase.from('materials').select('title, category, content').limit(5);
+      const ragContext = materialsData ? materialsData.map((m: any) => `[${m.category}] ${m.title}: ${m.content ? m.content.substring(0, 100) : ''}`).join('\n') : 'No local resources found.';
+
       try {
         const response = await fetch('/api/ai/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            prompt: `You are StudentOS Jarvis, the advanced AI Teacher Copilot for smart classroom boards.
-            The user is an instructor. They typed/spoke this command: "${command}".
+            prompt: `You are StudentOS Orion, the advanced AI Teacher Copilot and Student Assistant.
+            The user typed/spoke this command: "${command}".
             
             Analyze the command and classify the user's intent into exactly ONE action:
             - "search_internet" (if they want to find resources, watch educational videos, lookup topics online)
@@ -729,18 +734,20 @@ export const StudentOSJarvis: React.FC<StudentOSJarvisProps> = ({
             - "file_analysis" (if they reference an attached file, PDF, diagram, or image)
             - "draw_on_whiteboard" / "write_on_whiteboard" (if they want to draw shapes like circle/rect/triangle/arrow/star or write text on whiteboard)
             - "navigate_tab" (if they want to navigate specifically to tabs like assignments, timetable, attendance_manager, materials, etc.)
-            - "general_chat" (if it is a greeting, general comment, or non-action statement)
+            - "general_chat" (if it is a greeting, general comment, question, or non-action statement)
 
             Your response must be a valid JSON object in this EXACT format:
             {
-              "responseText": "Your complete response. IMPORTANT: If they asked for 10 MCQs, a quiz, study guide, or notes, DO NOT give a generic reply. Write and fully compile the complete 10 MCQs, study guide, or notes directly inside this responseText field in gorgeous, deep educational Markdown format so the user can see and read it immediately!",
+              "responseText": "Your complete response. IMPORTANT: If they ask a general question, answer it thoroughly here. If they asked for a quiz or notes, write and fully compile the complete notes directly inside this responseText field in gorgeous, deep educational Markdown format so the user can see and read it immediately!",
               "action": "one of: [search_internet, generate_notes, generate_quiz, generate_lesson_plan, file_analysis, draw_on_whiteboard, write_on_whiteboard, navigate_tab, general_chat]",
               "targetValue": "Extracted topic, name, search query, shape, or key argument"
             }
             Do not output any markdown code blocks enclosing the JSON. Return only the raw JSON.`,
-            persona: 'study_buddy',
+            persona: 'orion',
             level: 'Secondary',
-            mode: 'explanatory'
+            mode: 'explanatory',
+            history: historyItems.map(item => ({ role: 'user', content: item.prompt })).flatMap(u => [u, { role: 'assistant', content: '...' }]).slice(-6), // Send last 3 pairs
+            ragContext: ragContext
           })
         });
 
