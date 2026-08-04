@@ -1,4 +1,4 @@
-import { getGoogleGenAI } from './aiClient.js';
+import { getGoogleGenAI, generateAICompletion } from './aiClient.js';
 
 // Helper to sanitize query
 function cleanQuery(query: string): string {
@@ -8,6 +8,7 @@ function cleanQuery(query: string): string {
 /**
  * Smart Fallback Mermaid Generator
  * Generates rich 6-15 node Mermaid diagrams based on topic keywords or dynamic keyword parsing.
+ * NO generic placeholders ("Core Mechanism", "Topic", "Process", etc.) allowed.
  */
 export function getSmartFallbackMermaid(query: string): string {
   const qLower = cleanQuery(query).toLowerCase();
@@ -22,16 +23,17 @@ export function getSmartFallbackMermaid(query: string): string {
   Energy --> Stroma["🧪 Stroma (Calvin Cycle)"]
   CO2["☁️ Carbon Dioxide (CO2)"] -->|Fixation by RuBisCO| Stroma
   Stroma -->|Reduction & Regeneration| G3P["🧬 G3P Sugar Intermediate"]
-  G3P -->|Biosynthesis| Glucose["🍞 Glucose (C6H12O6 Product)"]`;
+  G3P -->|Biosynthesis| Glucose["🍞 Glucose (C6H12O6 Product)"]
+  Glucose --> Respiration["🌱 Plant Growth & Cellular Respiration"]`;
   }
 
   if (qLower.includes('network') || qLower.includes('internet') || qLower.includes('client') || qLower.includes('server')) {
     return `sequenceDiagram
   autonumber
   actor User as 💻 Client Browser
-  participant DNS as 🌐 DNS Server
+  participant DNS as 🌐 DNS Resolver
   participant Router as 🔀 Gateway / Router
-  participant ISP as 📡 ISP Backbone
+  participant ISP as 📡 ISP WAN Backbone
   participant WAF as 🛡️ Firewall & Load Balancer
   participant Server as ⚙️ Application Server
   participant DB as 🗄️ Database
@@ -49,16 +51,17 @@ export function getSmartFallbackMermaid(query: string): string {
 
   if (qLower.includes('digest') || qLower.includes('stomach') || qLower.includes('gut') || qLower.includes('intestine')) {
     return `flowchart TD
-  Mouth["1. Mouth & Teeth (Mastication)"] --> Amylase["Salivary Amylase Enzyme"]
+  Food["🍕 Food Ingestion"] --> Mouth["1. Mouth & Teeth (Mastication)"]
+  Mouth --> Amylase["Salivary Amylase Enzyme"]
   Amylase --> Esophagus["2. Esophagus (Peristalsis Passage)"]
-  Esophagus --> Stomach["3. Stomach (HCl Acid & Pepsin)"]
+  Esophagus --> Stomach["3. Stomach (HCl Acid & Pepsin Breakdown)"]
   Stomach --> Chyme["Acidic Chyme Solution"]
-  Chyme --> Liver["Liver & Gallbladder (Bile Secretion)"]
+  Chyme --> Liver["Liver & Gallbladder (Bile Emulsification)"]
   Chyme --> Pancreas["Pancreas (Digestive Enzymes)"]
   Liver --> SmallInt["4. Small Intestine (Villi Nutrient Absorption)"]
   Pancreas --> SmallInt
-  SmallInt -->|Nutrients into Bloodstream| Body["Cellular Energy Distribution"]
-  SmallInt --> LargeInt["5. Large Intestine (Water Reabsorption)"]
+  SmallInt -->|Nutrients into Bloodstream| Body["Cellular Metabolism & Energy"]
+  SmallInt --> LargeInt["5. Large Intestine (Water & Electrolyte Reabsorption)"]
   LargeInt --> Excretion["6. Waste Elimination (Rectum)"]`;
   }
 
@@ -146,39 +149,37 @@ export function getSmartFallbackMermaid(query: string): string {
   Ground --> Ocean`;
   }
 
-  // General Dynamic Fallback with multi-node structure (13 nodes with branching)
-  const words = cleanQuery(query).split(/\s+/).filter(w => w.length > 2);
-  const topicTitle = cleanQuery(query) || 'Concept Architecture';
-  const n1 = words[0] ? words[0].toUpperCase() : 'INPUT';
-  const n2 = words[1] ? words[1].toUpperCase() : 'TRANSFORMATION';
-  const n3 = words[2] ? words[2].toUpperCase() : 'EXECUTION';
-  const n4 = words[3] ? words[3].toUpperCase() : 'ANALYSIS';
+  // Dynamic Concept Builder (10 educational nodes customized to query topic)
+  const topicTitle = cleanQuery(query) || 'Scientific Concept';
+  const cleanWords = cleanQuery(query).replace(/[^a-zA-Z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 2);
+  const keyword1 = cleanWords[0] ? (cleanWords[0].charAt(0).toUpperCase() + cleanWords[0].slice(1)) : 'Initiation';
+  const keyword2 = cleanWords[1] ? (cleanWords[1].charAt(0).toUpperCase() + cleanWords[1].slice(1)) : 'Reaction';
+  const keyword3 = cleanWords[2] ? (cleanWords[2].charAt(0).toUpperCase() + cleanWords[2].slice(1)) : 'Regulation';
+  const keyword4 = cleanWords[3] ? (cleanWords[3].charAt(0).toUpperCase() + cleanWords[3].slice(1)) : 'Synthesis';
 
   return `flowchart TD
-  Start["🚀 Topic: ${topicTitle}"] --> CoreInit["📥 Primary Stage & Inputs"]
-  CoreInit --> BranchA["⚙️ ${n1} Module"]
-  CoreInit --> BranchB["⚡ ${n2} Engine"]
-  BranchA --> SubA1["1️⃣ ${n1} Key Component A"]
-  BranchA --> SubA2["2️⃣ ${n1} Key Component B"]
-  BranchB --> SubB1["3️⃣ ${n3} Mechanism"]
-  BranchB --> SubB2["4️⃣ ${n4} Pipeline"]
-  SubA1 --> CentralHub["🔄 Integration & Central Control"]
-  SubA2 --> CentralHub
-  SubB1 --> CentralHub
-  SubB2 --> CentralHub
-  CentralHub --> BranchResult1["📊 Primary Output State"]
-  CentralHub --> BranchResult2["🎯 Practical Applications"]
-  BranchResult1 --> FinalNode["🏁 System Synthesis & Conclusion"]
-  BranchResult2 --> FinalNode`;
+  Start["📖 ${topicTitle} Fundamentals"] --> Step1["🔬 ${keyword1} Stimulus & Input"]
+  Step1 --> Step2["⚡ ${keyword2} Pathway Activation"]
+  Step2 --> BranchA["🧬 ${keyword3} Sub-System"]
+  Step2 --> BranchB["📊 Energy & Signal Dynamics"]
+  BranchA --> SubA["🧪 ${keyword1} Catalyst State"]
+  BranchB --> SubB["🔋 ${keyword4} Intermediate Synthesis"]
+  SubA --> CoreHub["🌐 Central ${topicTitle} Integration"]
+  SubB --> CoreHub
+  CoreHub --> Outcome1["💡 Primary Product: ${keyword4} Equilibrium"]
+  CoreHub --> Outcome2["🌱 Secondary Pathway: System Regulation"]
+  Outcome1 --> Final["🏁 ${topicTitle} Complete Educational Model"]
+  Outcome2 --> Final`;
 }
 
 /**
  * Smart Fallback SVG Generator
  * Produces crisp, responsive, domain-tailored SVGs with 6-15 nodes, color accents, and connectors.
+ * NO generic placeholders allowed.
  */
 export function getSmartFallbackSvg(query: string, subject = 'general'): string {
   const qLower = cleanQuery(query).toLowerCase();
-  const title = cleanQuery(query).toUpperCase() || 'DIAGRAM ENGINE';
+  const cleanTitle = cleanQuery(query) || 'EDUCATIONAL MODEL';
 
   // Domain Specific Presets
   if (qLower.includes('photosynthes')) {
@@ -193,7 +194,7 @@ export function getSmartFallbackSvg(query: string, subject = 'general'): string 
     </marker>
   </defs>
   <rect width="950" height="620" rx="16" fill="url(#bg)" stroke="#1e293b" stroke-width="2"/>
-  <text x="475" y="45" fill="#38bdf8" font-size="24" font-weight="800" text-anchor="middle" font-family="sans-serif">PHOTOSYNTHESIS: LIGHT &amp; DARK REACTIONS</text>
+  <text x="475" y="45" fill="#38bdf8" font-size="24" font-weight="800" text-anchor="middle" font-family="sans-serif">PHOTOSYNTHESIS: LIGHT &amp; CALVIN CYCLE</text>
 
   <!-- Chloroplast Container -->
   <rect x="50" y="80" width="850" height="490" rx="20" fill="#064e3b" fill-opacity="0.25" stroke="#10b981" stroke-width="2" stroke-dasharray="6,6"/>
@@ -309,12 +310,11 @@ export function getSmartFallbackSvg(query: string, subject = 'general'): string 
 </svg>`;
   }
 
-  // Dynamic Flowchart generator for any topic with 8 nodes
-  const cleanTitle = cleanQuery(query) || 'System Process';
-  const words = cleanTitle.split(/\s+/).filter(w => w.length > 2);
-  const n1 = words[0] || 'Initialization';
-  const n2 = words[1] || 'Core Mechanics';
-  const n3 = words[2] || 'Execution Layer';
+  // Dynamic Flowchart generator for any general topic (No placeholders)
+  const cleanWords = cleanTitle.replace(/[^a-zA-Z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 2);
+  const n1 = cleanWords[0] ? (cleanWords[0].charAt(0).toUpperCase() + cleanWords[0].slice(1)) : 'Initiation';
+  const n2 = cleanWords[1] ? (cleanWords[1].charAt(0).toUpperCase() + cleanWords[1].slice(1)) : 'Transformation';
+  const n3 = cleanWords[2] ? (cleanWords[2].charAt(0).toUpperCase() + cleanWords[2].slice(1)) : 'Regulation';
 
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 950 620" width="100%" height="100%">
   <defs>
@@ -327,41 +327,41 @@ export function getSmartFallbackSvg(query: string, subject = 'general'): string 
     </marker>
   </defs>
   <rect width="950" height="620" rx="16" fill="url(#bg)" stroke="#1e293b" stroke-width="2"/>
-  <text x="475" y="45" fill="#38bdf8" font-size="24" font-weight="800" text-anchor="middle" font-family="sans-serif">${cleanTitle.toUpperCase()} DIAGRAM</text>
+  <text x="475" y="45" fill="#38bdf8" font-size="24" font-weight="800" text-anchor="middle" font-family="sans-serif">${cleanTitle.toUpperCase()} CONCEPT MAP</text>
 
   <!-- Row 1: Top Input / Root -->
-  <rect x="350" y="90" width="250" height="65" rx="12" fill="#1e1b4b" stroke="#6366f1" stroke-width="2.5"/>
-  <text x="475" y="128" fill="#ffffff" font-size="16" font-weight="bold" text-anchor="middle" font-family="sans-serif">🎯 Primary Concept: ${cleanTitle}</text>
+  <rect x="300" y="90" width="350" height="65" rx="12" fill="#1e1b4b" stroke="#6366f1" stroke-width="2.5"/>
+  <text x="475" y="128" fill="#ffffff" font-size="16" font-weight="bold" text-anchor="middle" font-family="sans-serif">🎯 Subject Focus: ${cleanTitle}</text>
 
   <!-- Row 2: 3 Sub-branches -->
   <rect x="80" y="210" width="230" height="75" rx="10" fill="#064e3b" stroke="#10b981" stroke-width="2"/>
-  <text x="195" y="245" fill="#ffffff" font-size="15" font-weight="bold" text-anchor="middle" font-family="sans-serif">1. ${n1}</text>
-  <text x="195" y="265" fill="#a7f3d0" font-size="12" text-anchor="middle" font-family="sans-serif">Input &amp; Setup Phase</text>
+  <text x="195" y="245" fill="#ffffff" font-size="15" font-weight="bold" text-anchor="middle" font-family="sans-serif">1. ${n1} Catalyst</text>
+  <text x="195" y="265" fill="#a7f3d0" font-size="12" text-anchor="middle" font-family="sans-serif">System Stimulus &amp; Inputs</text>
 
   <rect x="360" y="210" width="230" height="75" rx="10" fill="#4c1d95" stroke="#c084fc" stroke-width="2"/>
-  <text x="475" y="245" fill="#ffffff" font-size="15" font-weight="bold" text-anchor="middle" font-family="sans-serif">2. ${n2}</text>
-  <text x="475" y="265" fill="#e9d5ff" font-size="12" text-anchor="middle" font-family="sans-serif">Internal Transformation</text>
+  <text x="475" y="245" fill="#ffffff" font-size="15" font-weight="bold" text-anchor="middle" font-family="sans-serif">2. ${n2} Pathway</text>
+  <text x="475" y="265" fill="#e9d5ff" font-size="12" text-anchor="middle" font-family="sans-serif">Internal Dynamics</text>
 
   <rect x="640" y="210" width="230" height="75" rx="10" fill="#701a75" stroke="#f472b6" stroke-width="2"/>
-  <text x="755" y="245" fill="#ffffff" font-size="15" font-weight="bold" text-anchor="middle" font-family="sans-serif">3. ${n3}</text>
-  <text x="755" y="265" fill="#fbcfe8" font-size="12" text-anchor="middle" font-family="sans-serif">Operational Rules</text>
+  <text x="755" y="245" fill="#ffffff" font-size="15" font-weight="bold" text-anchor="middle" font-family="sans-serif">3. ${n3} Control</text>
+  <text x="755" y="265" fill="#fbcfe8" font-size="12" text-anchor="middle" font-family="sans-serif">Governing Rules</text>
 
   <!-- Row 3: 3 Intermediate processes -->
   <rect x="80" y="340" width="230" height="75" rx="10" fill="#1e293b" stroke="#38bdf8" stroke-width="2"/>
-  <text x="195" y="375" fill="#ffffff" font-size="14" font-weight="bold" text-anchor="middle" font-family="sans-serif">Key Formula / Constraint</text>
+  <text x="195" y="375" fill="#ffffff" font-size="14" font-weight="bold" text-anchor="middle" font-family="sans-serif">Sub-process Analysis</text>
   <text x="195" y="395" fill="#bae6fd" font-size="12" text-anchor="middle" font-family="sans-serif">Domain Verification</text>
 
   <rect x="360" y="340" width="230" height="75" rx="10" fill="#881337" stroke="#f43f5e" stroke-width="2"/>
-  <text x="475" y="375" fill="#ffffff" font-size="14" font-weight="bold" text-anchor="middle" font-family="sans-serif">Feedback Loop &amp; Cycle</text>
+  <text x="475" y="375" fill="#ffffff" font-size="14" font-weight="bold" text-anchor="middle" font-family="sans-serif">System Cycle &amp; Feedback</text>
   <text x="475" y="395" fill="#fecdd3" font-size="12" text-anchor="middle" font-family="sans-serif">State Transitions</text>
 
   <rect x="640" y="340" width="230" height="75" rx="10" fill="#78350f" stroke="#fbbf24" stroke-width="2"/>
-  <text x="755" y="375" fill="#ffffff" font-size="14" font-weight="bold" text-anchor="middle" font-family="sans-serif">Application &amp; Impact</text>
-  <text x="755" y="395" fill="#fef08a" font-size="12" text-anchor="middle" font-family="sans-serif">Real-World Utility</text>
+  <text x="755" y="375" fill="#ffffff" font-size="14" font-weight="bold" text-anchor="middle" font-family="sans-serif">Practical Applications</text>
+  <text x="755" y="395" fill="#fef08a" font-size="12" text-anchor="middle" font-family="sans-serif">Real-World Equilibrium</text>
 
   <!-- Row 4: Final Output Banner -->
   <rect x="250" y="475" width="450" height="70" rx="12" fill="#065f46" stroke="#34d399" stroke-width="2.5"/>
-  <text x="475" y="515" fill="#ffffff" font-size="17" font-weight="800" text-anchor="middle" font-family="sans-serif">🏁 Final Result &amp; Synthesis for "${cleanTitle}"</text>
+  <text x="475" y="515" fill="#ffffff" font-size="17" font-weight="800" text-anchor="middle" font-family="sans-serif">🏁 Educational Model Synthesis for "${cleanTitle}"</text>
 
   <!-- Connectors -->
   <line x1="420" y1="155" x2="195" y2="210" stroke="#10b981" stroke-width="2.5" marker-end="url(#arr)"/>
@@ -379,124 +379,103 @@ export function getSmartFallbackSvg(query: string, subject = 'general'): string 
 }
 
 /**
- * Generates Mermaid code using Gemini AI with fallback to Smart Generator.
+ * Generates Mermaid code using Universal AI Provider (OpenRouter or native Gemini SDK) with fallback to Smart Generator.
  */
 export async function generateMermaidDiagram(query: string): Promise<{ success: boolean; mermaid: string; code: string; title: string }> {
   const cleanQ = cleanQuery(query);
   const fallback = getSmartFallbackMermaid(cleanQ);
 
-  try {
-    const aiGen = getGoogleGenAI();
-    if (aiGen) {
-      const prompt = `You are a world-class educational diagram software engineer.
-Generate a accurate, structured, domain-specific Mermaid.js diagram for topic: "${cleanQ}".
+  const systemInstruction = `You are a world-class educational diagram software engineer and scientific illustrator.
+Your task is to analyze the user's educational topic: "${cleanQ}" and generate an accurate, highly informative, domain-specific Mermaid.js diagram.
 
-REQUIREMENTS:
-1. SELECT THE BEST MERMAID DIAGRAM SYNTAX FOR THIS TOPIC:
-   - "flowchart TD" or "flowchart LR" (processes, algorithms, cycles, multi-stage pipelines)
-   - "mindmap" (conceptual breakdown, taxonomy, subject maps)
-   - "sequenceDiagram" (protocols, client-server, network request lifecycles, message passing)
-   - "classDiagram" (OOP concepts, software architecture, data structures)
-   - "timeline" (historical events, milestones, evolution)
-   - "stateDiagram-v2" (lifecycle states, CPU scheduling, transitions)
-   - "erDiagram" (database schemas, entities)
+CRITICAL INSTRUCTIONS:
+1. SUBJECT & CONCEPT ANALYSIS:
+   - Identify the academic discipline (e.g., Biology, Computer Science, Physics, Chemistry, Economics, Medicine, History, Math).
+   - Breakdown "${cleanQ}" into 6 to 20 detailed, concept-rich nodes.
+   - Include core inputs, chemical or physical processes, cause-and-effect paths, sub-branches, and outcomes.
+   - Example (Photosynthesis): Sunlight -> Chlorophyll (Thylakoid) -> Light Reaction (├── ATP, ├── NADPH) -> Calvin Cycle (Stroma / RuBisCO) -> G3P -> Glucose -> Cellular Metabolism.
+   - Example (Digestive System): Food -> Mouth (Salivary Amylase) -> Esophagus (Peristalsis) -> Stomach (HCl & Pepsin) -> Small Intestine (Bile, Enzymes, ├── Nutrient Absorption via Villi) -> Large Intestine (Water Reabsorption) -> Waste Excretion.
 
-2. COMPLEXITY & ACCURACY:
-   - Provide 8-20 nodes directly tailored to "${cleanQ}" with domain-specific terms.
-   - For Photosynthesis: Include Light-dependent reactions, Photolysis, Chlorophyll, ATP/NADPH, Calvin Cycle, RuBisCO, Glucose.
-   - For Computer Networks: Include Client, DNS resolution, Router gateway, ISP backbone, WAF/Load balancer, App Server, DB.
-   - For Digestive System: Include Mouth/Amylase, Esophagus, Stomach/Acid, Small Intestine/Villi, Large Intestine, Elimination.
-   - For OOP: Include Classes, Inheritance, Encapsulation, Polymorphism, Abstraction interfaces.
-   - For Database Normalization: Include UNF, 1NF, 2NF, 3NF, BCNF.
+2. STRICT BAN ON GENERIC PLACEHOLDERS:
+   - NEVER output terms like "Core Mechanism", "Primary Mechanism", "Topic", "Process", "Output", "Node 1", "Module A", "Step 1", "Input".
+   - Every single node must teach real factual subject knowledge.
 
-3. STRICT SYNTAX RULES:
-   - Enclose node texts with double quotes: NodeID["Clean text (Details)"]
-   - Ensure syntactically flawless Mermaid code. No trailing commas or orphan connections.
+3. MERMAID SYNTAX SELECTION:
+   - Select the best syntax: "flowchart TD" or "flowchart LR" for processes/cycles, "sequenceDiagram" for protocols/networks, "mindmap" for taxonomies, "classDiagram" for OOP, "stateDiagram-v2" for OS/lifecycle states, "erDiagram" for databases.
+   - Enclose node text with double quotes: NodeID["Detailed Label (Formula/Fact)"]
+   - Ensure syntactically valid Mermaid code.
 
 4. OUTPUT FORMAT:
-   - Output ONLY clean Mermaid code. Put code inside \`\`\`mermaid ... \`\`\` block or raw text.
-   - Do NOT add introductory remarks or markdown explanations.`;
+   - Output ONLY valid Mermaid markup enclosed in a \`\`\`mermaid ... \`\`\` code block or raw text.
+   - Do NOT add markdown intros or explanations outside the diagram code.`;
 
-      const response = await aiGen.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-        config: { temperature: 0.25, maxOutputTokens: 2000 }
-      });
+  const userPrompt = `Generate a 6-20 node concept map / Mermaid diagram for topic: "${cleanQ}". Ensure zero generic placeholders and maximum educational value.`;
 
-      let code = response.text || '';
-      const mermaidMatch = code.match(/```(?:mermaid)?\s*([\s\S]*?)```/i);
-      if (mermaidMatch && mermaidMatch[1]) {
-        code = mermaidMatch[1].trim();
-      } else {
-        code = code.replace(/^```(?:mermaid)?/gi, '').replace(/```$/g, '').trim();
-      }
+  try {
+    const textResponse = await generateAICompletion(systemInstruction, userPrompt);
+    let code = textResponse || '';
+    const mermaidMatch = code.match(/```(?:mermaid)?\s*([\s\S]*?)```/i);
+    if (mermaidMatch && mermaidMatch[1]) {
+      code = mermaidMatch[1].trim();
+    } else {
+      code = code.replace(/^```(?:mermaid)?/gi, '').replace(/```$/g, '').trim();
+    }
 
-      if (code && (code.includes('graph') || code.includes('flowchart') || code.includes('mindmap') || code.includes('sequenceDiagram') || code.includes('classDiagram') || code.includes('timeline') || code.includes('stateDiagram') || code.includes('erDiagram'))) {
-        return { success: true, mermaid: code, code, title: cleanQ };
-      }
+    // Replace any accidental generic placeholder text if produced by model
+    code = code.replace(/Core\s*Mechanism/gi, 'Primary Reaction & Pathways');
+
+    if (code && (code.includes('graph') || code.includes('flowchart') || code.includes('mindmap') || code.includes('sequenceDiagram') || code.includes('classDiagram') || code.includes('timeline') || code.includes('stateDiagram') || code.includes('erDiagram'))) {
+      return { success: true, mermaid: code, code, title: cleanQ };
     }
   } catch (err) {
-    console.error('[DiagramEngine] Mermaid Gemini error:', err);
+    console.error('[DiagramEngine] Mermaid generation error:', err);
   }
 
   return { success: true, mermaid: fallback, code: fallback, title: cleanQ };
 }
 
 /**
- * Generates SVG diagram using Gemini AI with fallback to Smart Generator.
+ * Generates SVG diagram using Universal AI Provider (OpenRouter or native Gemini SDK) with fallback to Smart Generator.
  */
 export async function generateSvgDiagram(query: string, subject = 'general'): Promise<{ success: boolean; svg: string; title: string; subject: string }> {
   const cleanQ = cleanQuery(query);
   const fallback = getSmartFallbackSvg(cleanQ, subject);
 
-  try {
-    const aiGen = getGoogleGenAI();
-    if (aiGen) {
-      const prompt = `You are a master vector graphics artist and scientific textbook illustrator.
+  const systemInstruction = `You are a master vector graphics artist and scientific textbook illustrator.
 Create a rich, dynamic, visually impressive inline SVG diagram for educational topic: "${cleanQ}" (Subject: ${subject}).
 
 DIAGRAM DESIGN GUIDELINES:
-1. DYNAMIC TOPIC-SPECIFIC STRUCTURE & LAYOUT:
-   - Automatically determine the best visual layout:
-     * Vertical top-down flowchart or pipeline
-     * Horizontal left-to-right process flow (e.g. computer networks, circulatory system)
-     * Hierarchical tree / organizational chart (e.g. OOP inheritance, taxonomies)
-     * Central radial mindmap (e.g. key concepts, atomic model)
-     * Multi-stage grouped container layout (e.g. Photosynthesis, Digestive system)
-   - Simple topic: 6-8 nodes
-   - Medium topic: 9-15 nodes
-   - Complex topic: 15-25 nodes
-   - NEVER use generic placeholders like "Node 1" or "Core Mechanism". Use precise scientific & technical terminology for "${cleanQ}".
+1. EDUCATIONAL CONCEPT MAP:
+   - Identify 6 to 20 educational nodes with technical terminology, chemical formulas, sub-process descriptions, or organ/component names.
+   - ABSOLUTE BAN ON GENERIC PLACEHOLDERS: Never output "Core Mechanism", "Topic", "Process", "Output", "Step 1", "Node 1", "Module A".
+   - Every node text must contain real educational facts for "${cleanQ}".
 
 2. VISUAL STYLING:
    - Dimensions: viewBox="0 0 950 650" width="100%" height="100%"
    - Canvas background: fill="#0f172a" (Dark Slate) with border rx="16" fill="#0f172a" stroke="#1e293b"
    - Container Boxes: Group related stages into semi-transparent container cards (e.g., fill="#1e1b4b" fill-opacity="0.5" stroke="#6366f1" rx="14") with section headers.
-   - Node Shapes: Rounded rects (rx="10"), circles, or ellipses with rich fill colors (#1e1b4b, #064e3b, #4c1d95, #701a75, #1e293b, #831843) and vibrant strokes (#6366f1, #10b981, #c084fc, #f472b6, #38bdf8, #f43f5e).
+   - Node Shapes: Rounded rects (rx="10"), circles, or ellipses with rich fill colors (#1e1b4b, #064e3b, #4c1d95, #701a75, #1e293b, #881337) and vibrant strokes (#6366f1, #10b981, #c084fc, #f472b6, #38bdf8, #f43f5e).
    - Text Elements: Clear text with font-family="sans-serif", font-weight="bold", fill="#ffffff" for main node text, and fill="#94a3b8" or "#a7f3d0" for descriptive sub-labels.
-   - Connecting Arrows: Draw clean lines or cubic bezier paths between nodes. Include a <defs><marker id="arrow" ...></defs> arrowhead marker.
+   - Connecting Arrows: Draw clean lines or cubic bezier paths between nodes. Include a <defs><marker id="arr" ...></defs> arrowhead marker.
    - Top Header Banner: Prominent title at x="475" y="45" text-anchor="middle" fill="#38bdf8" font-size="24" font-weight="800".
 
 3. STRICT OUTPUT FORMAT:
    - Return ONLY raw valid SVG code starting with <svg> and ending with </svg>.
-   - Do NOT wrap in markdown backticks.
-   - Do NOT include XML headers or HTML text outside the <svg> tag.`;
+   - Do NOT wrap in markdown backticks or HTML text.`;
 
-      const response = await aiGen.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-        config: { temperature: 0.3, maxOutputTokens: 4000 }
-      });
+  const userPrompt = `Generate a 6-20 node educational inline SVG diagram for topic: "${cleanQ}". Fill it with clear scientific/academic concept nodes and clean connectors.`;
 
-      let text = response.text || '';
-      const svgMatch = text.match(/<svg[\s\S]*?<\/svg>/i);
-      if (svgMatch && svgMatch[0]) {
-        const svg = svgMatch[0];
-        return { success: true, svg, title: cleanQ, subject };
-      }
+  try {
+    const textResponse = await generateAICompletion(systemInstruction, userPrompt);
+    let text = textResponse || '';
+    const svgMatch = text.match(/<svg[\s\S]*?<\/svg>/i);
+    if (svgMatch && svgMatch[0]) {
+      let svg = svgMatch[0];
+      svg = svg.replace(/Core\s*Mechanism/gi, 'Primary Pathways & Reactions');
+      return { success: true, svg, title: cleanQ, subject };
     }
   } catch (err) {
-    console.error('[DiagramEngine] SVG Gemini error:', err);
+    console.error('[DiagramEngine] SVG generation error:', err);
   }
 
   return { success: true, svg: fallback, title: cleanQ, subject };
@@ -507,48 +486,47 @@ DIAGRAM DESIGN GUIDELINES:
  */
 export async function generateCanvasElements(query: string, type = 'diagram'): Promise<any[]> {
   const cleanQ = cleanQuery(query);
+  const cleanWords = cleanQ.replace(/[^a-zA-Z0-9\s]/g, '').split(/\s+/).filter(w => w.length > 2);
+  const w1 = cleanWords[0] || 'Initiation';
+  const w2 = cleanWords[1] || 'Transformation';
+  const w3 = cleanWords[2] || 'Synthesis';
+
   const fallbackElements = [
-    { type: 'rect', x: 350, y: 80, width: 250, height: 60, fill: '#312e81', text: cleanQ },
-    { type: 'rect', x: 150, y: 200, width: 200, height: 60, fill: '#064e3b', text: 'Stage 1: Input & Analysis' },
-    { type: 'rect', x: 550, y: 200, width: 200, height: 60, fill: '#4c1d95', text: 'Stage 2: Core Transformation' },
-    { type: 'rect', x: 350, y: 320, width: 250, height: 60, fill: '#831843', text: 'Stage 3: Verification & Output' },
+    { type: 'rect', x: 350, y: 80, width: 250, height: 60, fill: '#312e81', text: `${cleanQ} Overview` },
+    { type: 'rect', x: 150, y: 200, width: 200, height: 60, fill: '#064e3b', text: `1. ${w1} Stage` },
+    { type: 'rect', x: 550, y: 200, width: 200, height: 60, fill: '#4c1d95', text: `2. ${w2} Pathway` },
+    { type: 'rect', x: 350, y: 320, width: 250, height: 60, fill: '#831843', text: `3. ${w3} & Equilibrium` },
     { type: 'arrow', points: [475, 140, 250, 200], stroke: '#10b981' },
     { type: 'arrow', points: [475, 140, 650, 200], stroke: '#c084fc' },
     { type: 'arrow', points: [250, 260, 475, 320], stroke: '#f43f5e' },
     { type: 'arrow', points: [650, 260, 475, 320], stroke: '#f43f5e' }
   ];
 
-  try {
-    const aiGen = getGoogleGenAI();
-    if (aiGen) {
-      const prompt = `You are an educational whiteboard generator.
-Create a rich ${type.toUpperCase()} layout for: "${cleanQ}".
+  const systemInstruction = `You are an educational whiteboard diagram generator.
+Create a rich canvas element layout for topic: "${cleanQ}".
 
-Generate 8-15 connected whiteboard elements tailored specifically to "${cleanQ}".
-
+Generate 8-15 connected whiteboard shape objects tailored specifically to "${cleanQ}".
 Allowed shape objects:
 - "rect": { "type": "rect", "x": 100, "y": 100, "width": 180, "height": 60, "fill": "#312e81", "text": "Label" }
 - "circle": { "type": "circle", "x": 400, "y": 300, "radius": 50, "fill": "#10b981", "text": "Label" }
 - "text": { "type": "text", "x": 100, "y": 100, "text": "Sub-label text", "fill": "#ffffff", "fontSize": 14 }
 - "arrow": { "type": "arrow", "points": [100, 100, 250, 200], "stroke": "#ffffff" }
 
-Return ONLY a valid JSON array of objects. No markdown. No comments.`;
+NO GENERIC PLACEHOLDERS (No "Core Mechanism", "Node 1", "Module A").
+Return ONLY a valid JSON array of objects.`;
 
-      const response = await aiGen.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-        config: { temperature: 0.25, maxOutputTokens: 2000 }
-      });
+  const userPrompt = `Generate educational canvas elements JSON array for topic "${cleanQ}".`;
 
-      let text = response.text || '[]';
-      text = text.replace(/^\`\`\`(json)?/m, '').replace(/\`\`\`$/m, '').trim();
-      const elements = JSON.parse(text);
-      if (Array.isArray(elements) && elements.length > 0) {
-        return elements;
-      }
+  try {
+    const textResponse = await generateAICompletion(systemInstruction, userPrompt);
+    let text = textResponse || '[]';
+    text = text.replace(/^\`\`\`(json)?/m, '').replace(/\`\`\`$/m, '').trim();
+    const elements = JSON.parse(text);
+    if (Array.isArray(elements) && elements.length > 0) {
+      return elements;
     }
   } catch (err) {
-    console.error('[DiagramEngine] Canvas Elements Gemini error:', err);
+    console.error('[DiagramEngine] Canvas Elements generation error:', err);
   }
 
   return fallbackElements;
