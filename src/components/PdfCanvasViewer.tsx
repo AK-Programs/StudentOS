@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Loader2, ExternalLink, Download } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Loader2, ExternalLink, Download, Sparkles, BookOpen, Layers, HelpCircle, FileText, Globe, X } from 'lucide-react';
 
 interface PdfCanvasViewerProps {
   url: string;
@@ -13,10 +13,43 @@ export const PdfCanvasViewer: React.FC<PdfCanvasViewerProps> = ({ url, title, on
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [numPages, setNumPages] = useState<number>(0);
   const [useGoogleFallback, setUseGoogleFallback] = useState<boolean>(false);
+
+  // AI PDF Assistant state
+  const [aiDrawerOpen, setAiDrawerOpen] = useState<boolean>(false);
+  const [aiActionType, setAiActionType] = useState<'summary' | 'flashcards' | 'mcqs' | 'extract_points' | 'translate' | 'ask'>('summary');
+  const [aiQuestion, setAiQuestion] = useState<string>('');
+  const [aiResult, setAiResult] = useState<string>('');
+  const [aiLoading, setAiLoading] = useState<boolean>(false);
   
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const pdfRef = useRef<any>(null);
   const renderTaskRef = useRef<any>(null);
+
+  const handleRunAiAssistant = async (action: 'summary' | 'flashcards' | 'mcqs' | 'extract_points' | 'translate' | 'ask', questionStr?: string) => {
+    setAiActionType(action);
+    setAiDrawerOpen(true);
+    setAiLoading(true);
+    setAiResult('');
+
+    try {
+      const response = await fetch('/api/ai/pdf-assistant', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pdfTitle: title || 'Uploaded Document',
+          action: action,
+          textSnippet: `Document Title: ${title || 'Document'}. Page ${currentPage} of ${numPages || 1}.`,
+          question: questionStr || aiQuestion
+        })
+      });
+      const data = await response.json();
+      setAiResult(data.text || 'Analysis completed.');
+    } catch (err: any) {
+      setAiResult('Error connecting to AI Assistant: ' + err.message);
+    } finally {
+      setAiLoading(false);
+    }
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -209,11 +242,102 @@ export const PdfCanvasViewer: React.FC<PdfCanvasViewerProps> = ({ url, title, on
         </div>
       ) : (
         <>
-          <div className="flex-grow overflow-auto p-2 bg-slate-900 border-b border-white/5 flex items-center justify-center min-h-[240px] max-h-[310px]">
+          <div className="bg-slate-950 px-2 py-1.5 border-b border-white/5 flex items-center gap-1.5 overflow-x-auto text-[10px]">
+            <span className="text-indigo-400 font-bold flex items-center gap-1 px-2 py-0.5 bg-indigo-500/10 rounded-lg whitespace-nowrap">
+              <Sparkles className="w-3 h-3 text-indigo-400" /> AI Assistant:
+            </span>
+            <button
+              onClick={() => handleRunAiAssistant('summary')}
+              className="px-2 py-1 bg-slate-900 hover:bg-slate-800 border border-white/10 rounded-lg text-slate-200 font-medium flex items-center gap-1 transition-all whitespace-nowrap active:scale-95"
+            >
+              <FileText className="w-2.5 h-2.5 text-teal-400" /> Summary
+            </button>
+            <button
+              onClick={() => handleRunAiAssistant('flashcards')}
+              className="px-2 py-1 bg-slate-900 hover:bg-slate-800 border border-white/10 rounded-lg text-slate-200 font-medium flex items-center gap-1 transition-all whitespace-nowrap active:scale-95"
+            >
+              <Layers className="w-2.5 h-2.5 text-amber-400" /> Flashcards
+            </button>
+            <button
+              onClick={() => handleRunAiAssistant('mcqs')}
+              className="px-2 py-1 bg-slate-900 hover:bg-slate-800 border border-white/10 rounded-lg text-slate-200 font-medium flex items-center gap-1 transition-all whitespace-nowrap active:scale-95"
+            >
+              <HelpCircle className="w-2.5 h-2.5 text-indigo-400" /> MCQs
+            </button>
+            <button
+              onClick={() => handleRunAiAssistant('extract_points')}
+              className="px-2 py-1 bg-slate-900 hover:bg-slate-800 border border-white/10 rounded-lg text-slate-200 font-medium flex items-center gap-1 transition-all whitespace-nowrap active:scale-95"
+            >
+              <BookOpen className="w-2.5 h-2.5 text-emerald-400" /> Key Points
+            </button>
+            <button
+              onClick={() => handleRunAiAssistant('translate')}
+              className="px-2 py-1 bg-slate-900 hover:bg-slate-800 border border-white/10 rounded-lg text-slate-200 font-medium flex items-center gap-1 transition-all whitespace-nowrap active:scale-95"
+            >
+              <Globe className="w-2.5 h-2.5 text-rose-400" /> Translate
+            </button>
+          </div>
+
+          <div className="flex-grow overflow-auto p-2 bg-slate-900 border-b border-white/5 flex items-center justify-center min-h-[240px] max-h-[310px] relative">
             <canvas
               ref={canvasRef}
               className="max-w-full max-h-full object-contain shadow-md rounded border border-white/10 bg-white"
             />
+
+            {/* AI Assistant Overlay Drawer */}
+            {aiDrawerOpen && (
+              <div className="absolute inset-0 bg-slate-950/95 backdrop-blur-md z-30 p-4 flex flex-col justify-between overflow-y-auto animate-fadeIn">
+                <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-indigo-400 animate-pulse" />
+                    <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                      AI PDF Assistant ({aiActionType.toUpperCase()})
+                    </h4>
+                  </div>
+                  <button
+                    onClick={() => setAiDrawerOpen(false)}
+                    className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-white/10"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="my-3 flex-grow overflow-auto">
+                  {aiLoading ? (
+                    <div className="h-full flex flex-col items-center justify-center space-y-2 py-8">
+                      <Loader2 className="w-6 h-6 text-indigo-400 animate-spin" />
+                      <p className="text-[11px] text-slate-300 font-medium">Orion AI reading & processing PDF content...</p>
+                    </div>
+                  ) : (
+                    <div className="text-xs text-slate-200 whitespace-pre-wrap leading-relaxed space-y-2 bg-slate-900/60 p-3 rounded-xl border border-white/5">
+                      {aiResult}
+                    </div>
+                  )}
+                </div>
+
+                <div className="pt-2 border-t border-white/10 flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={aiQuestion}
+                    onChange={(e) => setAiQuestion(e.target.value)}
+                    placeholder="Ask Orion anything about this document..."
+                    className="flex-1 bg-slate-900 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && aiQuestion.trim()) {
+                        handleRunAiAssistant('ask', aiQuestion);
+                      }
+                    }}
+                  />
+                  <button
+                    onClick={() => handleRunAiAssistant('ask', aiQuestion)}
+                    disabled={!aiQuestion.trim() || aiLoading}
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-lg text-xs font-bold transition-all"
+                  >
+                    Ask
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="bg-slate-950 px-3.5 py-2 flex items-center justify-between text-[11px] border-t border-white/5">
