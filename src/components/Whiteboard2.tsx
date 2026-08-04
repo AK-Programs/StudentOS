@@ -200,8 +200,43 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
               });
             };
             setAiTip(`🎨 Educational SVG diagram inserted for "${aiPromptQuery}"`);
+          } else if (data.mermaid) {
+            console.warn('SVG failed, but Mermaid returned. Rendering Mermaid instead.');
+            const mermaidCode = data.mermaid;
+            const mermaidId = `mermaid-${Date.now()}`;
+            const container = document.createElement('div');
+            container.id = mermaidId;
+            container.style.position = 'absolute';
+            container.style.left = '-9999px';
+            document.body.appendChild(container);
+            
+            try {
+              mermaid.mermaidAPI.initialize({ startOnLoad: false, theme: 'dark' });
+              const { svg } = await mermaid.render(mermaidId, mermaidCode, container);
+              const img = new Image();
+              img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+              img.onload = () => {
+                const shape: ShapeObj = {
+                  id: `mermaid-diagram-${Date.now()}`,
+                  type: 'mermaid_node',
+                  x: 50, y: 50, width: 800, height: 600,
+                  stroke: '#10b981', strokeWidth: 0, imageObj: img
+                };
+                setSlides(prev => {
+                  const updated = [...prev];
+                  updated[activeSlideIdx].shapes = [...(updated[activeSlideIdx].shapes || []), shape];
+                  return updated;
+                });
+              };
+              setAiTip(`🎨 Mermaid diagram rendered for "${aiPromptQuery}" (SVG unavailable)`);
+            } catch (merr) {
+              console.error('Mermaid Fallback render failed:', merr);
+              setAiTip(`❌ AI engine could not generate diagram. Check server logs.`);
+            } finally {
+              container.remove();
+            }
           } else {
-            throw new Error('No SVG returned');
+            throw new Error('No SVG and no Mermaid returned');
           }
         } catch (err) {
           console.error('SVG Generation Error:', err);
@@ -230,6 +265,10 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
                 newShapes.push({ id: `arrow-${Date.now()}-${index}`, type: 'arrow', x: 0, y: 0, points: el.points || [100,100,200,200], stroke: el.stroke || '#fff', strokeWidth: 2 });
               }
             });
+          }
+          
+          if (newShapes.length === 0) {
+            throw new Error('No valid diagram elements returned');
           }
           
           setSlides(prev => {
