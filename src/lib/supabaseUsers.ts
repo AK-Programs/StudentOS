@@ -8,6 +8,7 @@ export interface SupabaseUser {
   role: string;
   permissions?: string[];
   created_at?: string;
+  pin?: string;
 }
 
 /**
@@ -30,6 +31,8 @@ export function mapSupabaseUserToProfile(u: any): UserProfile {
     photoURL: u.photo_url || u.profile_image || u.photoURL || '',
     avatar: u.photo_url || u.profile_image || u.photoURL || '',
     accountStatus: u.account_status || u.accountStatus || 'approved',
+    phone: u.raw_data?.phone || '',
+    birthdate: u.raw_data?.birthdate || '',
     pin: u.pin || '',
     requestedRole: u.requested_role || u.requestedRole || u.role,
     studyHours: u.studyHours || 14,
@@ -49,6 +52,7 @@ export function mapProfileToSupabaseUser(profile: UserProfile): Partial<Supabase
     full_name: profile.name,
     role: profile.role,
     permissions: profile.permissions || [],
+    pin: profile.pin || null,
   };
 }
 
@@ -169,7 +173,12 @@ export async function saveSupabaseUserProfile(profile: UserProfile): Promise<Use
     photo_url: profile.photoURL || null,
     requested_role: profile.requestedRole || profile.role,
     account_status: profile.accountStatus || 'approved',
-    raw_data: profile.raw_data || null,
+    raw_data: { 
+      ...(profile.raw_data || {}), 
+      phone: profile.phone,
+      birthdate: profile.birthdate
+    },
+    pin: profile.pin || null,
   };
 
   try {
@@ -177,7 +186,7 @@ export async function saveSupabaseUserProfile(profile: UserProfile): Promise<Use
       .from('user_profiles')
       .upsert(upsertData, { onConflict: 'id' })
       .select()
-      .single();
+      .maybeSingle();
 
     if (error) throw error;
     
