@@ -62,57 +62,48 @@ export const SportsActivitiesPortal = ({ currentUser, showNotification }: any) =
   const [compDraft, setCompDraft] = useState<Partial<Competition>>({ status: 'Scheduled' });
   const [achDraft, setAchDraft] = useState<Partial<Achievement>>({ level: 'Inter-School' });
 
-  // Load state from LocalStorage
+  // Load state from Supabase
   useEffect(() => {
-    const uid = currentUser?.uid || 'guest';
-    try {
-      const p = localStorage.getItem(`s_os_sports_part_${uid}`);
-      const e = localStorage.getItem(`s_os_sports_ev_${uid}`);
-      const c = localStorage.getItem(`s_os_sports_comp_${uid}`);
-      const a = localStorage.getItem(`s_os_sports_ach_${uid}`);
+    const uid = currentUser?.uid;
+    if (!uid) return;
 
-      if (p) setParticipations(JSON.parse(p));
-      else {
-        // Seed default participations
-        const defaults: StudentParticipation[] = [
-          { id: 'p-1', studentName: 'Aarav Sharma', grade: 'Grade 10', activity: 'Football', role: 'Striker', status: 'Active', hoursLogged: 12 },
-          { id: 'p-2', studentName: 'Diya Patel', grade: 'Grade 9', activity: 'Basketball', role: 'Point Guard', status: 'Active', hoursLogged: 15 },
-          { id: 'p-3', studentName: 'Kabir Mehta', grade: 'Grade 11', activity: 'Athletics', role: 'Sprinter', status: 'Injured', hoursLogged: 8 }
-        ];
-        setParticipations(defaults);
-        localStorage.setItem(`s_os_sports_part_${uid}`, JSON.stringify(defaults));
+    const loadFromSupabase = async () => {
+      try {
+        const { data, error } = await supabase.from('sports_activities').select('data').eq('id', `sports_${uid}`).maybeSingle();
+        if (error) throw error;
+        if (data && data.data) {
+          const parsed = JSON.parse(data.data);
+          if (parsed.participations) setParticipations(parsed.participations);
+          if (parsed.events) setEvents(parsed.events);
+          if (parsed.competitions) setCompetitions(parsed.competitions);
+          if (parsed.achievements) setAchievements(parsed.achievements);
+          return;
+        }
+      } catch (e) {
+        console.warn('Supabase load failed, using defaults:', e);
       }
-
-      if (e) setEvents(JSON.parse(e));
-      else {
-        const defaults: SchoolEvent[] = [
-          { id: 'e-1', title: 'Annual Inter-House Sports Day', date: '2026-10-15', time: '08:00 - 16:00', venue: 'Main Ground', type: 'Inter-House', status: 'Upcoming' },
-          { id: 'e-2', title: 'Friendly Match vs St. Xavier Hockey Club', date: '2026-07-28', time: '15:30 - 17:00', venue: 'North Turf', type: 'Friendly', status: 'Upcoming' }
-        ];
-        setEvents(defaults);
-        localStorage.setItem(`s_os_sports_ev_${uid}`, JSON.stringify(defaults));
-      }
-
-      if (c) setCompetitions(JSON.parse(c));
-      else {
-        const defaults: Competition[] = [
-          { id: 'c-1', name: 'District Basketball Tournament', opponent: 'DPS Falcons', sport: 'Basketball', date: '2026-06-12', score: '56 - 48', status: 'Won' },
-          { id: 'c-2', name: 'Regional Football League', opponent: 'Navy Children School', sport: 'Football', date: '2026-07-20', score: '0 - 0', status: 'Scheduled' }
-        ];
-        setCompetitions(defaults);
-        localStorage.setItem(`s_os_sports_comp_${uid}`, JSON.stringify(defaults));
-      }
-
-      if (a) setAchievements(JSON.parse(a));
-      else {
-        const defaults: Achievement[] = [
-          { id: 'a-1', studentName: 'Diya Patel', sportActivity: 'Basketball', awardName: 'Most Valuable Player', level: 'District', date: '2026-06-12' },
-          { id: 'a-2', studentName: 'Aarav Sharma', sportActivity: 'Football', awardName: 'Top Scorer Cup', level: 'Inter-School', date: '2026-05-30' }
-        ];
-        setAchievements(defaults);
-        localStorage.setItem(`s_os_sports_ach_${uid}`, JSON.stringify(defaults));
-      }
-    } catch (_) {}
+      
+      // Defaults
+      setParticipations([
+        { id: 'p-1', studentName: 'Aarav Sharma', grade: 'Grade 10', activity: 'Football', role: 'Striker', status: 'Active', hoursLogged: 12 },
+        { id: 'p-2', studentName: 'Diya Patel', grade: 'Grade 9', activity: 'Basketball', role: 'Point Guard', status: 'Active', hoursLogged: 15 },
+        { id: 'p-3', studentName: 'Kabir Mehta', grade: 'Grade 11', activity: 'Athletics', role: 'Sprinter', status: 'Injured', hoursLogged: 8 }
+      ]);
+      setEvents([
+        { id: 'e-1', title: 'Annual Inter-House Sports Day', date: '2026-10-15', time: '08:00 - 16:00', venue: 'Main Ground', type: 'Inter-House', status: 'Upcoming' },
+        { id: 'e-2', title: 'Friendly Match vs St. Xavier Hockey Club', date: '2026-07-28', time: '15:30 - 17:00', venue: 'North Turf', type: 'Friendly', status: 'Upcoming' }
+      ]);
+      setCompetitions([
+        { id: 'c-1', name: 'District Basketball Tournament', opponent: 'DPS Falcons', sport: 'Basketball', date: '2026-06-12', score: '56 - 48', status: 'Won' },
+        { id: 'c-2', name: 'Regional Football League', opponent: 'Navy Children School', sport: 'Football', date: '2026-07-20', score: '0 - 0', status: 'Scheduled' }
+      ]);
+      setAchievements([
+        { id: 'a-1', studentName: 'Diya Patel', sportActivity: 'Basketball', awardName: 'Most Valuable Player', level: 'District', date: '2026-06-12' },
+        { id: 'a-2', studentName: 'Aarav Sharma', sportActivity: 'Football', awardName: 'Top Scorer Cup', level: 'Inter-School', date: '2026-05-30' }
+      ]);
+    };
+    
+    loadFromSupabase();
   }, [currentUser]);
 
   // Save states helper
@@ -125,12 +116,11 @@ export const SportsActivitiesPortal = ({ currentUser, showNotification }: any) =
     const uid = currentUser.uid;
     const saveToSupabase = async () => {
       try {
-        await supabase.from('notes').upsert({
+        await supabase.from('sports_activities').upsert({
           id: `sports_${uid}`,
-          title: 'Sports Data',
-          subject: 'System',
-          content: JSON.stringify({ participations, events, competitions, achievements }),
-          created_at: new Date().toISOString()
+          user_id: uid,
+          data: JSON.stringify({ participations, events, competitions, achievements }),
+          updated_at: new Date().toISOString()
         });
       } catch (e) {}
     };
