@@ -9,7 +9,7 @@ import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 import { WebSocketServer, WebSocket as WSWebSocket } from 'ws';
-import { generateMermaidDiagram, generateSvgDiagram, generateCanvasElements } from './server/diagramEngine.ts';
+import { generateMermaidDiagram, generateSvgDiagram, generateCanvasElements } from './server/diagramEngine.js';
 
 dotenv.config();
 
