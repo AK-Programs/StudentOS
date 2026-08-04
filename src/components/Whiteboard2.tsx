@@ -205,34 +205,31 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
             body: JSON.stringify({ query: aiPromptQuery })
           });
           const data = await response.json();
-          if (!data.success || !data.svg || data.svg.includes('<rect width="600" height="450" rx="16" fill="#0f172a" stroke="#334155" stroke-width="2"/>')) {
-             throw new Error('SVG generation failed or fallback used');
-          }
           const svgContent = data.svg;
-          
-          const img = new Image();
-          img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgContent);
-          img.onload = () => {
-            const svgShape: ShapeObj = {
-              id: `svg-${Date.now()}`,
-              type: 'svg_node',
-              x: 100,
-              y: 100,
-              width: 520,
-              height: 390,
-              stroke: '#10b981',
-              strokeWidth: 0,
-              imageObj: img
+          if (svgContent) {
+            const img = new Image();
+            img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgContent);
+            img.onload = () => {
+              const svgShape: ShapeObj = {
+                id: `svg-${Date.now()}`,
+                type: 'svg_node',
+                x: 100,
+                y: 100,
+                width: 520,
+                height: 390,
+                stroke: '#10b981',
+                strokeWidth: 0,
+                imageObj: img
+              };
+              setSlides(prev => {
+                const updated = [...prev];
+                updated[activeSlideIdx].shapes = [...(updated[activeSlideIdx].shapes || []), svgShape];
+                return updated;
+              });
             };
-            setSlides(prev => {
-              const updated = [...prev];
-              updated[activeSlideIdx].shapes = [...(updated[activeSlideIdx].shapes || []), svgShape];
-              return updated;
-            });
-          };
-          setAiTip(`🎨 Educational SVG diagram inserted for "${aiPromptQuery}"`);
+            setAiTip(`🎨 Educational SVG diagram inserted for "${aiPromptQuery}"`);
+          }
         } catch (e) {
-          console.warn('SVG API failed, falling back to editable Canvas Objects:', e);
           const fbResponse = await fetch('/api/ai/diagram', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
