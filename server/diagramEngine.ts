@@ -386,7 +386,7 @@ export function getSmartFallbackSvg(query: string, subject = 'general'): string 
 /**
  * Generates Mermaid code using Gemini AI with fallback to Smart Generator.
  */
-export async function generateMermaidDiagram(query: string): Promise<{ success: boolean; mermaid: string; code: string; title: string }> {
+export async function generateMermaidDiagram(query: string, retries = 1): Promise<{ success: boolean; mermaid: string; code: string; title: string }> {
   const cleanQ = cleanQuery(query);
   const fallback = getSmartFallbackMermaid(cleanQ);
 
@@ -423,11 +423,22 @@ REQUIREMENTS:
    - Do NOT add introductory remarks or markdown explanations.`;
 
       console.log(`[DiagramEngine] generateMermaidDiagram - Exact prompt being sent:\n${prompt}\n`);
-      const response = await aiGen.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-        config: { temperature: 0.25, maxOutputTokens: 2000 }
-      });
+      
+      let response;
+      try {
+        response = await aiGen.models.generateContent({
+          model: 'gemini-2.5-flash',
+          contents: prompt,
+          config: { temperature: 0.25, maxOutputTokens: 2000 }
+        });
+      } catch (aiErr: any) {
+        if (retries > 0) {
+          console.warn(`[DiagramEngine] generateMermaidDiagram - AI failed, retrying...`);
+          return generateMermaidDiagram(query, retries - 1);
+        }
+        console.error(`[DiagramEngine] generateMermaidDiagram - AI failed completely. Error: ${aiErr.message}`);
+        return { success: false, mermaid: '', code: '', title: cleanQ, error: aiErr.message };
+      }
 
       let code = response.text || '';
       console.log(`[DiagramEngine] generateMermaidDiagram - Raw AI response:\n${code}\n`);
@@ -442,22 +453,26 @@ REQUIREMENTS:
       if (code && (code.includes('graph') || code.includes('flowchart') || code.includes('mindmap') || code.includes('sequenceDiagram') || code.includes('classDiagram') || code.includes('timeline') || code.includes('stateDiagram') || code.includes('erDiagram'))) {
         return { success: true, mermaid: code, code, title: cleanQ };
       }
-      console.warn(`[DiagramEngine] generateMermaidDiagram - Failed validation, throwing error.`);
-      throw new Error("Failed to validate Mermaid code from AI");
+      console.warn(`[DiagramEngine] generateMermaidDiagram - Failed validation.`);
+      if (retries > 0) {
+         console.warn(`[DiagramEngine] generateMermaidDiagram - Retrying...`);
+         return generateMermaidDiagram(query, retries - 1);
+      }
+      return { success: false, error: "Failed to validate Mermaid code from AI", mermaid: '', code: '', title: cleanQ };
     } else {
-      console.warn(`[DiagramEngine] generateMermaidDiagram - No Gemini AI instance, throwing error.`);
-      throw new Error("Gemini AI instance not initialized");
+      console.warn(`[DiagramEngine] generateMermaidDiagram - No Gemini AI instance.`);
+      return { success: false, error: "Gemini AI instance not initialized", mermaid: '', code: '', title: cleanQ };
     }
-  } catch (err) {
+  } catch (err: any) {
     console.error('[DiagramEngine] Mermaid Gemini error:', err);
-    throw err;
+    return { success: false, error: err.message, mermaid: '', code: '', title: cleanQ };
   }
 }
 
 /**
  * Generates SVG diagram using Gemini AI with fallback to Smart Generator.
  */
-export async function generateSvgDiagram(query: string, subject = 'general'): Promise<{ success: boolean; svg: string; title: string; subject: string }> {
+export async function generateSvgDiagram(query: string, subject = 'general', retries = 1): Promise<{ success: boolean; svg: string; title: string; subject: string; error?: string; mermaid?: string }> {
   const cleanQ = cleanQuery(query);
   const fallback = getSmartFallbackSvg(cleanQ, subject);
 
@@ -495,11 +510,22 @@ DIAGRAM DESIGN GUIDELINES:
    - Do NOT include XML headers or HTML text outside the <svg> tag.`;
 
       console.log(`[DiagramEngine] generateSvgDiagram - Exact prompt being sent:\n${prompt}\n`);
-      const response = await aiGen.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-        config: { temperature: 0.3, maxOutputTokens: 4000 }
-      });
+      
+      let response;
+      try {
+        response = await aiGen.models.generateContent({
+          model: 'gemini-2.5-flash',
+          contents: prompt,
+          config: { temperature: 0.3, maxOutputTokens: 4000 }
+        });
+      } catch (aiErr: any) {
+        if (retries > 0) {
+          console.warn(`[DiagramEngine] generateSvgDiagram - AI failed, retrying...`);
+          return generateSvgDiagram(query, subject, retries - 1);
+        }
+        console.error(`[DiagramEngine] generateSvgDiagram - AI failed completely. Error: ${aiErr.message}`);
+        return { success: false, error: aiErr.message, svg: '', title: cleanQ, subject, mermaid: '' };
+      }
 
       let text = response.text || '';
       console.log(`[DiagramEngine] generateSvgDiagram - Raw AI response:\n${text}\n`);
@@ -509,22 +535,30 @@ DIAGRAM DESIGN GUIDELINES:
         console.log(`[DiagramEngine] generateSvgDiagram - Final SVG parsed successfully.`);
         return { success: true, svg, title: cleanQ, subject };
       }
-      console.warn(`[DiagramEngine] generateSvgDiagram - Failed to parse SVG, throwing error.`);
-      throw new Error("Failed to validate SVG code from AI");
+      console.warn(`[DiagramEngine] generateSvgDiagram - Failed to parse SVG.`);
+      if (retries > 0) {
+         console.warn(`[DiagramEngine] generateSvgDiagram - Retrying...`);
+         return generateSvgDiagram(query, subject, retries - 1);
+      }
+      
+      // If SVG generation failed, let's try to generate Mermaid as a fallback instead of generic nodes
+      const mermaidFallback = await generateMermaidDiagram(query, 0);
+      
+      return { success: false, error: "Failed to validate SVG code from AI", svg: '', title: cleanQ, subject, mermaid: mermaidFallback.mermaid };
     } else {
-      console.warn(`[DiagramEngine] generateSvgDiagram - No Gemini AI instance, throwing error.`);
-      throw new Error("Gemini AI instance not initialized");
+      console.warn(`[DiagramEngine] generateSvgDiagram - No Gemini AI instance.`);
+      return { success: false, error: "Gemini AI instance not initialized", svg: '', title: cleanQ, subject, mermaid: '' };
     }
-  } catch (err) {
+  } catch (err: any) {
     console.error('[DiagramEngine] SVG Gemini error:', err);
-    throw err;
+    return { success: false, error: err.message, svg: '', title: cleanQ, subject, mermaid: '' };
   }
 }
 
 /**
  * Generates Canvas shape objects for whiteboard diagrams.
  */
-export async function generateCanvasElements(query: string, type = 'diagram'): Promise<any[]> {
+export async function generateCanvasElements(query: string, type = 'diagram', retries = 1): Promise<any[]> {
   const cleanQ = cleanQuery(query);
   const fallbackElements = [
     { type: 'rect', x: 350, y: 80, width: 250, height: 60, fill: '#312e81', text: cleanQ },
@@ -554,11 +588,22 @@ Allowed shape objects:
 Return ONLY a valid JSON array of objects. No markdown. No comments.`;
 
       console.log(`[DiagramEngine] generateCanvasElements - Exact prompt being sent:\n${prompt}\n`);
-      const response = await aiGen.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-        config: { temperature: 0.25, maxOutputTokens: 2000 }
-      });
+      
+      let response;
+      try {
+        response = await aiGen.models.generateContent({
+          model: 'gemini-2.5-flash',
+          contents: prompt,
+          config: { temperature: 0.25, maxOutputTokens: 2000 }
+        });
+      } catch (aiErr: any) {
+        if (retries > 0) {
+          console.warn(`[DiagramEngine] generateCanvasElements - AI failed, retrying...`);
+          return generateCanvasElements(query, type, retries - 1);
+        }
+        console.error(`[DiagramEngine] generateCanvasElements - AI failed completely. Error: ${aiErr.message}`);
+        return [];
+      }
 
       let text = response.text || '[]';
       console.log(`[DiagramEngine] generateCanvasElements - Raw AI response:\n${text}\n`);
@@ -568,14 +613,18 @@ Return ONLY a valid JSON array of objects. No markdown. No comments.`;
         console.log(`[DiagramEngine] generateCanvasElements - Final JSON parsed successfully.`);
         return elements;
       }
-      console.warn(`[DiagramEngine] generateCanvasElements - Parsed JSON is not a valid array, throwing error.`);
-      throw new Error("Failed to validate Canvas JSON from AI");
+      console.warn(`[DiagramEngine] generateCanvasElements - Parsed JSON is not a valid array.`);
+      if (retries > 0) {
+         console.warn(`[DiagramEngine] generateCanvasElements - Retrying...`);
+         return generateCanvasElements(query, type, retries - 1);
+      }
+      return [];
     } else {
-      console.warn(`[DiagramEngine] generateCanvasElements - No Gemini AI instance, throwing error.`);
-      throw new Error("Gemini AI instance not initialized");
+      console.warn(`[DiagramEngine] generateCanvasElements - No Gemini AI instance.`);
+      return [];
     }
-  } catch (err) {
+  } catch (err: any) {
     console.error('[DiagramEngine] Canvas Elements Gemini error:', err);
-    throw err;
+    return [];
   }
 }
