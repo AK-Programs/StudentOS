@@ -1,4 +1,4 @@
-import { getGoogleGenAI } from '../server.js';
+import { getGoogleGenAI } from './aiClient.js';
 
 // Helper to sanitize query
 function cleanQuery(query: string): string {
@@ -146,21 +146,30 @@ export function getSmartFallbackMermaid(query: string): string {
   Ground --> Ocean`;
   }
 
-  // General Dynamic Fallback with multi-node structure
+  // General Dynamic Fallback with multi-node structure (13 nodes with branching)
   const words = cleanQuery(query).split(/\s+/).filter(w => w.length > 2);
-  const topicTitle = cleanQuery(query) || 'System Architecture';
-  const sub1 = words[0] ? words[0].toUpperCase() + ' Sub-System' : 'Core Module';
-  const sub2 = words[1] ? words[1].toUpperCase() + ' Processing' : 'Data Pipeline';
-  const sub3 = words[2] ? words[2].toUpperCase() + ' Analysis' : 'Logic Engine';
+  const topicTitle = cleanQuery(query) || 'Concept Architecture';
+  const n1 = words[0] ? words[0].toUpperCase() : 'INPUT';
+  const n2 = words[1] ? words[1].toUpperCase() : 'TRANSFORMATION';
+  const n3 = words[2] ? words[2].toUpperCase() : 'EXECUTION';
+  const n4 = words[3] ? words[3].toUpperCase() : 'ANALYSIS';
 
   return `flowchart TD
-  Title["🎯 Topic: ${topicTitle}"] --> Inputs["📥 System Input & Initialization"]
-  Inputs --> Stage1["⚙️ Stage 1: ${sub1}"]
-  Inputs --> Stage2["⚡ Stage 2: ${sub2}"]
-  Stage1 --> Integration["🔄 Central Integration & Control"]
-  Stage2 --> Integration
-  Integration --> Stage3["📊 Stage 3: ${sub3}"]
-  Stage3 --> Outputs["📤 Verification & Final Output"]`;
+  Start["🚀 Topic: ${topicTitle}"] --> CoreInit["📥 Primary Stage & Inputs"]
+  CoreInit --> BranchA["⚙️ ${n1} Module"]
+  CoreInit --> BranchB["⚡ ${n2} Engine"]
+  BranchA --> SubA1["1️⃣ ${n1} Key Component A"]
+  BranchA --> SubA2["2️⃣ ${n1} Key Component B"]
+  BranchB --> SubB1["3️⃣ ${n3} Mechanism"]
+  BranchB --> SubB2["4️⃣ ${n4} Pipeline"]
+  SubA1 --> CentralHub["🔄 Integration & Central Control"]
+  SubA2 --> CentralHub
+  SubB1 --> CentralHub
+  SubB2 --> CentralHub
+  CentralHub --> BranchResult1["📊 Primary Output State"]
+  CentralHub --> BranchResult2["🎯 Practical Applications"]
+  BranchResult1 --> FinalNode["🏁 System Synthesis & Conclusion"]
+  BranchResult2 --> FinalNode`;
 }
 
 /**
