@@ -399,7 +399,7 @@ app.post('/api/ai/diagram', async (req, res) => {
     return res.json({ elements });
   } catch (err: any) {
     console.error('[AI Server] Diagram error:', err);
-    return res.status(500).json({ error: 'Failed to generate diagram elements' });
+    return res.json({ elements: [] });
   }
 });
 
@@ -413,7 +413,7 @@ app.post('/api/ai/mermaid', async (req, res) => {
     return res.json(result);
   } catch (err: any) {
     console.error('[AI Server] Mermaid error:', err);
-    return res.status(500).json({ success: false, error: 'Failed to generate Mermaid diagram' });
+    return res.json({ success: false, error: 'Failed to generate Mermaid diagram', mermaid: `graph TD\n  Start[${req.body?.query || 'Concept'}]`, code: `graph TD\n  Start[${req.body?.query || 'Concept'}]`, title: req.body?.query || 'Diagram' });
   }
 });
 
@@ -427,7 +427,7 @@ app.post('/api/ai/svg-diagram', async (req, res) => {
     return res.json(result);
   } catch (err: any) {
     console.error('[AI Server] SVG Diagram error:', err);
-    return res.status(500).json({ success: false, error: 'Failed to generate SVG diagram' });
+    return res.json({ success: false, error: 'Failed to generate SVG diagram', svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 400"><rect width="600" height="400" fill="#0f172a"/><text x="300" y="200" fill="#ffffff" font-size="20" text-anchor="middle">${req.body?.query || 'Diagram'}</text></svg>`, title: req.body?.query || 'Diagram', subject: req.body?.subject || 'general' });
   }
 });
 
