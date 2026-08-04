@@ -1816,10 +1816,16 @@ What can I clarify today?` }
     loadAnnouncements();
   }, [currentUser, activeTab]);
 
-  // Chats & Rooms Sync On-Demand (Loaded from Supabase)
+  const chatInitUidRef = useRef<string | null>(null);
+
+  // Chats & Rooms Initial Load (Loaded from Supabase once on mount / user login)
   useEffect(() => {
-    if (!currentUser) return;
-    console.log("[SUPABASE-CHAT] Fetching peer messages & chat rooms from Supabase...");
+    const uid = currentUser?.uid;
+    if (!uid) return;
+    if (chatInitUidRef.current === uid) return;
+    chatInitUidRef.current = uid;
+
+    console.log("[SUPABASE-CHAT] Initializing peer messages & chat rooms from Supabase for user:", uid);
     getPeerMessages().then(list => {
       if (list) {
         setChats(list);
@@ -1828,14 +1834,14 @@ What can I clarify today?` }
       console.error("[SUPABASE-CHAT] Error fetching peer messages:", err);
     });
 
-    getChatRooms(currentUser.uid).then(roomsList => {
+    getChatRooms(uid).then(roomsList => {
       if (roomsList) {
         setChatRooms(roomsList);
       }
     }).catch(err => {
       console.error("[SUPABASE-CHAT] Error fetching chat rooms:", err);
     });
-  }, [currentUser, activeTab]);
+  }, [currentUser?.uid]);
 
   const currentUserRef = useRef<UserProfile | null>(currentUser);
   useEffect(() => {
