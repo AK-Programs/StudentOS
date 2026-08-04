@@ -7,6 +7,7 @@ import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
+import { getAIClient } from './server/aiClient';
 import dotenv from 'dotenv';
 import { WebSocketServer, WebSocket as WSWebSocket } from 'ws';
 import { generateMermaidDiagram, generateSvgDiagram, generateCanvasElements } from './server/diagramEngine.js';
@@ -18,27 +19,7 @@ const PORT = 3000;
 
 app.use(express.json({ limit: '10mb' }));
 
-// Shared Gemini SDK Client lazy setup
-let aiInstance: GoogleGenAI | null = null;
-export function getGoogleGenAI(): GoogleGenAI | null {
-  if (aiInstance) return aiInstance;
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return null;
-  try {
-    aiInstance = new GoogleGenAI({
-      apiKey: apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        },
-      },
-    });
-    return aiInstance;
-  } catch (err) {
-    console.error('Failed to initialize Gemini SDK Client:', err);
-    return null;
-  }
-}
+// Removed shared setup, moved to aiClient.ts
 
 function sanitizeHistory(history: any[] = []): { role: 'user' | 'assistant'; content: string }[] {
   if (!Array.isArray(history) || history.length === 0) return [];
@@ -74,7 +55,7 @@ function sanitizeHistory(history: any[] = []): { role: 'user' | 'assistant'; con
  */
 async function generateAICompletion(systemInstruction: string, prompt: string, history: any[] = []): Promise<string> {
   const openRouterKey = process.env.OPENROUTER_API_KEY;
-  const ai = getGoogleGenAI();
+  const ai = getAIClient();
 
   const sanitizedHistory = sanitizeHistory(history);
 
@@ -297,7 +278,7 @@ app.post('/api/ai/chat', async (req, res) => {
   }
 
   try {
-    const ai = getGoogleGenAI();
+    const ai = getAIClient();
     if (ai) {
       // Use native Gemini with search tools
       const sanitizedHistory = sanitizeHistory(history || []);
@@ -382,7 +363,7 @@ app.post('/api/ai/chat', async (req, res) => {
       });
     }
 
-    console.error('AI chat completions error:', apiErr);
+    console.error('AI chat completions error. Stack trace:', apiErr.stack || apiErr);
     return res.json({ 
       text: `Let's focus on studying ${subject || 'your course materials'} step-by-step. Regarding **"${prompt.length > 40 ? prompt.substring(0, 40) + '...' : prompt}"**, what specific part would you like to explore next?`
     });
@@ -398,7 +379,7 @@ app.post('/api/ai/diagram', async (req, res) => {
     const elements = await generateCanvasElements(query, type);
     return res.json({ elements });
   } catch (err: any) {
-    console.error('[AI Server] Diagram error:', err);
+    console.error('[AI Server] Diagram error. Stack trace:', err.stack || err);
     return res.json({ elements: [] });
   }
 });
@@ -412,7 +393,7 @@ app.post('/api/ai/mermaid', async (req, res) => {
     const result = await generateMermaidDiagram(query);
     return res.json(result);
   } catch (err: any) {
-    console.error('[AI Server] Mermaid error:', err);
+    console.error('[AI Server] Mermaid error. Stack trace:', err.stack || err);
     return res.json({ success: false, error: 'Failed to generate Mermaid diagram', mermaid: `graph TD\n  Start[${req.body?.query || 'Concept'}]`, code: `graph TD\n  Start[${req.body?.query || 'Concept'}]`, title: req.body?.query || 'Diagram' });
   }
 });
@@ -426,7 +407,7 @@ app.post('/api/ai/svg-diagram', async (req, res) => {
     const result = await generateSvgDiagram(query, subject);
     return res.json(result);
   } catch (err: any) {
-    console.error('[AI Server] SVG Diagram error:', err);
+    console.error('[AI Server] SVG Diagram error. Stack trace:', err.stack || err);
     return res.json({ success: false, error: 'Failed to generate SVG diagram', svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 400"><rect width="600" height="400" fill="#0f172a"/><text x="300" y="200" fill="#ffffff" font-size="20" text-anchor="middle">${req.body?.query || 'Diagram'}</text></svg>`, title: req.body?.query || 'Diagram', subject: req.body?.subject || 'general' });
   }
 });
@@ -506,7 +487,7 @@ app.post('/api/ai/search', async (req, res) => {
 
     // Synthesis academic summary strictly from findings
     const summaryContext = searchResultsList.map((s, i) => `[Source ${i+1}]: ${s.title} (${s.uri}) - ${s.description}`).join('\n');
-    const summarizerAi = getGoogleGenAI();
+    const summarizerAi = getAIClient();
     if (summarizerAi) {
       summaryText = await generateAICompletion(
         "You are Orion Search summarizer. Synthesize a 3-4 sentence comprehensive, factual academic summary. Refer only to facts from the provided sources. Do not make up any facts.",
@@ -700,7 +681,7 @@ How do visibility target constraints (restricted grades, sections, or houses) pr
       });
     }
 
-    console.error('AI material action error:', apiErr);
+    console.error('AI material action error. Stack trace:', apiErr.stack || apiErr);
     return res.json({
       text: `### 📚 Material Overview: ${title}\n\nHere is a structured educational output for your material: **${title}**.\n\nKey Concepts:\n1. Core concepts and definitions\n2. Analytical applications\n3. High-yield revision points`
     });
@@ -824,6 +805,7 @@ Format beautifully in Markdown.`;
     const text = await generateAICompletion(systemInstruction, userPrompt);
     return res.json({ text });
   } catch (err: any) {
+    console.error('[AI Server] Presentation error. Stack trace:', err.stack || err);
     return res.json({
       text: `### 📊 AI Presentation Companion: ${title}\n\n#### 🎤 Speaker Notes & Slide Guide\n- **Slide 1 (Introduction)**: Welcome the class, state the main inquiry question, and set expectations.\n- **Slide 2 (Core Concepts)**: Explain the fundamental mechanisms using visual diagrams.\n- **Slide 3 (Case Study)**: Walk through a real-world application.\n- **Slide 4 (Key Takeaways)**: Summarize the 3 key rules.\n\n#### 🧠 Audience Engagement Quiz\n1. What is the primary takeaway of this presentation?\n2. Name one real-world application discussed.\n3. How does this concept connect to our syllabus?`
     });
