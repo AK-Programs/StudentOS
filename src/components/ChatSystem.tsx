@@ -86,7 +86,7 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
     };
     load();
     return () => { isMounted = false; };
-  }, [students, currentUser]);
+  }, [currentUser?.uid, students?.length]);
 
   // Helper to resolve user info reliably without displaying UUIDs
   const resolveUser = (uid?: string): UserProfile => {
@@ -205,16 +205,6 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
           setActiveCall(null);
           showNotification('Call ended.');
         }
-      })
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'chat_room_messages',
-        filter: `room_id=eq.${activeChatTargetId}`
-      }, () => {
-        getPeerMessages().then(list => {
-          if (list) setChats(list);
-        }).catch(console.error);
       })
       .subscribe();
 
