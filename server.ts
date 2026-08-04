@@ -248,7 +248,7 @@ app.get('/api/health', (req, res) => {
 
 // Secure API endpoint for AI Teacher and Buddy conversations
 app.post('/api/ai/chat', async (req, res) => {
-  const { prompt, history, persona, level, subject, mode } = req.body;
+  const { prompt, history, persona, level, subject, mode, ragContext } = req.body;
 
   if (!prompt) {
     return res.status(400).json({ error: 'Prompt is required' });
@@ -272,6 +272,12 @@ app.post('/api/ai/chat', async (req, res) => {
   } else if (persona === 'study_buddy') {
     systemInstruction = `You are StudentOS AI Buddy, a friendly peer study partner made by Naitik Kashyap. 
     You help with scheduling, summarize files, rewrite notes, and review quizzes. You use friendly emojis, study peer slang, and motivate!`;
+  } else if (persona === 'orion') {
+    systemInstruction = `You are Orion, the ultimate AI educational assistant for StudentOS. 
+    You have deep knowledge, maintain long conversation memory, and provide concise, highly accurate academic answers.
+    You communicate in a natural, conversational, and speech-friendly tone. Do not use overly complex formatting when chatting directly.
+    You possess full multi-language capabilities and can fluently respond in English, Hindi, Spanish, or any requested language.
+    You use Google Search to answer real-time questions (like 'Latest ISRO launch'). You prioritize the StudentOS context if provided.`;
   }
 
   // Inject learning style mode
@@ -285,9 +291,48 @@ app.post('/api/ai/chat', async (req, res) => {
     systemInstruction += '\n\nMETHOD: Knowledge Examiner / Quiz Mode. Propose one relevant, clear, challenging subject question or scenario and ask the student to solve it. Provide constructive evaluation, grade their answer, and award simulated performance feedback upon their feedback.';
   }
 
+  if (ragContext) {
+    systemInstruction += `\n\nSTUDENT OS KNOWLEDGE BASE (Use this FIRST before general knowledge):\n${ragContext}`;
+  }
+
   try {
-    const reply = await generateAICompletion(systemInstruction, prompt, history);
-    return res.json({ text: reply });
+    const ai = await getGeminiAI();
+    if (ai) {
+      // Use native Gemini with search tools
+      const sanitizedHistory = sanitizeHistory(history || []);
+      const contentsList: any[] = [];
+      let startIdx = 0;
+      if (sanitizedHistory.length > 0 && sanitizedHistory[0].role === 'assistant') {
+        contentsList.push({
+          role: 'user',
+          parts: [{ text: `[Prior Context]: ${sanitizedHistory[0].content}` }]
+        });
+        startIdx = 1;
+      }
+      for (let i = startIdx; i < sanitizedHistory.length; i++) {
+        const msg = sanitizedHistory[i];
+        contentsList.push({
+          role: msg.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: msg.content }]
+        });
+      }
+      contentsList.push({ role: 'user', parts: [{ text: prompt }] });
+      
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: contentsList,
+        config: {
+          systemInstruction: systemInstruction,
+          temperature: 0.7,
+          tools: [{ googleSearch: {} }] // Part 2: Web Search enabled
+        }
+      });
+      if (response && response.text) return res.json({ text: response.text });
+    } else {
+      // Fallback
+      const reply = await generateAICompletion(systemInstruction, prompt, history);
+      return res.json({ text: reply });
+    }
   } catch (apiErr: any) {
     const openRouterKey = process.env.OPENROUTER_API_KEY;
     const geminiKey = process.env.GEMINI_API_KEY;
