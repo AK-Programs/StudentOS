@@ -358,6 +358,32 @@ export default function SimpleResourceManager({
                   <span>•</span>
                   <span>{new Date(item.createdAt).toLocaleDateString()}</span>
                 </div>
+
+                {/* AI Presentation / Material Companion Button */}
+                <div className="pt-2">
+                  <button
+                    onClick={async () => {
+                      showNotification('🤖 Generating AI Presentation companion notes & slides...');
+                      try {
+                        const res = await fetch('/api/ai/presentation', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            title: item.title,
+                            topic: item.content || item.title
+                          })
+                        });
+                        const data = await res.json();
+                        alert(data.text || 'Generated companion notes successfully!');
+                      } catch (err: any) {
+                        alert('Error: ' + err.message);
+                      }
+                    }}
+                    className="px-3 py-1 bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-300 rounded-lg text-[10px] font-bold flex items-center gap-1.5 transition-all"
+                  >
+                    <span>✨</span> Generate Speaker Notes & AI Quiz
+                  </button>
+                </div>
               </div>
               <div className="flex md:flex-col gap-2 items-end justify-center min-w-[120px]">
                 {item.fileData && type !== 'gallery' && (
