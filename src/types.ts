@@ -325,3 +325,114 @@ export interface JarvisHistoryItem {
   actionExecuted?: string;
 }
 
+// StudentOS Meet Types
+export interface Meeting {
+  id: string; // Secure Meeting ID (e.g. "meet-892-412-890")
+  title: string;
+  subject: string;
+  className?: string; // e.g. "Grade 10" or "Grade 10 - Astra"
+  batch?: string; // e.g. "Batch 2026"
+  type: 'instant' | 'scheduled' | 'recurring';
+  startTime: string; // ISO string
+  endTime: string; // ISO string
+  description?: string;
+  password?: string;
+  hostId: string;
+  hostName: string;
+  hostEmail: string;
+  hostRole: UserRole;
+  joinLink: string;
+  isLocked?: boolean;
+  isMutedAll?: boolean;
+  isCameraDisabledAll?: boolean;
+  isChatDisabled?: boolean;
+  isScreenShareDisabled?: boolean;
+  isFileShareDisabled?: boolean;
+  invitedUsers?: string[]; // list of emails or user uids
+  invitedClasses?: string[]; // e.g. ["Grade 10_Astra"]
+  isSchoolWide?: boolean; // Principal school-wide meeting
+  status: 'upcoming' | 'live' | 'ended';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MeetingParticipant {
+  id: string;
+  meetingId: string;
+  userId: string;
+  name: string;
+  email: string;
+  role: 'host' | 'co-host' | 'participant';
+  userRole: UserRole;
+  avatar?: string;
+  status: 'waiting' | 'admitted' | 'rejected' | 'left' | 'removed';
+  joinedAt: string;
+  leftAt?: string;
+  durationSeconds: number;
+  isCameraOn: boolean;
+  isMicOn: boolean;
+  isHandRaised: boolean;
+  isScreenSharing: boolean;
+  currentBreakoutRoomId?: string;
+  cameraActiveDuration: number; // in seconds
+  micActiveDuration: number; // in seconds
+  networkQuality: 'excellent' | 'good' | 'fair' | 'poor';
+}
+
+export interface MeetingChatMessage {
+  id: string;
+  meetingId: string;
+  senderId: string;
+  senderName: string;
+  senderRole: string;
+  senderAvatar?: string;
+  content: string;
+  attachment?: {
+    name: string;
+    url: string;
+    type: 'image' | 'pdf' | 'file';
+    size?: number;
+  };
+  timestamp: string;
+  isPrivate?: boolean;
+  recipientId?: string;
+}
+
+export interface MeetingRecording {
+  id: string;
+  meetingId: string;
+  title: string;
+  hostName: string;
+  url: string;
+  durationSeconds: number;
+  sizeBytes: number;
+  createdAt: string;
+  aiSummary?: string;
+}
+
+export interface MeetingBreakoutRoom {
+  id: string;
+  meetingId: string;
+  name: string;
+  assignedUserIds: string[];
+}
+
+export interface MeetingAttendanceReport {
+  meetingId: string;
+  meetingTitle: string;
+  date: string;
+  totalParticipants: number;
+  participants: {
+    userId: string;
+    name: string;
+    email: string;
+    userRole: string;
+    joinTime: string;
+    leaveTime: string;
+    totalDurationMinutes: number;
+    cameraOnPercent: number;
+    micActiveSeconds: number;
+    attendedPercent: number;
+  }[];
+}
+
