@@ -1962,11 +1962,19 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
                   </button>
 
                   <button
-                    onClick={() => setCaptionsEnabled(!captionsEnabled)}
-                    className={`p-3 rounded-2xl transition-all ${captionsEnabled ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700'}`}
-                    title="Live Captions"
+                    onClick={() => setActiveSidePanel(activeSidePanel === 'transcript' ? null : 'transcript')}
+                    className={`p-3 rounded-2xl transition-all ${activeSidePanel === 'transcript' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700'}`}
+                    title="Live Transcript & Speech Logs"
                   >
                     <FileText className="w-5 h-5" />
+                  </button>
+
+                  <button
+                    onClick={() => setCaptionsEnabled(!captionsEnabled)}
+                    className={`p-3 rounded-2xl transition-all ${captionsEnabled ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700'}`}
+                    title="Toggle Live Captions Overlay"
+                  >
+                    <Sparkles className="w-5 h-5" />
                   </button>
                 </div>
 
@@ -2020,6 +2028,7 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
                   <h3 className="text-xs font-black uppercase tracking-wider text-indigo-400 font-mono">
                     {activeSidePanel === 'chat' && '💬 Meeting Chat'}
                     {activeSidePanel === 'participants' && '👥 Participants & Host'}
+                    {activeSidePanel === 'transcript' && '📜 Meeting Transcript'}
                     {activeSidePanel === 'whiteboard' && '✏️ Collaborative Board'}
                     {activeSidePanel === 'ai' && '🤖 AI Meeting Tutor'}
                     {activeSidePanel === 'settings' && '⚙️ Device Settings'}
@@ -2249,6 +2258,92 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
                           )}
                         </div>
                       ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* SIDE PANEL CONTENT: TRANSCRIPT */}
+                {activeSidePanel === 'transcript' && (
+                  <div className="flex-1 p-4 overflow-y-auto space-y-4 text-xs font-mono">
+                    <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                      <div>
+                        <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                          <FileText className="w-4 h-4 text-indigo-400" /> Live Speech Logs
+                        </h4>
+                        <p className="text-[10px] text-slate-400">Recorded speech-to-text transcript</p>
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => {
+                            const txt = captionTranscript.map(t => `[${t.time}] ${t.speaker}: ${t.text}`).join('\n');
+                            navigator.clipboard.writeText(txt);
+                            alert('Transcript copied to clipboard!');
+                          }}
+                          className="p-1.5 bg-white/5 hover:bg-white/10 text-slate-300 rounded-lg"
+                          title="Copy Transcript"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            const txt = captionTranscript.map(t => `[${t.time}] ${t.speaker}: ${t.text}`).join('\n');
+                            const blob = new Blob([txt], { type: 'text/plain' });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `Transcript_${activeMeeting.id}.txt`;
+                            a.click();
+                          }}
+                          className="p-1.5 bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-300 rounded-lg"
+                          title="Download Transcript (.txt)"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                        </button>
+
+                        {isCurrentHost && (
+                          <button
+                            onClick={() => setCaptionTranscript([])}
+                            className="p-1.5 bg-rose-600/20 hover:bg-rose-600/40 text-rose-300 rounded-lg"
+                            title="Clear Transcript (Host)"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Captions Toggle Status */}
+                    <div className="p-3 bg-slate-950 rounded-xl border border-white/10 flex items-center justify-between">
+                      <span className="text-slate-300 font-bold">Live Captions Engine</span>
+                      <button
+                        onClick={() => setCaptionsEnabled(!captionsEnabled)}
+                        className={`px-3 py-1 rounded-lg text-[10px] font-bold ${captionsEnabled ? 'bg-emerald-600 text-white' : 'bg-slate-800 text-slate-400'}`}
+                      >
+                        {captionsEnabled ? 'ENABLED' : 'DISABLED'}
+                      </button>
+                    </div>
+
+                    {/* Transcript Log Items */}
+                    <div className="space-y-2.5 max-h-[420px] overflow-y-auto pr-1">
+                      {captionTranscript.length === 0 ? (
+                        <div className="text-center py-10 text-slate-500 font-sans">
+                          <FileText className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                          <p className="text-xs">No speech transcript recorded yet.</p>
+                          <p className="text-[10px] text-slate-600 mt-1">Speak into your microphone or turn on Speech Recognition to record live transcript.</p>
+                        </div>
+                      ) : (
+                        captionTranscript.map((item, idx) => (
+                          <div key={idx} className="p-2.5 bg-slate-950 rounded-xl border border-white/5 space-y-1">
+                            <div className="flex items-center justify-between text-[10px] text-slate-400">
+                              <span className="font-bold text-indigo-300">{item.speaker}</span>
+                              <span className="text-slate-500">{item.time}</span>
+                            </div>
+                            <p className="text-xs text-slate-200 font-sans leading-relaxed">{item.text}</p>
+                          </div>
+                        ))
+                      )}
                     </div>
                   </div>
                 )}
