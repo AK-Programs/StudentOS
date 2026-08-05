@@ -191,6 +191,40 @@ export async function createOrUpdateMeeting(meeting: Meeting): Promise<Meeting> 
   return meeting;
 }
 
+export async function deleteMeeting(meetingId: string): Promise<void> {
+  try {
+    const local = getLocalMeetings();
+    const filtered = local.filter(m => m.id !== meetingId && m.id.toLowerCase() !== meetingId.toLowerCase());
+    saveLocalMeetings(filtered);
+    localStorage.removeItem(STORAGE_KEY_CHATS + '_' + meetingId);
+  } catch (err) {
+    console.warn('Failed local delete meeting', err);
+  }
+
+  try {
+    await supabase.from('meetings').delete().eq('id', meetingId);
+    await supabase.from('meeting_chat').delete().eq('meeting_id', meetingId);
+  } catch (e) {
+    console.warn('Failed supabase delete meeting', e);
+  }
+}
+
+export async function endMeetingInStore(meetingId: string): Promise<void> {
+  try {
+    const local = getLocalMeetings();
+    const updated = local.map(m => (m.id === meetingId || m.id.toLowerCase() === meetingId.toLowerCase()) ? { ...m, status: 'ended' as const } : m);
+    saveLocalMeetings(updated);
+  } catch (err) {
+    console.warn('Failed local end meeting', err);
+  }
+
+  try {
+    await supabase.from('meetings').update({ status: 'ended' }).eq('id', meetingId);
+  } catch (e) {
+    console.warn('Failed supabase end meeting', e);
+  }
+}
+
 export async function saveMeetingChatMessage(msg: MeetingChatMessage): Promise<void> {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_CHATS + '_' + msg.meetingId);
