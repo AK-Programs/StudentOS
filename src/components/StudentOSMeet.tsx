@@ -122,6 +122,7 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [screenSharingUserId, setScreenSharingUserId] = useState<string | null>(null);
   const [pinnedParticipantId, setPinnedParticipantId] = useState<string | null>(null);
+  const [spotlightUserId, setSpotlightUserId] = useState<string | null>(null);
   const [layoutMode, setLayoutMode] = useState<'gallery' | 'speaker' | 'presentation'>('gallery');
   const [activeSidePanel, setActiveSidePanel] = useState<'chat' | 'participants' | 'breakout' | 'whiteboard' | 'ai' | 'attendance' | 'settings' | 'transcript' | null>('chat');
 
@@ -178,6 +179,16 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
   // UI Utilities
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedId, setCopiedId] = useState(false);
+
+  const isCurrentHost = Boolean(
+    activeMeeting && (
+      currentUser?.uid === activeMeeting.hostId ||
+      (activeMeeting.hostEmail && currentUser?.email === activeMeeting.hostEmail) ||
+      currentUser?.uid === 'host' ||
+      activeMeeting.hostId === 'host' ||
+      (activeMeeting.hostId.startsWith('host-') && ['teacher', 'coordinator', 'admin', 'super_admin'].includes(effectiveRole))
+    )
+  );
 
   // Media & WebRTC Refs
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
@@ -388,6 +399,25 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
             }];
           });
 
+          // Respond back with our own presence details so newly joined peer syncs instantly
+          channel.send({
+            type: 'broadcast',
+            event: 'peer_sync',
+            payload: {
+              userId: myUserId,
+              name: currentUser?.name || 'Participant',
+              email: currentUser?.email || '',
+              role: (currentUser?.uid === activeMeeting.hostId || (activeMeeting.hostEmail && currentUser?.email === activeMeeting.hostEmail)) ? 'host' : 'participant',
+              userRole: (currentUser?.role as any) || 'student',
+              isCameraOn,
+              isMicOn,
+              isHandRaised,
+              isScreenSharing,
+              screenSharingUserId: isScreenSharing ? myUserId : screenSharingUserId,
+              spotlightUserId
+            }
+          });
+
           // Existing peer creates WebRTC offer for newly joined peer
           const pc = createPeerConnection(payload.userId);
           try {
@@ -401,6 +431,46 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
           } catch (e) {
             console.warn('Error creating WebRTC offer:', e);
           }
+        }
+      })
+      .on('broadcast', { event: 'peer_sync' }, ({ payload }) => {
+        if (payload && payload.userId && payload.userId !== myUserId) {
+          setParticipants(prev => {
+            if (prev.some(p => p.userId === payload.userId)) {
+              return prev.map(p => p.userId === payload.userId ? { ...p, ...payload } : p);
+            }
+            return [...prev, {
+              id: `p_${payload.userId}`,
+              meetingId: activeMeeting.id,
+              userId: payload.userId,
+              name: payload.name || 'Participant',
+              email: payload.email || '',
+              role: payload.role || 'participant',
+              userRole: payload.userRole || 'student',
+              status: 'admitted',
+              joinedAt: new Date().toISOString(),
+              durationSeconds: 0,
+              isCameraOn: payload.isCameraOn ?? true,
+              isMicOn: payload.isMicOn ?? true,
+              isHandRaised: payload.isHandRaised ?? false,
+              isScreenSharing: payload.isScreenSharing ?? false,
+              cameraActiveDuration: 0,
+              micActiveDuration: 0,
+              networkQuality: 'excellent'
+            }];
+          });
+
+          if (payload.screenSharingUserId) {
+            setScreenSharingUserId(payload.screenSharingUserId);
+          }
+          if (payload.spotlightUserId) {
+            setSpotlightUserId(payload.spotlightUserId);
+          }
+        }
+      })
+      .on('broadcast', { event: 'spotlight_user' }, ({ payload }) => {
+        if (payload) {
+          setSpotlightUserId(payload.userId || null);
         }
       })
       .on('broadcast', { event: 'webrtc_offer' }, async ({ payload }) => {
@@ -898,7 +968,7 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
 
   // Host Controls
   const handleHostMuteAll = () => {
-    if (!activeMeeting) return;
+    if (!activeMeeting || !isCurrentHost) return;
     supabase.channel(`studentos_meet_${activeMeeting.id}`).send({
       type: 'broadcast',
       event: 'host_control',
@@ -908,7 +978,7 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
   };
 
   const handleHostDisableCameraAll = () => {
-    if (!activeMeeting) return;
+    if (!activeMeeting || !isCurrentHost) return;
     supabase.channel(`studentos_meet_${activeMeeting.id}`).send({
       type: 'broadcast',
       event: 'host_control',
@@ -918,7 +988,7 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
   };
 
   const handleHostMuteUser = (targetUserId: string) => {
-    if (!activeMeeting) return;
+    if (!activeMeeting || !isCurrentHost) return;
     supabase.channel(`studentos_meet_${activeMeeting.id}`).send({
       type: 'broadcast',
       event: 'host_control',
@@ -928,7 +998,7 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
   };
 
   const handleHostDisableUserCamera = (targetUserId: string) => {
-    if (!activeMeeting) return;
+    if (!activeMeeting || !isCurrentHost) return;
     supabase.channel(`studentos_meet_${activeMeeting.id}`).send({
       type: 'broadcast',
       event: 'host_control',
@@ -938,7 +1008,7 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
   };
 
   const handleHostRemoveUser = (targetUserId: string) => {
-    if (!activeMeeting) return;
+    if (!activeMeeting || !isCurrentHost) return;
     if (confirm('Remove this participant from the meeting?')) {
       supabase.channel(`studentos_meet_${activeMeeting.id}`).send({
         type: 'broadcast',
@@ -949,8 +1019,19 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
     }
   };
 
+  const handleHostSpotlightUser = (targetUserId: string) => {
+    if (!activeMeeting || !isCurrentHost) return;
+    const nextVal = spotlightUserId === targetUserId ? null : targetUserId;
+    setSpotlightUserId(nextVal);
+    supabase.channel(`studentos_meet_${activeMeeting.id}`).send({
+      type: 'broadcast',
+      event: 'spotlight_user',
+      payload: { userId: nextVal }
+    });
+  };
+
   const handleHostEndMeeting = async () => {
-    if (!activeMeeting) return;
+    if (!activeMeeting || !isCurrentHost) return;
     if (confirm('Are you sure you want to end this meeting for all participants?')) {
       await endMeetingInStore(activeMeeting.id);
       supabase.channel(`studentos_meet_${activeMeeting.id}`).send({
@@ -963,6 +1044,13 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
   };
 
   const handleHostDeleteMeeting = async (meetingId: string) => {
+    const m = meetings.find(x => x.id === meetingId) || activeMeeting;
+    if (!m) return;
+    const canDelete = currentUser?.uid === m.hostId || (m.hostEmail && currentUser?.email === m.hostEmail) || currentUser?.uid === 'host' || m.hostId === 'host' || (m.hostId.startsWith('host-') && ['teacher', 'coordinator', 'admin', 'super_admin'].includes(effectiveRole));
+    if (!canDelete) {
+      alert('Only the Host can delete this meeting.');
+      return;
+    }
     if (confirm('Are you sure you want to permanently delete this meeting?')) {
       await deleteMeeting(meetingId);
       if (activeMeeting?.id === meetingId) {
@@ -1568,128 +1656,249 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
           )}
 
           {/* ACTIVE ROOM TOP CONTROL BAR */}
-          <header className="px-6 py-3 bg-slate-900/90 border-b border-white/10 flex items-center justify-between gap-4 backdrop-blur-md z-30">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-xl bg-indigo-600 flex items-center justify-center text-white">
-                <Video className="w-4 h-4" />
-              </div>
-              <div>
-                <h2 className="text-sm font-extrabold text-white line-clamp-1">{activeMeeting.title}</h2>
-                <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono">
-                  <span>ID: {activeMeeting.id}</span>
-                  {activeMeeting.password && (
-                    <>
-                      <span>•</span>
-                      <span>Pass: {activeMeeting.password}</span>
-                    </>
-                  )}
-                  <span>•</span>
-                  <span className="text-emerald-400 flex items-center gap-1"><Shield className="w-3 h-3" /> WebRTC Encrypted</span>
-                </div>
-              </div>
-            </div>
+          {(() => {
+            const selfUserUid = currentUser?.uid || 'self_uid';
 
-            {/* Room Metrics Dashboard Bar */}
-            <div className="hidden md:flex items-center gap-4 bg-slate-950 px-4 py-2 rounded-2xl border border-white/10 text-xs font-mono">
-              <span className="flex items-center gap-1.5 text-slate-300">
-                <Users className="w-3.5 h-3.5 text-indigo-400" />
-                {participants.length} Active {participants.length === 1 ? 'Peer' : 'Peers'}
-              </span>
+            const mySelfParticipant: MeetingParticipant = {
+              id: `p_self_${selfUserUid}`,
+              meetingId: activeMeeting.id,
+              userId: selfUserUid,
+              name: currentUser?.name || 'You',
+              email: currentUser?.email || '',
+              role: isCurrentHost ? 'host' : 'participant',
+              userRole: (currentUser?.role as any) || 'student',
+              status: 'admitted',
+              joinedAt: new Date().toISOString(),
+              durationSeconds: 0,
+              isCameraOn,
+              isMicOn,
+              isHandRaised,
+              isScreenSharing,
+              cameraActiveDuration: 0,
+              micActiveDuration: 0,
+              networkQuality: 'excellent'
+            };
 
-              {isRecording && (
-                <span className="flex items-center gap-1.5 text-rose-400 font-bold animate-pulse">
-                  <Radio className="w-3.5 h-3.5" />
-                  REC {Math.floor(recordingDuration / 60)}:{(recordingDuration % 60).toString().padStart(2, '0')}
-                </span>
-              )}
+            const allRoomParticipants = [
+              mySelfParticipant,
+              ...participants.filter(p => p.userId !== selfUserUid)
+            ];
 
-              <button
-                onClick={() => copyJoinLink(activeMeeting.joinLink)}
-                className="flex items-center gap-1.5 text-indigo-400 hover:text-indigo-300 transition-colors"
-              >
-                <Share2 className="w-3.5 h-3.5" />
-                {copiedLink ? 'Link Copied!' : 'Share Link'}
-              </button>
+            let featuredUserId: string | null = null;
+            let featuredTag: string = '';
 
-              <button
-                onClick={() => copyMeetingId(activeMeeting.id)}
-                className="flex items-center gap-1.5 text-teal-400 hover:text-teal-300 transition-colors"
-              >
-                <Copy className="w-3.5 h-3.5" />
-                {copiedId ? 'ID Copied!' : 'Copy ID'}
-              </button>
-            </div>
+            if (screenSharingUserId) {
+              featuredUserId = screenSharingUserId;
+              featuredTag = 'Screen Sharing';
+            } else if (spotlightUserId) {
+              featuredUserId = spotlightUserId;
+              featuredTag = 'Spotlighted for Everyone';
+            } else if (pinnedParticipantId) {
+              featuredUserId = pinnedParticipantId;
+              featuredTag = 'Pinned View';
+            } else if (allRoomParticipants.length > 1) {
+              const hostP = allRoomParticipants.find(p => p.role === 'host' || p.userId === activeMeeting.hostId);
+              if (hostP) {
+                featuredUserId = hostP.userId;
+                featuredTag = 'Host Video';
+              }
+            }
 
-            {/* Leave Room Button */}
-            <button
-              onClick={handleLeaveMeeting}
-              className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-black text-xs rounded-xl shadow transition-all flex items-center gap-2"
-            >
-              <PhoneOff className="w-4 h-4" />
-              Leave Room
-            </button>
-          </header>
+            const featuredParticipantObj = featuredUserId
+              ? allRoomParticipants.find(p => p.userId === featuredUserId)
+              : null;
 
-          {/* MAIN STAGE & SIDE PANELS */}
-          <div className="flex-1 flex overflow-hidden relative">
-            
-            {/* VIDEO GRID / MAIN CANVAS STAGE */}
-            <div className="flex-1 p-4 bg-slate-950 overflow-y-auto flex flex-col justify-between space-y-4">
-              
-              {/* Live Captions Stream Banner */}
-              {captionsEnabled && liveCaptionText && (
-                <div className="p-3 bg-black/80 backdrop-blur-xl border border-indigo-500/40 rounded-2xl max-w-2xl mx-auto text-center shadow-2xl animate-fadeIn">
-                  <p className="text-xs font-mono font-bold text-indigo-300">{liveCaptionText}</p>
-                </div>
-              )}
+            const otherParticipants = featuredParticipantObj
+              ? allRoomParticipants.filter(p => p.userId !== featuredParticipantObj.userId)
+              : allRoomParticipants;
 
-              {/* PARTICIPANTS VIDEO GRID */}
-              <div className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 items-center justify-center">
-                
-                {/* Local User Self Video Tile */}
-                <div className="relative aspect-video bg-slate-900 rounded-3xl border-2 border-indigo-500/50 overflow-hidden shadow-2xl group flex items-center justify-center">
-                  <video
-                    ref={localVideoRef}
-                    autoPlay
-                    playsInline
-                    muted
-                    className={`w-full h-full object-cover ${!isCameraOn ? 'hidden' : 'block'}`}
-                  />
+            const renderTile = (p: MeetingParticipant, isFeatured = false) => {
+              const isSelf = p.userId === selfUserUid;
+              if (isSelf) {
+                return (
+                  <div
+                    key={p.userId}
+                    onDoubleClick={() => setPinnedParticipantId(pinnedParticipantId === p.userId ? null : p.userId)}
+                    className={`relative aspect-video bg-slate-900 rounded-3xl border-2 transition-all overflow-hidden shadow-2xl group flex items-center justify-center ${
+                      pinnedParticipantId === p.userId ? 'border-amber-500 shadow-amber-500/20' :
+                      spotlightUserId === p.userId ? 'border-indigo-500 shadow-indigo-500/30 ring-2 ring-indigo-500/50' :
+                      isScreenSharing ? 'border-teal-500/80 shadow-teal-500/20' : 'border-indigo-500/50 hover:border-indigo-400'
+                    }`}
+                  >
+                    <video
+                      ref={localVideoRef}
+                      autoPlay
+                      playsInline
+                      muted
+                      className={`w-full h-full object-cover ${!isCameraOn ? 'hidden' : 'block'}`}
+                    />
 
-                  {!isCameraOn && (
-                    <div className="w-20 h-20 rounded-full bg-gradient-to-tr from-indigo-600 to-violet-600 text-white border border-indigo-500/30 flex items-center justify-center text-2xl font-black shadow-lg">
-                      {currentUser?.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
+                    {!isCameraOn && (
+                      <div className="w-20 h-20 rounded-full bg-gradient-to-tr from-indigo-600 to-violet-600 text-white border border-indigo-500/30 flex items-center justify-center text-2xl font-black shadow-lg">
+                        {currentUser?.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
+                      </div>
+                    )}
+
+                    <div className="absolute bottom-3 left-3 px-3 py-1 bg-black/75 backdrop-blur-md rounded-xl text-xs font-extrabold text-white flex items-center gap-2 border border-white/10 shadow-lg z-10">
+                      <span>{currentUser?.name || 'You'} (Self)</span>
+                      {!isMicOn && <MicOff className="w-3.5 h-3.5 text-rose-400" />}
+                      {isHandRaised && <Hand className="w-3.5 h-3.5 text-amber-400 animate-bounce" />}
                     </div>
-                  )}
 
-                  <div className="absolute bottom-3 left-3 px-3 py-1 bg-black/75 backdrop-blur-md rounded-xl text-xs font-extrabold text-white flex items-center gap-2 border border-white/10 shadow-lg z-10">
-                    <span>{currentUser?.name || 'You'} (Self)</span>
-                    {!isMicOn && <MicOff className="w-3.5 h-3.5 text-rose-400" />}
-                    {isHandRaised && <Hand className="w-3.5 h-3.5 text-amber-400 animate-bounce" />}
+                    {isScreenSharing && (
+                      <div className="absolute top-3 right-3 px-2.5 py-1 bg-teal-500/20 border border-teal-500/40 rounded-full text-[10px] font-mono font-black text-teal-300 uppercase z-10">
+                        Sharing Screen
+                      </div>
+                    )}
+
+                    <div className="absolute top-3 left-3 flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity z-20">
+                      <button
+                        onClick={() => setPinnedParticipantId(pinnedParticipantId === p.userId ? null : p.userId)}
+                        title={pinnedParticipantId === p.userId ? 'Unpin' : 'Pin participant'}
+                        className={`p-2 rounded-xl border backdrop-blur-md transition-all ${pinnedParticipantId === p.userId ? 'bg-amber-500 text-slate-950 border-amber-400' : 'bg-black/70 text-white border-white/20 hover:bg-slate-800'}`}
+                      >
+                        <Pin className="w-3.5 h-3.5" />
+                      </button>
+                      {isCurrentHost && (
+                        <button
+                          onClick={() => handleHostSpotlightUser(p.userId)}
+                          title={spotlightUserId === p.userId ? 'Remove Spotlight' : 'Spotlight for Everyone'}
+                          className={`p-2 rounded-xl border backdrop-blur-md transition-all ${spotlightUserId === p.userId ? 'bg-indigo-500 text-white border-indigo-400 animate-pulse' : 'bg-black/70 text-indigo-300 border-white/20 hover:bg-slate-800'}`}
+                        >
+                          <Sparkles className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <RemoteVideoTile
+                  key={p.userId}
+                  participant={p}
+                  stream={remoteStreamsState[p.userId]}
+                  isScreenSharing={p.isScreenSharing || screenSharingUserId === p.userId}
+                  isPinned={pinnedParticipantId === p.userId}
+                  onPin={() => setPinnedParticipantId(pinnedParticipantId === p.userId ? null : p.userId)}
+                  isSpotlighted={spotlightUserId === p.userId}
+                  onSpotlight={isCurrentHost ? () => handleHostSpotlightUser(p.userId) : undefined}
+                  isHost={isCurrentHost}
+                  onHostMute={() => handleHostMuteUser(p.userId)}
+                  onHostRemove={() => handleHostRemoveUser(p.userId)}
+                />
+              );
+            };
+
+            return (
+              <>
+                <header className="px-6 py-3 bg-slate-900/90 border-b border-white/10 flex items-center justify-between gap-4 backdrop-blur-md z-30">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-indigo-600 flex items-center justify-center text-white">
+                      <Video className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h2 className="text-sm font-extrabold text-white line-clamp-1">{activeMeeting.title}</h2>
+                      <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono">
+                        <span>ID: {activeMeeting.id}</span>
+                        {activeMeeting.password && (
+                          <>
+                            <span>•</span>
+                            <span>Pass: {activeMeeting.password}</span>
+                          </>
+                        )}
+                        <span>•</span>
+                        <span className="text-emerald-400 flex items-center gap-1"><Shield className="w-3 h-3" /> WebRTC Encrypted</span>
+                      </div>
+                    </div>
                   </div>
 
-                  {isScreenSharing && (
-                    <div className="absolute top-3 right-3 px-2.5 py-1 bg-teal-500/20 border border-teal-500/40 rounded-full text-[10px] font-mono font-black text-teal-300 uppercase z-10">
-                      Sharing Screen
-                    </div>
-                  )}
-                </div>
+                  {/* Room Metrics Dashboard Bar */}
+                  <div className="hidden md:flex items-center gap-4 bg-slate-950 px-4 py-2 rounded-2xl border border-white/10 text-xs font-mono">
+                    <span className="flex items-center gap-1.5 text-slate-300">
+                      <Users className="w-3.5 h-3.5 text-indigo-400" />
+                      {allRoomParticipants.length} Active {allRoomParticipants.length === 1 ? 'Peer' : 'Peers'}
+                    </span>
 
-                {/* Real Remote WebRTC Participants Video Tiles */}
-                {participants.filter(p => p.userId !== currentUser?.uid).map(p => (
-                  <RemoteVideoTile
-                    key={p.userId}
-                    participant={p}
-                    stream={remoteStreamsState[p.userId]}
-                    isScreenSharing={p.isScreenSharing || screenSharingUserId === p.userId}
-                    isPinned={pinnedParticipantId === p.userId}
-                    onPin={() => setPinnedParticipantId(pinnedParticipantId === p.userId ? null : p.userId)}
-                    isHost={currentUser?.uid === activeMeeting.hostId || ['teacher', 'admin', 'super_admin'].includes(effectiveRole)}
-                    onHostMute={() => handleHostMuteUser(p.userId)}
-                    onHostRemove={() => handleHostRemoveUser(p.userId)}
-                  />
-                ))}
-              </div>
+                    {isRecording && (
+                      <span className="flex items-center gap-1.5 text-rose-400 font-bold animate-pulse">
+                        <Radio className="w-3.5 h-3.5" />
+                        REC {Math.floor(recordingDuration / 60)}:{(recordingDuration % 60).toString().padStart(2, '0')}
+                      </span>
+                    )}
+
+                    <button
+                      onClick={() => copyJoinLink(activeMeeting.joinLink)}
+                      className="flex items-center gap-1.5 text-indigo-400 hover:text-indigo-300 transition-colors"
+                    >
+                      <Share2 className="w-3.5 h-3.5" />
+                      {copiedLink ? 'Link Copied!' : 'Share Link'}
+                    </button>
+
+                    <button
+                      onClick={() => copyMeetingId(activeMeeting.id)}
+                      className="flex items-center gap-1.5 text-teal-400 hover:text-teal-300 transition-colors"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      {copiedId ? 'ID Copied!' : 'Copy ID'}
+                    </button>
+                  </div>
+
+                  {/* Leave Room Button */}
+                  <button
+                    onClick={handleLeaveMeeting}
+                    className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-black text-xs rounded-xl shadow transition-all flex items-center gap-2"
+                  >
+                    <PhoneOff className="w-4 h-4" />
+                    Leave Room
+                  </button>
+                </header>
+
+                {/* MAIN STAGE & SIDE PANELS */}
+                <div className="flex-1 flex overflow-hidden relative">
+                  
+                  {/* VIDEO GRID / MAIN CANVAS STAGE */}
+                  <div className="flex-1 p-4 bg-slate-950 overflow-y-auto flex flex-col justify-between space-y-4">
+                    
+                    {/* Live Captions Stream Banner */}
+                    {captionsEnabled && liveCaptionText && (
+                      <div className="p-3 bg-black/80 backdrop-blur-xl border border-indigo-500/40 rounded-2xl max-w-2xl mx-auto text-center shadow-2xl animate-fadeIn">
+                        <p className="text-xs font-mono font-bold text-indigo-300">{liveCaptionText}</p>
+                      </div>
+                    )}
+
+                    {/* PARTICIPANTS STAGE LAYOUT */}
+                    {featuredParticipantObj ? (
+                      <div className="flex-1 flex flex-col justify-between gap-4">
+                        {/* Featured Large Main Panel */}
+                        <div className="relative w-full max-w-5xl mx-auto aspect-video">
+                          {renderTile(featuredParticipantObj, true)}
+                          <div className="absolute top-3 left-3 px-3 py-1 bg-indigo-600/90 backdrop-blur-md rounded-xl text-xs font-extrabold text-white flex items-center gap-1.5 shadow-lg z-10 pointer-events-none">
+                            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                            <span>{featuredTag}: {featuredParticipantObj.name}</span>
+                          </div>
+                        </div>
+
+                        {/* Rail of Other Participants Below */}
+                        {otherParticipants.length > 0 && (
+                          <div className="w-full flex items-center justify-center gap-4 overflow-x-auto py-2">
+                            {otherParticipants.map(p => (
+                              <div key={p.userId} className="w-64 sm:w-72 shrink-0">
+                                {renderTile(p, false)}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 items-center justify-center">
+                        {allRoomParticipants.map(p => (
+                          <div key={p.userId}>
+                            {renderTile(p, false)}
+                          </div>
+                        ))}
+                      </div>
+                    )}
 
               {/* Chat Toast Notification Popup */}
               {chatToast && activeSidePanel !== 'chat' && (
@@ -2128,6 +2337,9 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
             )}
 
           </div>
+        </>
+      );
+    })()}
         </div>
       )}
 
