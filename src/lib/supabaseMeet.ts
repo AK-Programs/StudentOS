@@ -8,6 +8,66 @@ const STORAGE_KEY_RECORDINGS = 'studentos_meet_recordings_v1';
 // Seed sample upcoming & live meetings for demo/testing
 const defaultSampleMeetings: Meeting[] = [
   {
+    id: 'INSTANT-9-ASTRA',
+    title: 'Grade 9 Astra - Permanent Instant Room',
+    subject: 'General Class & Collaboration',
+    className: 'Grade 9 - Astra',
+    batch: 'Batch 2026',
+    type: 'instant',
+    startTime: new Date().toISOString(),
+    endTime: new Date(Date.now() + 1000 * 60 * 60 * 24 * 365).toISOString(),
+    description: 'Shared permanent virtual room for Grade 9 Astra students and teachers.',
+    password: '',
+    hostId: 'host',
+    hostName: 'Faculty Host',
+    hostEmail: 'faculty@school.edu',
+    hostRole: 'teacher',
+    joinLink: window.location.origin + '?meet=INSTANT-9-ASTRA',
+    status: 'live',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  },
+  {
+    id: 'INSTANT-8-ELERA',
+    title: 'Grade 8 Elera - Permanent Instant Room',
+    subject: 'General Class & Collaboration',
+    className: 'Grade 8 - Elera',
+    batch: 'Batch 2026',
+    type: 'instant',
+    startTime: new Date().toISOString(),
+    endTime: new Date(Date.now() + 1000 * 60 * 60 * 24 * 365).toISOString(),
+    description: 'Shared permanent virtual room for Grade 8 Elera students and teachers.',
+    password: '',
+    hostId: 'host',
+    hostName: 'Faculty Host',
+    hostEmail: 'faculty@school.edu',
+    hostRole: 'teacher',
+    joinLink: window.location.origin + '?meet=INSTANT-8-ELERA',
+    status: 'live',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  },
+  {
+    id: 'INSTANT-7-SOLARA',
+    title: 'Grade 7 Solara - Permanent Instant Room',
+    subject: 'General Class & Collaboration',
+    className: 'Grade 7 - Solara',
+    batch: 'Batch 2026',
+    type: 'instant',
+    startTime: new Date().toISOString(),
+    endTime: new Date(Date.now() + 1000 * 60 * 60 * 24 * 365).toISOString(),
+    description: 'Shared permanent virtual room for Grade 7 Solara students and teachers.',
+    password: '',
+    hostId: 'host',
+    hostName: 'Faculty Host',
+    hostEmail: 'faculty@school.edu',
+    hostRole: 'teacher',
+    joinLink: window.location.origin + '?meet=INSTANT-7-SOLARA',
+    status: 'live',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  },
+  {
     id: 'meet-892-412-890',
     title: 'Advanced Quantum Physics & Electromagnetism',
     subject: 'Physics',
@@ -80,12 +140,21 @@ const defaultSampleMeetings: Meeting[] = [
 export function getLocalMeetings(): Meeting[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_MEETINGS);
-    if (!raw) {
+    let parsed: Meeting[] = [];
+    if (raw) {
+      parsed = JSON.parse(raw);
+    }
+    if (!Array.isArray(parsed) || parsed.length === 0) {
       localStorage.setItem(STORAGE_KEY_MEETINGS, JSON.stringify(defaultSampleMeetings));
       return defaultSampleMeetings;
     }
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : defaultSampleMeetings;
+    // Ensure default permanent instant rooms exist in list
+    const missingInstants = defaultSampleMeetings.filter(dm => dm.id.startsWith('INSTANT-') && !parsed.some(m => m.id === dm.id));
+    if (missingInstants.length > 0) {
+      parsed = [...missingInstants, ...parsed];
+      localStorage.setItem(STORAGE_KEY_MEETINGS, JSON.stringify(parsed));
+    }
+    return parsed;
   } catch (err) {
     console.warn('[StudentOS Meet] Failed reading local meetings', err);
     return defaultSampleMeetings;
