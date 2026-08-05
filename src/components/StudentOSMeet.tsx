@@ -45,7 +45,15 @@ import {
   File as FileIcon,
   UserX,
   VolumeX,
-  CameraOff
+  CameraOff,
+  Pin,
+  PinOff,
+  Info,
+  SmilePlus,
+  MessageCircle,
+  Volume1,
+  FileCheck,
+  Maximize
 } from 'lucide-react';
 import { UserProfile, Meeting, MeetingParticipant, MeetingChatMessage, MeetingRecording, MeetingBreakoutRoom, MeetingAttendanceReport } from '../types';
 import { 
@@ -57,7 +65,9 @@ import {
   updateMeetingChatMessage,
   recordMeetingAttendance,
   saveMeetingRecording, 
-  getLocalRecordings 
+  getLocalRecordings,
+  deleteMeeting,
+  endMeetingInStore
 } from '../lib/supabaseMeet';
 import { MeetWhiteboard } from './meet/MeetWhiteboard';
 import { RemoteVideoTile } from './meet/RemoteVideoTile';
@@ -105,11 +115,15 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
   const [isInWaitingRoom, setIsInWaitingRoom] = useState(false);
   const [joinPasswordInput, setJoinPasswordInput] = useState('');
   const [passwordError, setPasswordError] = useState('');
+  const [joinError, setJoinError] = useState<string | null>(null);
   const [isCameraOn, setIsCameraOn] = useState(true);
   const [isMicOn, setIsMicOn] = useState(true);
   const [isHandRaised, setIsHandRaised] = useState(false);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
-  const [activeSidePanel, setActiveSidePanel] = useState<'chat' | 'participants' | 'breakout' | 'whiteboard' | 'ai' | 'attendance' | 'settings' | null>('chat');
+  const [screenSharingUserId, setScreenSharingUserId] = useState<string | null>(null);
+  const [pinnedParticipantId, setPinnedParticipantId] = useState<string | null>(null);
+  const [layoutMode, setLayoutMode] = useState<'gallery' | 'speaker' | 'presentation'>('gallery');
+  const [activeSidePanel, setActiveSidePanel] = useState<'chat' | 'participants' | 'breakout' | 'whiteboard' | 'ai' | 'attendance' | 'settings' | 'transcript' | null>('chat');
 
   // Device & Bandwidth Selection
   const [videoDevices, setVideoDevices] = useState<MediaDeviceInfo[]>([]);
@@ -123,14 +137,25 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
   // Participants & Host Waiting Room
   const [participants, setParticipants] = useState<MeetingParticipant[]>([]);
   const [waitingParticipants, setWaitingParticipants] = useState<MeetingParticipant[]>([]);
+  const [isLocked, setIsLocked] = useState(false);
 
   // Chat & Messaging inside meeting
   const [chatMessages, setChatMessages] = useState<MeetingChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
+  const [unreadChatCount, setUnreadChatCount] = useState<number>(0);
+  const [chatToast, setChatToast] = useState<{ sender: string; content: string } | null>(null);
+  const [typingUsers, setTypingUsers] = useState<string[]>([]);
+  const [chatSearchQuery, setChatSearchQuery] = useState('');
+  const [pinnedMessage, setPinnedMessage] = useState<MeetingChatMessage | null>(null);
+  const [replyingTo, setReplyingTo] = useState<MeetingChatMessage | null>(null);
   const [chatAttachment, setChatAttachment] = useState<{ name: string; url: string; type: 'image' | 'pdf' | 'file' } | null>(null);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editingContent, setEditingContent] = useState('');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Modals & Floating Tools
+  const [showInfoModal, setShowInfoModal] = useState(false);
+  const [showReactionsBar, setShowReactionsBar] = useState(false);
 
   // Recording State
   const [isRecording, setIsRecording] = useState(false);
@@ -190,26 +215,13 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
       fetchAllMeetings().then(list => {
         const found = list.find(m => m.id.toLowerCase() === meetParam.toLowerCase() || m.id.replace(/-/g, '').toLowerCase() === meetParam.replace(/-/g, '').toLowerCase());
         if (found) {
+          if (found.status === 'ended') {
+            setJoinError('This meeting has already ended.');
+            return;
+          }
           handleJoinMeeting(found);
         } else {
-          const autoMeeting: Meeting = {
-            id: meetParam,
-            title: `StudentOS Virtual Lecture (${meetParam})`,
-            subject: 'Classroom',
-            type: 'instant',
-            startTime: new Date().toISOString(),
-            endTime: new Date(Date.now() + 3600000).toISOString(),
-            password: '',
-            hostId: 'host-auto',
-            hostName: 'Class Instructor',
-            hostEmail: 'instructor@school.edu',
-            hostRole: 'teacher',
-            joinLink: window.location.href,
-            status: 'live',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-          };
-          handleJoinMeeting(autoMeeting);
+          setJoinError('Meeting not found. Please check the Meeting ID.');
         }
       });
     }
@@ -465,10 +477,39 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
             if (prev.some(m => m.id === payload.message.id)) return prev;
             return [...prev, payload.message];
           });
+          if (payload.message.senderId !== myUserId) {
+            setUnreadChatCount(prev => prev + 1);
+            setChatToast({ sender: payload.message.senderName, content: payload.message.content });
+            setTimeout(() => setChatToast(null), 4000);
+          }
         } else if (payload && payload.action === 'delete') {
           setChatMessages(prev => prev.filter(m => m.id !== payload.messageId));
         } else if (payload && payload.action === 'edit') {
           setChatMessages(prev => prev.map(m => m.id === payload.messageId ? { ...m, content: payload.newContent } : m));
+        }
+      })
+      .on('broadcast', { event: 'peer_screenshare_start' }, ({ payload }) => {
+        if (payload && payload.userId) {
+          setScreenSharingUserId(payload.userId);
+        }
+      })
+      .on('broadcast', { event: 'peer_screenshare_stop' }, ({ payload }) => {
+        if (payload && payload.userId) {
+          setScreenSharingUserId(prev => prev === payload.userId ? null : prev);
+        }
+      })
+      .on('broadcast', { event: 'typing' }, ({ payload }) => {
+        if (payload && payload.userName && payload.userId !== myUserId) {
+          setTypingUsers(prev => prev.includes(payload.userName) ? prev : [...prev, payload.userName]);
+          setTimeout(() => {
+            setTypingUsers(prev => prev.filter(u => u !== payload.userName));
+          }, 3000);
+        }
+      })
+      .on('broadcast', { event: 'live_caption' }, ({ payload }) => {
+        if (payload && payload.speaker && payload.text) {
+          setLiveCaptionText(`${payload.speaker}: ${payload.text}`);
+          setCaptionTranscript(prev => [...prev, { speaker: payload.speaker, text: payload.text, time: payload.time || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
         }
       })
       .on('broadcast', { event: 'host_control' }, ({ payload }) => {
@@ -484,9 +525,9 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
           } else if (payload.action === 'remove_user' && payload.targetUserId === myUserId) {
             alert('You have been removed from the meeting by the host.');
             handleLeaveMeeting();
-          } else if (payload.action === 'end_meeting') {
+          } else if (payload.action === 'end_meeting' || payload.action === 'delete_meeting') {
             handleLeaveMeeting();
-            alert('The host has ended the meeting for everyone.');
+            alert('The host has ended or deleted the meeting.');
           }
         }
       })
@@ -643,9 +684,15 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
 
   // Join Meeting Flow
   const handleJoinMeeting = (meeting: Meeting) => {
+    if (meeting.status === 'ended') {
+      setJoinError('This meeting has already ended.');
+      return;
+    }
+
     setActiveMeeting(meeting);
     setJoinPasswordInput('');
     setPasswordError('');
+    setJoinError(null);
     
     const isHost = currentUser?.uid === meeting.hostId || ['teacher', 'admin', 'super_admin'].includes(effectiveRole);
     const requiresWaitingRoom = !isHost && Boolean(meeting.password);
@@ -692,6 +739,21 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
     setCameraActiveSeconds(0);
     setMicActiveSeconds(0);
     setActiveView('room');
+  };
+
+  const handleJoinViaCode = () => {
+    const inputVal = joinPasswordInput.trim();
+    if (!inputVal) return;
+    const found = meetings.find(m => m.id.toLowerCase() === inputVal.toLowerCase() || m.id.replace(/-/g, '').toLowerCase() === inputVal.replace(/-/g, '').toLowerCase());
+    if (found) {
+      if (found.status === 'ended') {
+        setJoinError('This meeting has already ended.');
+        return;
+      }
+      handleJoinMeeting(found);
+    } else {
+      setJoinError('Meeting not found. Please check the Meeting ID.');
+    }
   };
 
   const handleConfirmPasswordJoin = () => {
@@ -751,15 +813,25 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
     setActiveMeeting(null);
     setParticipants([]);
     setWaitingParticipants([]);
+    setScreenSharingUserId(null);
+    setPinnedParticipantId(null);
   };
 
   // Screen Sharing Toggle
   const handleToggleScreenShare = async () => {
     if (isScreenSharing) {
       setIsScreenSharing(false);
+      setScreenSharingUserId(null);
       if (screenStreamRef.current) {
         screenStreamRef.current.getTracks().forEach(t => t.stop());
         screenStreamRef.current = null;
+      }
+      if (activeMeeting) {
+        supabase.channel(`studentos_meet_${activeMeeting.id}`).send({
+          type: 'broadcast',
+          event: 'peer_screenshare_stop',
+          payload: { userId: currentUser?.uid || 'user' }
+        });
       }
       // Revert video track on WebRTC peer connections
       if (localStreamRef.current && localStreamRef.current.getVideoTracks().length > 0) {
@@ -774,7 +846,17 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
         const displayStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
         screenStreamRef.current = displayStream;
         setIsScreenSharing(true);
+        const myUid = currentUser?.uid || 'user';
+        setScreenSharingUserId(myUid);
         const screenTrack = displayStream.getVideoTracks()[0];
+
+        if (activeMeeting) {
+          supabase.channel(`studentos_meet_${activeMeeting.id}`).send({
+            type: 'broadcast',
+            event: 'peer_screenshare_start',
+            payload: { userId: myUid }
+          });
+        }
 
         // Replace video track across WebRTC peer connections
         peerConnectionsRef.current.forEach((pc) => {
@@ -784,7 +866,15 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
 
         screenTrack.onended = () => {
           setIsScreenSharing(false);
+          setScreenSharingUserId(null);
           screenStreamRef.current = null;
+          if (activeMeeting) {
+            supabase.channel(`studentos_meet_${activeMeeting.id}`).send({
+              type: 'broadcast',
+              event: 'peer_screenshare_stop',
+              payload: { userId: myUid }
+            });
+          }
           if (localStreamRef.current && localStreamRef.current.getVideoTracks().length > 0) {
             const camTrack = localStreamRef.current.getVideoTracks()[0];
             peerConnectionsRef.current.forEach((pc) => {
@@ -859,15 +949,31 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
     }
   };
 
-  const handleHostEndMeeting = () => {
+  const handleHostEndMeeting = async () => {
     if (!activeMeeting) return;
     if (confirm('Are you sure you want to end this meeting for all participants?')) {
+      await endMeetingInStore(activeMeeting.id);
       supabase.channel(`studentos_meet_${activeMeeting.id}`).send({
         type: 'broadcast',
         event: 'host_control',
         payload: { action: 'end_meeting' }
       });
       handleLeaveMeeting();
+    }
+  };
+
+  const handleHostDeleteMeeting = async (meetingId: string) => {
+    if (confirm('Are you sure you want to permanently delete this meeting?')) {
+      await deleteMeeting(meetingId);
+      if (activeMeeting?.id === meetingId) {
+        supabase.channel(`studentos_meet_${meetingId}`).send({
+          type: 'broadcast',
+          event: 'host_control',
+          payload: { action: 'delete_meeting' }
+        });
+        handleLeaveMeeting();
+      }
+      loadAllMeetingsData();
     }
   };
 
@@ -1098,6 +1204,25 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
       {/* VIEW 1: LOBBY & MEETINGS DASHBOARD */}
       {activeView === 'lobby' && (
         <main className="flex-1 p-6 max-w-7xl w-full mx-auto space-y-8 animate-fadeIn">
+          {/* Join Error Banner if invalid ID or ended meeting */}
+          {joinError && (
+            <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 flex items-center justify-between gap-4 animate-fadeIn">
+              <div className="flex items-center gap-3">
+                <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
+                <div>
+                  <h4 className="text-sm font-bold text-white">Meeting Access Error</h4>
+                  <p className="text-xs text-rose-300">{joinError}</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setJoinError(null)}
+                className="px-3 py-1.5 bg-rose-600/30 hover:bg-rose-600/50 text-white rounded-xl text-xs font-bold transition-all"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
           {/* Quick Action Banner */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="p-6 rounded-3xl bg-gradient-to-br from-indigo-900/40 via-slate-900 to-slate-950 border border-indigo-500/20 shadow-2xl relative overflow-hidden flex flex-col justify-between">
@@ -1170,32 +1295,7 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
                   className="bg-slate-950 border border-white/10 rounded-xl px-3 py-2 text-xs text-white outline-none flex-1 focus:border-teal-500"
                 />
                 <button
-                  onClick={() => {
-                    const inputVal = joinPasswordInput.trim();
-                    const found = meetings.find(m => m.id.toLowerCase() === inputVal.toLowerCase());
-                    if (found) {
-                      handleJoinMeeting(found);
-                    } else if (inputVal) {
-                      const tempMeeting: Meeting = {
-                        id: inputVal,
-                        title: 'StudentOS Joined Class',
-                        subject: 'Classroom',
-                        type: 'scheduled',
-                        startTime: new Date().toISOString(),
-                        endTime: new Date(Date.now() + 3600000).toISOString(),
-                        password: '',
-                        hostId: 'host-1',
-                        hostName: 'Class Instructor',
-                        hostEmail: 'instructor@school.edu',
-                        hostRole: 'teacher',
-                        joinLink: window.location.origin + '?meet=' + inputVal,
-                        status: 'live',
-                        createdAt: new Date().toISOString(),
-                        updatedAt: new Date().toISOString()
-                      };
-                      handleJoinMeeting(tempMeeting);
-                    }
-                  }}
+                  onClick={handleJoinViaCode}
                   className="px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white font-bold text-xs rounded-xl transition-all"
                 >
                   Join
@@ -1262,6 +1362,16 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
                       >
                         <Copy className="w-4 h-4" />
                       </button>
+
+                      {['teacher', 'admin', 'super_admin'].includes(effectiveRole) && (
+                        <button
+                          onClick={() => handleHostDeleteMeeting(m.id)}
+                          className="p-2 bg-rose-600/20 hover:bg-rose-600/40 text-rose-300 rounded-xl border border-rose-500/20 transition-all"
+                          title="Delete Meeting"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -1571,10 +1681,31 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
                     key={p.userId}
                     participant={p}
                     stream={remoteStreamsState[p.userId]}
-                    isScreenSharing={p.isScreenSharing}
+                    isScreenSharing={p.isScreenSharing || screenSharingUserId === p.userId}
+                    isPinned={pinnedParticipantId === p.userId}
+                    onPin={() => setPinnedParticipantId(pinnedParticipantId === p.userId ? null : p.userId)}
+                    isHost={currentUser?.uid === activeMeeting.hostId || ['teacher', 'admin', 'super_admin'].includes(effectiveRole)}
+                    onHostMute={() => handleHostMuteUser(p.userId)}
+                    onHostRemove={() => handleHostRemoveUser(p.userId)}
                   />
                 ))}
               </div>
+
+              {/* Chat Toast Notification Popup */}
+              {chatToast && activeSidePanel !== 'chat' && (
+                <div 
+                  onClick={() => { setActiveSidePanel('chat'); setUnreadChatCount(0); setChatToast(null); }}
+                  className="fixed bottom-20 right-6 z-50 p-4 bg-slate-900/95 border border-indigo-500/40 rounded-2xl shadow-2xl backdrop-blur-xl flex items-center gap-3 cursor-pointer animate-slideUp max-w-sm hover:border-indigo-400 transition-all"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 flex items-center justify-center shrink-0">
+                    <MessageSquare className="w-5 h-5" />
+                  </div>
+                  <div className="flex-1 overflow-hidden">
+                    <h5 className="text-xs font-bold text-white truncate">{chatToast.sender}</h5>
+                    <p className="text-xs text-slate-300 truncate">{chatToast.content}</p>
+                  </div>
+                </div>
+              )}
 
               {/* FLOATING IN-MEETING CONTROL BAR */}
               <div className="p-3 bg-slate-900/90 border border-white/10 rounded-2xl backdrop-blur-xl max-w-3xl w-full mx-auto flex items-center justify-between gap-3 shadow-2xl z-20">
@@ -1632,11 +1763,19 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
 
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => setActiveSidePanel(activeSidePanel === 'chat' ? null : 'chat')}
+                    onClick={() => {
+                      setActiveSidePanel(activeSidePanel === 'chat' ? null : 'chat');
+                      setUnreadChatCount(0);
+                    }}
                     className={`p-3 rounded-2xl transition-all relative ${activeSidePanel === 'chat' ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700'}`}
                     title="Meeting Chat"
                   >
                     <MessageSquare className="w-5 h-5" />
+                    {unreadChatCount > 0 && activeSidePanel !== 'chat' && (
+                      <span className="absolute -top-1 -right-1 px-1.5 py-0.5 bg-rose-500 text-white rounded-full text-[9px] font-black flex items-center justify-center animate-pulse">
+                        {unreadChatCount}
+                      </span>
+                    )}
                   </button>
 
                   <button
