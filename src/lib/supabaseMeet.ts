@@ -229,6 +229,84 @@ export function getLocalChatMessages(meetingId: string): MeetingChatMessage[] {
   }
 }
 
+export async function deleteMeetingChatMessage(meetingId: string, messageId: string): Promise<void> {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_CHATS + '_' + meetingId);
+    if (raw) {
+      const existing: MeetingChatMessage[] = JSON.parse(raw);
+      const filtered = existing.filter(m => m.id !== messageId);
+      localStorage.setItem(STORAGE_KEY_CHATS + '_' + meetingId, JSON.stringify(filtered));
+    }
+  } catch (e) {
+    console.warn('Failed local chat delete', e);
+  }
+
+  try {
+    await supabase.from('meeting_chat').delete().eq('id', messageId);
+  } catch (e) {
+    console.warn('Failed supabase chat delete', e);
+  }
+}
+
+export async function updateMeetingChatMessage(meetingId: string, messageId: string, newContent: string): Promise<void> {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY_CHATS + '_' + meetingId);
+    if (raw) {
+      const existing: MeetingChatMessage[] = JSON.parse(raw);
+      const updated = existing.map(m => m.id === messageId ? { ...m, content: newContent } : m);
+      localStorage.setItem(STORAGE_KEY_CHATS + '_' + meetingId, JSON.stringify(updated));
+    }
+  } catch (e) {
+    console.warn('Failed local chat edit', e);
+  }
+
+  try {
+    await supabase.from('meeting_chat').update({ content: newContent }).eq('id', messageId);
+  } catch (e) {
+    console.warn('Failed supabase chat update', e);
+  }
+}
+
+export async function recordMeetingAttendance(record: {
+  meetingId: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  userRole: string;
+  joinedAt: string;
+  leftAt: string;
+  durationSeconds: number;
+  cameraActiveSeconds: number;
+  micActiveSeconds: number;
+}): Promise<void> {
+  try {
+    const key = `studentos_meet_attendance_${record.meetingId}`;
+    const raw = localStorage.getItem(key);
+    const existing = raw ? JSON.parse(raw) : [];
+    existing.push(record);
+    localStorage.setItem(key, JSON.stringify(existing));
+  } catch (e) {
+    console.warn('Failed local attendance save', e);
+  }
+
+  try {
+    await supabase.from('meeting_attendance').insert({
+      meeting_id: record.meetingId,
+      user_id: record.userId,
+      user_name: record.userName,
+      user_email: record.userEmail,
+      user_role: record.userRole,
+      joined_at: record.joinedAt,
+      left_at: record.leftAt,
+      duration_seconds: record.durationSeconds,
+      camera_active_seconds: record.cameraActiveSeconds,
+      mic_active_seconds: record.micActiveSeconds
+    });
+  } catch (e) {
+    console.warn('Failed supabase attendance insert', e);
+  }
+}
+
 export async function saveMeetingRecording(recording: MeetingRecording): Promise<void> {
   try {
     const raw = localStorage.getItem(STORAGE_KEY_RECORDINGS);
