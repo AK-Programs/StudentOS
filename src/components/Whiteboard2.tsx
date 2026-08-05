@@ -57,6 +57,8 @@ interface Slide {
   stickies: any[];
 }
 
+declare const mermaid: any;
+
 export const Whiteboard2 = ({ onClose, currentUser }: any) => {
   const [slides, setSlides] = useState<Slide[]>([{ id: 'slide_1', shapes: [], lines: [], stickies: [] }]);
   const [activeSlideIdx, setActiveSlideIdx] = useState(0);
@@ -218,7 +220,7 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
               img.onload = () => {
                 const shape: ShapeObj = {
                   id: `mermaid-diagram-${Date.now()}`,
-                  type: 'mermaid_node',
+                  type: 'mermaid',
                   x: 50, y: 50, width: 800, height: 600,
                   stroke: '#10b981', strokeWidth: 0, imageObj: img
                 };
