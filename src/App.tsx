@@ -48,6 +48,7 @@ import CoordinatorModule from './components/CoordinatorModule';
 import { SportsActivitiesPortal } from './components/SportsActivitiesPortal';
 import { SubstituteHub } from './components/SubstituteHub';
 import { ChatSystem } from './components/ChatSystem';
+import { StudentOSMeet } from './components/StudentOSMeet';
 import { NotificationCenter } from './components/NotificationCenter';
 import { BroadcastModal } from './components/BroadcastModal';
 import { LiveBroadcastBanner } from './components/LiveBroadcastBanner';
@@ -1643,14 +1644,18 @@ export default function App() {
       console.log("CURRENT_USER", currentUser);
       console.log("CURRENT_ROLE", currentUser.role || 'Unknown');
     }
-  }, [currentUser]);
+  }, [currentUser?.uid]);
 
+  const hasLoggedPeerChatRef = useRef(false);
   useEffect(() => {
-    if (activeTab === 'peer_chat') {
+    if (activeTab === 'peer_chat' && !hasLoggedPeerChatRef.current) {
+      hasLoggedPeerChatRef.current = true;
       console.log("CHAT_INIT", { chatsCount: chats.length });
       console.log("ROOMS_INIT", chatRooms);
+    } else if (activeTab !== 'peer_chat') {
+      hasLoggedPeerChatRef.current = false;
     }
-  }, [activeTab, chats, chatRooms]);
+  }, [activeTab]);
 
   // Tasks Sync
   useEffect(() => {
@@ -1785,16 +1790,11 @@ What can I clarify today?` }
     if (!currentUser || activeTab !== 'feedback') return;
     const loadFeedbacks = async () => {
       try {
-        const { data } = await supabase.from('global_data').select('*').eq('id', '__global_feedbacks__').maybeSingle();
+        const { data, error } = await supabase.from('global_data').select('*').eq('id', '__global_feedbacks__').maybeSingle();
         if (data && data.content) {
           setFeedbackPosts(JSON.parse(data.content));
         } else {
           setFeedbackPosts(INITIAL_FEEDBACK);
-          await supabase.from('global_data').upsert({
-            id: '__global_feedbacks__',
-            content: JSON.stringify(INITIAL_FEEDBACK),
-            updated_at: new Date().toISOString()
-          }).catch(() => {});
         }
       } catch (e) {
         setFeedbackPosts(INITIAL_FEEDBACK);
@@ -1813,11 +1813,6 @@ What can I clarify today?` }
           setAnnouncements(JSON.parse(data.content));
         } else {
           setAnnouncements(INITIAL_ANNOUNCEMENTS);
-          await supabase.from('global_data').upsert({
-            id: '__global_announcements__',
-            content: JSON.stringify(INITIAL_ANNOUNCEMENTS),
-            updated_at: new Date().toISOString()
-          }).catch(() => {});
         }
       } catch (e) {
         setAnnouncements(INITIAL_ANNOUNCEMENTS);
@@ -1826,16 +1821,10 @@ What can I clarify today?` }
     loadAnnouncements();
   }, [currentUser, activeTab]);
 
-  const chatInitUidRef = useRef<string | null>(null);
-
-  // Chats & Rooms Initial Load (Loaded from Supabase once on mount / user login)
+  // Chats & Rooms Sync On-Demand (Loaded from Supabase)
   useEffect(() => {
-    const uid = currentUser?.uid;
-    if (!uid) return;
-    if (chatInitUidRef.current === uid) return;
-    chatInitUidRef.current = uid;
-
-    console.log("[SUPABASE-CHAT] Initializing peer messages & chat rooms from Supabase for user:", uid);
+    if (!currentUser) return;
+    console.log("[SUPABASE-CHAT] Fetching peer messages & chat rooms from Supabase...");
     getPeerMessages().then(list => {
       if (list) {
         setChats(list);
@@ -1844,7 +1833,7 @@ What can I clarify today?` }
       console.error("[SUPABASE-CHAT] Error fetching peer messages:", err);
     });
 
-    getChatRooms(uid).then(roomsList => {
+    getChatRooms(currentUser.uid).then(roomsList => {
       if (roomsList) {
         setChatRooms(roomsList);
       }
@@ -5959,6 +5948,16 @@ ${roleLabel}: ${userQuery}`;
                 <div className="space-y-1">
                   {sidebarOpen && <p className="text-[10px] font-black uppercase text-slate-500 tracking-wider px-3 mb-1">Class & Community</p>}
                   
+                  {(!presentationMode || isTabAllowedInPresentation('meet')) && (
+                    <button 
+                      onClick={() => handleTabSelect('meet')}
+                      className={getSidebarBtnClass('meet')}
+                    >
+                      <span>📹</span>
+                      {sidebarOpen && 'StudentOS Meet'}
+                    </button>
+                  )}
+
                   {!presentationMode && (
                     <button 
                       onClick={() => handleTabSelect('quiz')}
@@ -6275,6 +6274,7 @@ ${roleLabel}: ${userQuery}`;
                 <div>
                   <h2 className="text-xl font-extrabold tracking-tight text-white font-display">
                     {activeTab === 'dashboard' && 'My Dashboard'}
+                    {activeTab === 'meet' && 'StudentOS Meet (Virtual Classroom)'}
                     {activeTab === 'tasks' && 'My Tasks'}
                     {activeTab === 'whiteboard' && 'Drawing Board'}
                     {activeTab === 'houses' && 'House Standings'}
@@ -6769,6 +6769,13 @@ ${roleLabel}: ${userQuery}`;
                       {/* Student Cards */}
                       {effectiveRole === 'student' && (
                         <>
+                          <button
+                            onClick={() => handleTabSelect('meet')}
+                            className="p-4 bg-indigo-900/40 hover:bg-indigo-800/60 border border-indigo-500/40 rounded-2xl flex flex-col items-center justify-center text-center gap-2 hover:border-indigo-400 hover:shadow-lg transition-all"
+                          >
+                            <span className="text-2xl">📹</span>
+                            <span className="text-xs font-bold text-white">StudentOS Meet</span>
+                          </button>
                           <button
                             onClick={() => handleTabSelect('notes')}
                             className="p-4 bg-slate-900/60 hover:bg-indigo-950/40 border border-white/10 rounded-2xl flex flex-col items-center justify-center text-center gap-2 hover:border-indigo-500/50 hover:shadow-lg transition-all"
@@ -8465,6 +8472,14 @@ ${activeNote.content}`);
                 <SportsActivitiesPortal 
                   currentUser={currentUser} 
                   showNotification={showNotification} 
+                />
+              )}
+              {/* Tab: StudentOS Meet Virtual Classroom */}
+              {activeTab === 'meet' && (
+                <StudentOSMeet 
+                  currentUser={currentUser} 
+                  effectiveRole={effectiveRole} 
+                  onNavigateTab={setActiveTab} 
                 />
               )}
               {/* Tab: Substitute Board View */}
