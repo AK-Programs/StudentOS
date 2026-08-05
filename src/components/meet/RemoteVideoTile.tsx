@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { MicOff, Hand, User, Pin, Maximize2, Volume2, ShieldAlert, Trash2 } from 'lucide-react';
+import { MicOff, Hand, User, Pin, Maximize2, Volume2, ShieldAlert, Trash2, Sparkles } from 'lucide-react';
 import { MeetingParticipant } from '../../types';
 
 interface RemoteVideoTileProps {
@@ -8,6 +8,8 @@ interface RemoteVideoTileProps {
   isScreenSharing?: boolean;
   isPinned?: boolean;
   onPin?: () => void;
+  isSpotlighted?: boolean;
+  onSpotlight?: () => void;
   onFullscreen?: () => void;
   isSpeaking?: boolean;
   isHost?: boolean;
@@ -21,6 +23,8 @@ export const RemoteVideoTile: React.FC<RemoteVideoTileProps> = ({
   isScreenSharing,
   isPinned,
   onPin,
+  isSpotlighted,
+  onSpotlight,
   onFullscreen,
   isSpeaking,
   isHost,
@@ -80,10 +84,20 @@ export const RemoteVideoTile: React.FC<RemoteVideoTileProps> = ({
         {onPin && (
           <button
             onClick={onPin}
-            title={isPinned ? 'Unpin participant' : 'Pin participant'}
+            title={isPinned ? 'Unpin participant' : 'Pin participant (Local view)'}
             className={`p-2 rounded-xl border backdrop-blur-md transition-all ${isPinned ? 'bg-amber-500 text-slate-950 border-amber-400' : 'bg-black/70 text-white border-white/20 hover:bg-slate-800'}`}
           >
             <Pin className="w-3.5 h-3.5" />
+          </button>
+        )}
+
+        {isHost && onSpotlight && (
+          <button
+            onClick={onSpotlight}
+            title={isSpotlighted ? 'Remove Spotlight' : 'Spotlight for Everyone (Host)'}
+            className={`p-2 rounded-xl border backdrop-blur-md transition-all ${isSpotlighted ? 'bg-indigo-500 text-white border-indigo-400 shadow-lg shadow-indigo-500/40 animate-pulse' : 'bg-black/70 text-indigo-300 border-white/20 hover:bg-slate-800'}`}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
           </button>
         )}
 
