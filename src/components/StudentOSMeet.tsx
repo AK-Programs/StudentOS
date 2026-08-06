@@ -218,6 +218,58 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
     setMeetings(list);
   };
 
+  // Global Realtime Subscription for Meeting Sync, Deletions, and End Events
+  useEffect(() => {
+    const globalMeetingsChannel = supabase.channel('studentos_meetings_global');
+    globalMeetingsChannel
+      .on('broadcast', { event: 'meeting_sync' }, () => {
+        loadAllMeetingsData();
+      })
+      .on('broadcast', { event: 'meeting_deleted' }, ({ payload }) => {
+        if (payload && payload.meetingId) {
+          setMeetings(prev => prev.filter(m => m.id !== payload.meetingId && m.id.toLowerCase() !== payload.meetingId.toLowerCase()));
+          if (activeMeeting?.id === payload.meetingId || activeMeeting?.id.toLowerCase() === payload.meetingId.toLowerCase()) {
+            alert('This meeting has been deleted by the host.');
+            handleLeaveMeeting();
+          }
+        } else {
+          loadAllMeetingsData();
+        }
+      })
+      .on('broadcast', { event: 'meeting_ended' }, ({ payload }) => {
+        if (payload && payload.meetingId) {
+          setMeetings(prev => prev.map(m => (m.id === payload.meetingId || m.id.toLowerCase() === payload.meetingId.toLowerCase()) ? { ...m, status: 'ended' } : m));
+          if (activeMeeting?.id === payload.meetingId || activeMeeting?.id.toLowerCase() === payload.meetingId.toLowerCase()) {
+            alert('This meeting has been ended by the host.');
+            handleLeaveMeeting();
+          }
+        } else {
+          loadAllMeetingsData();
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(globalMeetingsChannel);
+    };
+  }, [activeMeeting?.id]);
+
+  // Live countdown timer for Waiting Room auto-admit
+  const [, setWaitingRoomClock] = useState(0);
+  useEffect(() => {
+    if (!isInWaitingRoom || !activeMeeting?.startTime) return;
+    const interval = setInterval(() => {
+      const diff = new Date(activeMeeting.startTime).getTime() - Date.now();
+      if (diff <= 0) {
+        setIsInWaitingRoom(false);
+        clearInterval(interval);
+      } else {
+        setWaitingRoomClock(prev => prev + 1);
+      }
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [isInWaitingRoom, activeMeeting?.startTime]);
+
   // Auto-join via URL Parameter (?meet=ABCD-EFGH or ?meetingId=...)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -1082,12 +1134,20 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
   const handleHostEndMeeting = async () => {
     if (!activeMeeting || !isCurrentHost) return;
     if (confirm('Are you sure you want to end this meeting for all participants?')) {
-      await endMeetingInStore(activeMeeting.id);
-      supabase.channel(`studentos_meet_${activeMeeting.id}`).send({
-        type: 'broadcast',
-        event: 'host_control',
-        payload: { action: 'end_meeting' }
-      });
+      const targetId = activeMeeting.id;
+      await endMeetingInStore(targetId);
+      try {
+        supabase.channel(`studentos_meet_${targetId}`).send({
+          type: 'broadcast',
+          event: 'host_control',
+          payload: { action: 'end_meeting' }
+        });
+        supabase.channel('studentos_meetings_global').send({
+          type: 'broadcast',
+          event: 'meeting_ended',
+          payload: { meetingId: targetId }
+        });
+      } catch (_) {}
       handleLeaveMeeting();
     }
   };
@@ -1102,12 +1162,19 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
     }
     if (confirm('Are you sure you want to permanently delete this meeting?')) {
       await deleteMeeting(meetingId);
-      if (activeMeeting?.id === meetingId) {
+      try {
         supabase.channel(`studentos_meet_${meetingId}`).send({
           type: 'broadcast',
           event: 'host_control',
           payload: { action: 'delete_meeting' }
         });
+        supabase.channel('studentos_meetings_global').send({
+          type: 'broadcast',
+          event: 'meeting_deleted',
+          payload: { meetingId }
+        });
+      } catch (_) {}
+      if (activeMeeting?.id === meetingId) {
         handleLeaveMeeting();
       }
       loadAllMeetingsData();
