@@ -40,6 +40,7 @@ interface ActiveCall {
   isMuted: boolean;
   isVideoOff: boolean;
   isScreenSharing: boolean;
+  isCaller?: boolean;
 }
 
 export const ChatSystem: React.FC<ChatSystemProps> = ({
@@ -244,6 +245,31 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
     }
   };
 
+  const cleanupCall = () => {
+    if (callTimerRef.current) {
+      clearInterval(callTimerRef.current);
+      callTimerRef.current = null;
+    }
+    if (peerConnectionRef.current) {
+      try {
+        peerConnectionRef.current.ontrack = null;
+        peerConnectionRef.current.onicecandidate = null;
+        peerConnectionRef.current.close();
+      } catch (_) {}
+      peerConnectionRef.current = null;
+    }
+    if (localMediaStreamRef.current) {
+      try {
+        localMediaStreamRef.current.getTracks().forEach(t => t.stop());
+      } catch (_) {}
+      localMediaStreamRef.current = null;
+    }
+    setRemoteStream(null);
+    stopRingtoneSound();
+    setActiveCall(null);
+    setCallDuration(0);
+  };
+
   useEffect(() => {
     if (!activeCall) {
       stopRingtoneSound();
@@ -303,7 +329,7 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
         if (!pc) return;
 
         try {
-          if (data.offer) {
+          if (data.offer && !activeCall.isCaller) {
             await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
@@ -312,7 +338,7 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
               event: 'webrtc_signal',
               payload: { answer, senderUid: currentUser?.uid }
             });
-          } else if (data.answer) {
+          } else if (data.answer && activeCall.isCaller) {
             await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
           } else if (data.candidate) {
             await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
@@ -324,42 +350,56 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
       .subscribe();
 
     const initiateWebRTC = async () => {
-      if (!peerConnectionRef.current) {
-        const pc = new RTCPeerConnection({
-          iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' }
-          ]
-        });
-        peerConnectionRef.current = pc;
+      if (peerConnectionRef.current) {
+        try { peerConnectionRef.current.close(); } catch (_) {}
+        peerConnectionRef.current = null;
+      }
 
-        if (localMediaStreamRef.current) {
-          localMediaStreamRef.current.getTracks().forEach(track => {
-            pc.addTrack(track, localMediaStreamRef.current!);
+      const pc = new RTCPeerConnection({
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: 'stun:stun2.l.google.com:19302' }
+        ]
+      });
+      peerConnectionRef.current = pc;
+
+      if (localMediaStreamRef.current) {
+        localMediaStreamRef.current.getTracks().forEach(track => {
+          pc.addTrack(track, localMediaStreamRef.current!);
+        });
+      }
+
+      pc.ontrack = (event) => {
+        if (event.streams && event.streams[0]) {
+          setRemoteStream(event.streams[0]);
+        } else {
+          setRemoteStream(prev => {
+            const s = prev ? prev : new MediaStream();
+            if (!s.getTracks().some(t => t.id === event.track.id)) {
+              s.addTrack(event.track);
+            }
+            return new MediaStream(s.getTracks());
           });
         }
+      };
 
-        pc.ontrack = (event) => {
-          if (event.streams && event.streams[0]) {
-            setRemoteStream(event.streams[0]);
-          }
-        };
+      pc.onicecandidate = (evt) => {
+        if (evt.candidate) {
+          try {
+            signalChannel.send({
+              type: 'broadcast',
+              event: 'webrtc_signal',
+              payload: { candidate: evt.candidate, senderUid: currentUser?.uid }
+            });
+          } catch (_) {}
+        }
+      };
 
-        pc.onicecandidate = (evt) => {
-          if (evt.candidate) {
-            try {
-              signalChannel.send({
-                type: 'broadcast',
-                event: 'webrtc_signal',
-                payload: { candidate: evt.candidate, senderUid: currentUser?.uid }
-              });
-            } catch (_) {}
-          }
-        };
-
-        // Create initial offer
+      // Only the CALLER creates the initial offer
+      if (activeCall.isCaller) {
         try {
-          const offer = await pc.createOffer();
+          const offer = await pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: activeCall.type === 'video' });
           await pc.setLocalDescription(offer);
           signalChannel.send({
             type: 'broadcast',
@@ -395,45 +435,27 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
             mode: 'incoming',
             isMuted: false,
             isVideoOff: false,
-            isScreenSharing: false
+            isScreenSharing: false,
+            isCaller: false
           });
         }
       })
       .on('broadcast', { event: 'call_accepted' }, (payload) => {
         if (activeCallRef.current && payload.payload?.callId === activeCallRef.current.callId) {
+          stopRingtoneSound();
           setActiveCall(prev => prev ? { ...prev, mode: 'connected', startTime: Date.now() } : null);
           showNotification('Call connected!');
         }
       })
       .on('broadcast', { event: 'call_rejected' }, (payload) => {
         if (activeCallRef.current && payload.payload?.callId === activeCallRef.current.callId) {
-          if (peerConnectionRef.current) {
-            peerConnectionRef.current.close();
-            peerConnectionRef.current = null;
-          }
-          if (localMediaStreamRef.current) {
-            localMediaStreamRef.current.getTracks().forEach(t => t.stop());
-            localMediaStreamRef.current = null;
-          }
-          setRemoteStream(null);
-          stopRingtoneSound();
-          setActiveCall(null);
+          cleanupCall();
           showNotification('Call declined.');
         }
       })
       .on('broadcast', { event: 'call_ended' }, (payload) => {
         if (activeCallRef.current && payload.payload?.callId === activeCallRef.current.callId) {
-          if (peerConnectionRef.current) {
-            peerConnectionRef.current.close();
-            peerConnectionRef.current = null;
-          }
-          if (localMediaStreamRef.current) {
-            localMediaStreamRef.current.getTracks().forEach(t => t.stop());
-            localMediaStreamRef.current = null;
-          }
-          setRemoteStream(null);
-          stopRingtoneSound();
-          setActiveCall(null);
+          cleanupCall();
           showNotification('Call ended.');
         }
       })
@@ -745,12 +767,14 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
   // Start Call (Voice or Video)
   const handleStartCall = async (targetUser: UserProfile, type: 'audio' | 'video') => {
     if (!currentUser) return;
+    cleanupCall(); // Rebuild lifecycle: ensure previous peer connections/tracks are destroyed
+
     const callId = `call-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
     
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-        video: type === 'video'
+        video: type === 'video' ? { width: 1280, height: 720 } : false
       });
       localMediaStreamRef.current = stream;
     } catch (e) {
@@ -764,7 +788,8 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
       mode: 'outgoing',
       isMuted: false,
       isVideoOff: false,
-      isScreenSharing: false
+      isScreenSharing: false,
+      isCaller: true
     });
 
     try {
@@ -808,17 +833,7 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
         }
       } catch (_) {}
     }
-    if (peerConnectionRef.current) {
-      peerConnectionRef.current.close();
-      peerConnectionRef.current = null;
-    }
-    if (localMediaStreamRef.current) {
-      localMediaStreamRef.current.getTracks().forEach(t => t.stop());
-      localMediaStreamRef.current = null;
-    }
-    setRemoteStream(null);
-    stopRingtoneSound();
-    setActiveCall(null);
+    cleanupCall();
     showNotification('Call ended.');
   };
 
@@ -2459,11 +2474,7 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
                           });
                         }
                       } catch (_) {}
-                      if (localMediaStreamRef.current) {
-                        localMediaStreamRef.current.getTracks().forEach(t => t.stop());
-                        localMediaStreamRef.current = null;
-                      }
-                      setActiveCall(null);
+                      cleanupCall();
                       showNotification('Call declined.');
                     }}
                     className="w-14 h-14 rounded-full bg-rose-600 hover:bg-rose-500 text-white flex items-center justify-center shadow-lg shadow-rose-600/40 transition-all hover:scale-110"
@@ -2475,10 +2486,11 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
                   {/* Accept Call */}
                   <button
                     onClick={async () => {
+                      stopRingtoneSound();
                       try {
                         const stream = await navigator.mediaDevices.getUserMedia({
-                          audio: { echoCancellation: true, noiseSuppression: true },
-                          video: activeCall.type === 'video'
+                          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+                          video: activeCall.type === 'video' ? { width: 1280, height: 720 } : false
                         });
                         localMediaStreamRef.current = stream;
                       } catch (e) {
@@ -2501,7 +2513,7 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
                         }
                       } catch (_) {}
 
-                      setActiveCall(prev => prev ? { ...prev, mode: 'connected', startTime: Date.now() } : null);
+                      setActiveCall(prev => prev ? { ...prev, mode: 'connected', startTime: Date.now(), isCaller: false } : null);
                       showNotification('Call connected!');
                     }}
                     className="w-14 h-14 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-600/40 transition-all hover:scale-110 animate-bounce"
