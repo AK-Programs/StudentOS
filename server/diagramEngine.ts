@@ -316,8 +316,75 @@ const TOPIC_PRESETS: Record<string, ConceptGraph> = {
       { from: "federalism", to: "parliament", relation: "Power Distribution" },
       { from: "amendment", to: "parliament", relation: "Constitutional Flexibility" }
     ]
+  },
+  "network": {
+    title: "Computer Network OSI & TCP/IP Model",
+    topic: "Computer Network",
+    summary: "Architecture of Computer Communication Networks",
+    groups: [
+      { id: "g1", title: "User & Application", nodeIds: ["app_layer", "transport_layer"] },
+      { id: "g2", title: "Routing & Hardware", nodeIds: ["network_layer", "link_layer", "physical_layer"] }
+    ],
+    nodes: [
+      { id: "app_layer", label: "Application Layer", description: "HTTP, DNS, FTP, SMTP Protocols" },
+      { id: "transport_layer", label: "Transport Layer", description: "TCP / UDP Reliable Transmission" },
+      { id: "network_layer", label: "Network Layer", description: "IP Addressing & Packet Routing" },
+      { id: "link_layer", label: "Data Link Layer", description: "Ethernet MAC & Switch Frames" },
+      { id: "physical_layer", label: "Physical Layer", description: "Bitstream, Cables & Signals" }
+    ],
+    edges: [
+      { from: "app_layer", to: "transport_layer", relation: "Encapsulates Data" },
+      { from: "transport_layer", to: "network_layer", relation: "Segments to Packets" },
+      { from: "network_layer", to: "link_layer", relation: "Routes to Frames" },
+      { from: "link_layer", to: "physical_layer", relation: "Converts to Bits" }
+    ]
+  },
+  "dna": {
+    title: "DNA Replication Machinery",
+    topic: "DNA Replication",
+    summary: "Molecular Process of Cellular DNA Duplication",
+    groups: [
+      { id: "g1", title: "Unwinding", nodeIds: ["helicase", "topoisomerase", "ssb"] },
+      { id: "g2", title: "Synthesis", nodeIds: ["primase", "dna_pol", "ligase"] }
+    ],
+    nodes: [
+      { id: "helicase", label: "DNA Helicase", description: "Unzips Double Helix Strand" },
+      { id: "topoisomerase", label: "Topoisomerase", description: "Relieves Torsional Strain" },
+      { id: "ssb", label: "SSB Proteins", description: "Stabilizes Single Strands" },
+      { id: "primase", label: "RNA Primase", description: "Lays RNA Primer Sequence" },
+      { id: "dna_pol", label: "DNA Polymerase III", description: "Synthesizes New DNA 5'->3'" },
+      { id: "ligase", label: "DNA Ligase", description: "Seals Okazaki Fragments" }
+    ],
+    edges: [
+      { from: "helicase", to: "ssb", relation: "Exposes Strands" },
+      { from: "topoisomerase", to: "helicase", relation: "Prevents Supercoiling" },
+      { from: "primase", to: "dna_pol", relation: "Provides 3'-OH" },
+      { from: "dna_pol", to: "ligase", relation: "Leaves Nick to Seal" }
+    ]
   }
 };
+
+/**
+ * Robust JSON Extractor from AI text output.
+ */
+function extractJsonFromText(rawText: string): any {
+  if (!rawText) return null;
+  let text = rawText.trim();
+  text = text.replace(/^```(?:json)?/gi, '').replace(/```$/gi, '').trim();
+  const firstBrace = text.indexOf('{');
+  const lastBrace = text.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    const jsonSubstring = text.substring(firstBrace, lastBrace + 1);
+    try {
+      return JSON.parse(jsonSubstring);
+    } catch (_) {}
+  }
+  try {
+    return JSON.parse(text);
+  } catch (_) {
+    return null;
+  }
+}
 
 /**
  * Checks if a query matches any known preset keyword.
@@ -351,7 +418,7 @@ function buildDynamicTopicGraph(query: string): ConceptGraph {
     nodes: [
       { id: 'n1', label: `${topicTitle} (Overview)`, description: 'Foundational Topic Definition' },
       { id: 'n2', label: `${w1} Principles`, description: 'Core Underlying Rules' },
-      { id: 'n3', label: `${w2} Mechanisms`, description: 'Key Functional Operations' },
+      { id: 'n3', label: `${w2} Operations`, description: 'Key Functional Mechanics' },
       { id: 'n4', label: `${w3} Applications`, description: 'Practical Real-World Usage' },
       { id: 'n5', label: 'Domain Constraints', description: 'Boundaries & Special Cases' },
       { id: 'n6', label: 'Synthesis & Results', description: 'Overall Outcome & Impact' }
@@ -372,7 +439,7 @@ function buildDynamicTopicGraph(query: string): ConceptGraph {
  * Validates output to ensure no generic placeholder strings exist.
  */
 async function generateConceptGraphFromAI(query: string, retries = 1): Promise<ConceptGraph | null> {
-  const openRouterKey = process.env.OPENROUTER_API_KEY;
+  const openRouterKey = process.env.OPENROUTER_API_KEY || process.env.VITE_OPENROUTER_API_KEY;
   const aiGen = getAIClient();
 
   const prompt = `You are a world-class scientific textbook author and knowledge graph engineer.
@@ -405,41 +472,48 @@ Return ONLY a valid JSON object matching this schema (no markdown formatting out
 
   // 1. Try OpenRouter DeepSeek V4 Flash if key exists
   if (openRouterKey) {
-    try {
-      const model = process.env.OPENROUTER_MODEL || 'deepseek/deepseek-v4-flash';
-      console.log(`[DiagramEngine] Querying OpenRouter model "${model}" for ConceptGraph "${query}"...`);
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${openRouterKey}`,
-          'HTTP-Referer': 'https://ai.studio/build',
-          'X-Title': 'StudentOS Whiteboard AI',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: model,
-          messages: [{ role: 'user', content: prompt }],
-          temperature: 0.2,
-        })
-      });
+    const candidateOpenRouterModels = [
+      process.env.OPENROUTER_MODEL || 'deepseek/deepseek-v4-flash',
+      'deepseek/deepseek-r1',
+      'deepseek/deepseek-chat',
+      'meta-llama/llama-3.3-70b-instruct'
+    ];
 
-      if (response.ok) {
-        const data = await response.json();
-        let text = data.choices?.[0]?.message?.content || '';
-        text = text.replace(/^```(json)?/gi, '').replace(/```$/gi, '').trim();
-        const parsed = JSON.parse(text) as ConceptGraph;
-        if (parsed && Array.isArray(parsed.nodes) && parsed.nodes.length >= 4) {
-          const hasPlaceholder = parsed.nodes.some(n => 
-            /sub\s*process|fallback\s*loop|mechanism\s*\d+|node\s*\d+/i.test(n.label || '')
-          );
-          if (!hasPlaceholder) {
-            console.log(`[DiagramEngine] OpenRouter DeepSeek V4 Flash successfully generated ConceptGraph with ${parsed.nodes.length} nodes for "${query}".`);
-            return parsed;
+    for (const model of candidateOpenRouterModels) {
+      try {
+        console.log(`[DiagramEngine] Querying OpenRouter model "${model}" for ConceptGraph "${query}"...`);
+        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${openRouterKey}`,
+            'HTTP-Referer': 'https://ai.studio/build',
+            'X-Title': 'StudentOS Whiteboard AI',
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: model,
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.2,
+          })
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          let text = data.choices?.[0]?.message?.content || '';
+          const parsed = extractJsonFromText(text) as ConceptGraph;
+          if (parsed && Array.isArray(parsed.nodes) && parsed.nodes.length >= 4) {
+            const hasPlaceholder = parsed.nodes.some(n => 
+              /sub\s*process|fallback\s*loop|mechanism\s*\d+|node\s*\d+/i.test(n.label || '')
+            );
+            if (!hasPlaceholder) {
+              console.log(`[DiagramEngine] OpenRouter "${model}" successfully generated ConceptGraph with ${parsed.nodes.length} nodes for "${query}".`);
+              return parsed;
+            }
           }
         }
+      } catch (err: any) {
+        console.warn(`[DiagramEngine] OpenRouter "${model}" error: ${err.message || err}`);
       }
-    } catch (err: any) {
-      console.warn(`[DiagramEngine] OpenRouter DeepSeek V4 Flash error: ${err.message || err}`);
     }
   }
 
@@ -456,9 +530,7 @@ Return ONLY a valid JSON object matching this schema (no markdown formatting out
         });
 
         let text = response.text || '';
-        text = text.replace(/^```(json)?/gi, '').replace(/```$/gi, '').trim();
-
-        const parsed = JSON.parse(text) as ConceptGraph;
+        const parsed = extractJsonFromText(text) as ConceptGraph;
 
         if (parsed && Array.isArray(parsed.nodes) && parsed.nodes.length >= 4) {
           const hasPlaceholder = parsed.nodes.some(n => 
