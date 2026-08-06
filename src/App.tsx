@@ -11054,20 +11054,19 @@ Could you please guide me step-by-step on how to solve this, explaining the theo
               )}
 
               {/* Tab 8: Peer global chat matrix */}
-              <div className={activeTab === 'peer_chat' ? 'h-full flex flex-col' : 'hidden'}>
-                <ChatSystem
-                  currentUser={currentUser}
-                  effectiveRole={effectiveRole as any}
-                  chatRooms={chatRooms}
-                  setChatRooms={setChatRooms}
-                  chats={chats}
-                  setChats={setChats}
-                  activeChatTargetId={activeChatTargetId}
-                  setActiveChatTargetId={setActiveChatTargetId}
-                  showNotification={showNotification}
-                  students={students}
-                />
-              </div>
+              <ChatSystem
+                currentUser={currentUser}
+                effectiveRole={effectiveRole as any}
+                chatRooms={chatRooms}
+                setChatRooms={setChatRooms}
+                chats={chats}
+                setChats={setChats}
+                activeChatTargetId={activeChatTargetId}
+                setActiveChatTargetId={setActiveChatTargetId}
+                showNotification={showNotification}
+                students={students}
+                activeTab={activeTab}
+              />
 
               {/* Tab 9: Faculty Dashboard View */}
               {activeTab === 'faculty' && effectiveRole === 'teacher' && (
