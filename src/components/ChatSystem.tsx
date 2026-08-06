@@ -2015,6 +2015,178 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
         </div>
       )}
 
+      {/* ACTIVE VOICE & VIDEO CALL MODAL OVERLAY */}
+      {activeCall && (
+        <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-2xl flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-slate-900 border border-white/10 rounded-3xl max-w-md w-full p-6 shadow-2xl relative space-y-6 text-center">
+            
+            {/* User Avatar & Call Status */}
+            <div className="space-y-3">
+              <div className="relative inline-block">
+                {activeCall.targetUser.avatar || activeCall.targetUser.photoURL ? (
+                  <img
+                    src={activeCall.targetUser.avatar || activeCall.targetUser.photoURL}
+                    alt=""
+                    className="w-24 h-24 rounded-full object-cover mx-auto ring-4 ring-indigo-500/40 shadow-2xl"
+                  />
+                ) : (
+                  <div className="w-24 h-24 rounded-full bg-gradient-to-tr from-indigo-600 to-violet-600 text-white font-black text-3xl flex items-center justify-center mx-auto shadow-2xl border-2 border-white/20">
+                    {activeCall.targetUser.name.charAt(0).toUpperCase()}
+                  </div>
+                )}
+
+                {activeCall.mode === 'incoming' && (
+                  <span className="absolute -top-1 -right-1 w-6 h-6 bg-emerald-500 rounded-full animate-ping" />
+                )}
+              </div>
+
+              <div>
+                <h3 className="text-lg font-black text-white">{activeCall.targetUser.name}</h3>
+                <p className="text-xs text-indigo-400 font-mono font-bold flex items-center justify-center gap-1 mt-1">
+                  {activeCall.type === 'video' ? <Video className="w-3.5 h-3.5" /> : <Phone className="w-3.5 h-3.5" />}
+                  {activeCall.type === 'video' ? 'Direct Video Call' : 'Direct Voice Call'}
+                </p>
+                
+                {/* Mode status text / duration */}
+                <p className="text-xs text-slate-400 font-mono mt-2">
+                  {activeCall.mode === 'incoming' && 'Incoming Call...'}
+                  {activeCall.mode === 'outgoing' && 'Ringing...'}
+                  {activeCall.mode === 'connected' && (
+                    <span className="text-emerald-400 font-black">
+                      Connected • {Math.floor(callDuration / 60).toString().padStart(2, '0')}:{(callDuration % 60).toString().padStart(2, '0')}
+                    </span>
+                  )}
+                </p>
+              </div>
+            </div>
+
+            {/* Video preview area when video call connected */}
+            {activeCall.type === 'video' && activeCall.mode === 'connected' && (
+              <div className="aspect-video bg-slate-950 rounded-2xl overflow-hidden relative border border-white/10 flex items-center justify-center">
+                <video
+                  ref={(el) => {
+                    if (el && localMediaStreamRef.current) {
+                      el.srcObject = localMediaStreamRef.current;
+                    }
+                  }}
+                  autoPlay
+                  playsInline
+                  muted
+                  className="w-full h-full object-cover"
+                />
+                <span className="absolute bottom-2 left-2 px-2.5 py-1 bg-black/70 backdrop-blur-md rounded-lg text-[10px] font-mono text-white font-bold">
+                  Your Video Feed
+                </span>
+              </div>
+            )}
+
+            {/* Controls based on Call Mode */}
+            <div className="pt-2">
+              {activeCall.mode === 'incoming' ? (
+                <div className="flex items-center justify-center gap-6">
+                  {/* Reject Call */}
+                  <button
+                    onClick={() => {
+                      try {
+                        supabase.channel(`room_channel_${activeChatTargetId}`).send({
+                          type: 'broadcast',
+                          event: 'call_rejected',
+                          payload: { callId: activeCall.callId }
+                        });
+                      } catch (_) {}
+                      setActiveCall(null);
+                      showNotification('Call declined.');
+                    }}
+                    className="w-14 h-14 rounded-full bg-rose-600 hover:bg-rose-500 text-white flex items-center justify-center shadow-lg shadow-rose-600/40 transition-all hover:scale-110"
+                    title="Decline Call"
+                  >
+                    <PhoneOff className="w-6 h-6" />
+                  </button>
+
+                  {/* Accept Call */}
+                  <button
+                    onClick={async () => {
+                      try {
+                        const stream = await navigator.mediaDevices.getUserMedia({
+                          audio: true,
+                          video: activeCall.type === 'video'
+                        });
+                        localMediaStreamRef.current = stream;
+                      } catch (e) {
+                        console.warn('Media access warning during call accept', e);
+                      }
+
+                      try {
+                        supabase.channel(`room_channel_${activeChatTargetId}`).send({
+                          type: 'broadcast',
+                          event: 'call_accepted',
+                          payload: { callId: activeCall.callId }
+                        });
+                      } catch (_) {}
+
+                      setActiveCall(prev => prev ? { ...prev, mode: 'connected', startTime: Date.now() } : null);
+                      showNotification('Call connected!');
+                    }}
+                    className="w-14 h-14 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-600/40 transition-all hover:scale-110 animate-bounce"
+                    title="Accept Call"
+                  >
+                    <Phone className="w-6 h-6" />
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-center gap-3">
+                  {activeCall.mode === 'connected' && (
+                    <>
+                      {/* Mic Toggle */}
+                      <button
+                        onClick={() => {
+                          const next = !activeCall.isMuted;
+                          if (localMediaStreamRef.current) {
+                            localMediaStreamRef.current.getAudioTracks().forEach(t => t.enabled = !next);
+                          }
+                          setActiveCall(prev => prev ? { ...prev, isMuted: next } : null);
+                        }}
+                        className={`p-3.5 rounded-2xl transition-all ${activeCall.isMuted ? 'bg-rose-600 text-white' : 'bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700'}`}
+                        title="Toggle Mic"
+                      >
+                        {activeCall.isMuted ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+                      </button>
+
+                      {/* Video Toggle */}
+                      {activeCall.type === 'video' && (
+                        <button
+                          onClick={() => {
+                            const next = !activeCall.isVideoOff;
+                            if (localMediaStreamRef.current) {
+                              localMediaStreamRef.current.getVideoTracks().forEach(t => t.enabled = !next);
+                            }
+                            setActiveCall(prev => prev ? { ...prev, isVideoOff: next } : null);
+                          }}
+                          className={`p-3.5 rounded-2xl transition-all ${activeCall.isVideoOff ? 'bg-rose-600 text-white' : 'bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700'}`}
+                          title="Toggle Video"
+                        >
+                          {activeCall.isVideoOff ? <VideoOff className="w-5 h-5" /> : <Video className="w-5 h-5" />}
+                        </button>
+                      )}
+                    </>
+                  )}
+
+                  {/* End / Cancel Call */}
+                  <button
+                    onClick={handleEndCall}
+                    className="px-6 py-3.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-2xl shadow-lg shadow-rose-600/30 flex items-center gap-2 text-xs uppercase transition-all"
+                  >
+                    <PhoneOff className="w-4 h-4" />
+                    {activeCall.mode === 'outgoing' ? 'Cancel Call' : 'End Call'}
+                  </button>
+                </div>
+              )}
+            </div>
+
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };
