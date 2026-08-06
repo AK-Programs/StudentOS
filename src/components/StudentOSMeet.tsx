@@ -688,30 +688,69 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
     return () => clearInterval(interval);
   }, [activeView, isInWaitingRoom, isCameraOn, isMicOn]);
 
-  // Simulated Live Captions
+  // Real-time Speech-to-Text Live Captions Engine
   useEffect(() => {
-    let captionInterval: any = null;
-    if (captionsEnabled && activeView === 'room') {
-      const sampleSentences = [
-        "Welcome everyone to today's StudentOS virtual lecture session.",
-        "Let's turn our attention to page 42 on quantum electrodynamics.",
-        "Does anyone have a question about the wave-particle equation?",
-        "Great point! Let me highlight this on the collaborative whiteboard.",
-        "Remember that assignment 4 is due tomorrow evening in Assignment Center."
-      ];
-      let idx = 0;
-      captionInterval = setInterval(() => {
-        const text = sampleSentences[idx % sampleSentences.length];
-        const speaker = idx % 2 === 0 ? (activeMeeting?.hostName || 'Instructor') : (currentUser?.name || 'Student');
-        setLiveCaptionText(`${speaker}: ${text}`);
-        setCaptionTranscript(prev => [...prev, { speaker, text, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
-        idx++;
-      }, 7000);
-    } else {
+    if (!captionsEnabled || activeView !== 'room' || !isMicOn) {
       setLiveCaptionText('');
+      return;
     }
-    return () => clearInterval(captionInterval);
-  }, [captionsEnabled, activeView, activeMeeting, currentUser]);
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setLiveCaptionText('Speech recognition engine initialized. Listening for audio...');
+      return;
+    }
+
+    let recognition: any = null;
+    try {
+      recognition = new SpeechRecognition();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+
+      recognition.onresult = (event: any) => {
+        let finalTranscript = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          }
+        }
+        if (finalTranscript.trim()) {
+          const text = finalTranscript.trim();
+          const speaker = currentUser?.name || 'Speaker';
+          const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          
+          setLiveCaptionText(`${speaker}: ${text}`);
+          setCaptionTranscript(prev => [...prev, { speaker, text, time }]);
+
+          // Broadcast caption to peers in meeting
+          if (activeMeeting) {
+            supabase.channel(`studentos_meet_${activeMeeting.id}`).send({
+              type: 'broadcast',
+              event: 'live_caption',
+              payload: { speaker, text, time }
+            });
+          }
+        }
+      };
+
+      recognition.onerror = (err: any) => {
+        if (err.error !== 'no-speech') {
+          console.warn('[StudentOS Meet] Speech recognition status:', err.error);
+        }
+      };
+
+      recognition.start();
+    } catch (err) {
+      console.warn('[StudentOS Meet] Could not initialize speech recognition:', err);
+    }
+
+    return () => {
+      if (recognition) {
+        try { recognition.stop(); } catch (_) {}
+      }
+    };
+  }, [captionsEnabled, activeView, isMicOn, currentUser, activeMeeting]);
 
   // Handle Meeting Creation
   const handleCreateMeeting = async (e: React.FormEvent) => {
@@ -764,8 +803,9 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
     setPasswordError('');
     setJoinError(null);
     
-    const isHost = currentUser?.uid === meeting.hostId || ['teacher', 'admin', 'super_admin'].includes(effectiveRole);
-    const requiresWaitingRoom = !isHost && Boolean(meeting.password);
+    const isHost = currentUser?.uid === meeting.hostId || (meeting.hostEmail && currentUser?.email === meeting.hostEmail) || ['teacher', 'admin', 'super_admin'].includes(effectiveRole);
+    const isBeforeStartTime = meeting.startTime ? new Date().getTime() < new Date(meeting.startTime).getTime() : false;
+    const requiresWaitingRoom = !isHost && (isBeforeStartTime || Boolean(meeting.password) || meeting.status === 'upcoming');
 
     const myParticipant: MeetingParticipant = {
       id: `p_${currentUser?.uid || Date.now()}`,
@@ -1610,21 +1650,40 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
             <div className="absolute inset-0 z-50 bg-slate-950/95 backdrop-blur-2xl flex items-center justify-center p-6 animate-fadeIn">
               <div className="max-w-md w-full bg-slate-900 p-8 rounded-3xl border border-white/10 shadow-2xl space-y-6 text-center">
                 <div className="w-16 h-16 rounded-3xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 mx-auto flex items-center justify-center">
-                  <Lock className="w-8 h-8" />
+                  <Clock className="w-8 h-8 animate-pulse" />
                 </div>
 
                 <div className="space-y-2">
-                  <h2 className="text-xl font-black text-white">StudentOS Protected Classroom</h2>
-                  <p className="text-xs text-slate-400">Host: <span className="text-white font-bold">{activeMeeting.hostName}</span></p>
-                  <p className="text-xs text-slate-400">Enter password or wait for host approval.</p>
+                  <span className="px-3 py-1 bg-indigo-500/10 border border-indigo-500/20 rounded-full text-[10px] font-mono font-bold text-indigo-400 uppercase">
+                    Meeting Waiting Room
+                  </span>
+                  <h2 className="text-xl font-black text-white">{activeMeeting.title}</h2>
+                  <p className="text-xs text-slate-300">Host: <span className="text-white font-bold">{activeMeeting.hostName}</span></p>
+                  <p className="text-xs text-slate-400 font-mono">Scheduled Time: {new Date(activeMeeting.startTime).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                </div>
+
+                {/* Countdown / Status Box */}
+                <div className="p-4 bg-slate-950 rounded-2xl border border-white/10 space-y-2">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Status & Countdown</span>
+                  <div className="text-2xl font-mono font-black text-indigo-400">
+                    {(() => {
+                      const diff = new Date(activeMeeting.startTime).getTime() - Date.now();
+                      if (diff <= 0) return 'Starting Now...';
+                      const m = Math.floor(diff / 60000);
+                      const s = Math.floor((diff % 60000) / 1000);
+                      return `${m}m ${s.toString().padStart(2, '0')}s until class starts`;
+                    })()}
+                  </div>
+                  <p className="text-[11px] text-slate-400">You will be admitted automatically when the scheduled time arrives or when the host starts the session.</p>
                 </div>
 
                 <div className="space-y-3">
                   {activeMeeting.password && (
-                    <>
+                    <div className="space-y-2 pt-2 border-t border-white/10">
+                      <p className="text-xs text-slate-300 font-bold">Have a Meeting Password?</p>
                       <input
                         type="password"
-                        placeholder="Enter meeting password..."
+                        placeholder="Enter passcode..."
                         value={joinPasswordInput}
                         onChange={(e) => setJoinPasswordInput(e.target.value)}
                         className="w-full bg-slate-950 border border-white/10 rounded-2xl px-4 py-3 text-sm text-center font-mono text-white outline-none focus:border-indigo-500"
@@ -1633,22 +1692,18 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
 
                       <button
                         onClick={handleConfirmPasswordJoin}
-                        className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs rounded-2xl shadow-lg transition-all"
+                        className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs rounded-2xl shadow-lg transition-all"
                       >
-                        Authenticate & Join Direct
+                        Enter Passcode & Join Immediately
                       </button>
-                    </>
+                    </div>
                   )}
-
-                  <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-2xl text-xs text-indigo-300 animate-pulse">
-                    Join request sent to teacher. You will enter automatically when admitted.
-                  </div>
 
                   <button
                     onClick={handleLeaveMeeting}
                     className="w-full py-2.5 bg-white/5 hover:bg-white/10 text-slate-400 text-xs rounded-2xl font-bold transition-all"
                   >
-                    Cancel
+                    Leave Waiting Room
                   </button>
                 </div>
               </div>
