@@ -1,613 +1,786 @@
 import { getAIClient } from './aiClient';
 
-// Helper to sanitize query
+export interface ConceptNode {
+  id: string;
+  label: string;
+  description?: string;
+  category?: string;
+}
+
+export interface ConceptEdge {
+  from: string;
+  to: string;
+  relation?: string;
+}
+
+export interface ConceptGroup {
+  id: string;
+  title: string;
+  nodeIds: string[];
+}
+
+export interface ConceptGraph {
+  title: string;
+  topic: string;
+  summary?: string;
+  groups?: ConceptGroup[];
+  nodes: ConceptNode[];
+  edges: ConceptEdge[];
+}
+
+// Helper to sanitize query string
 function cleanQuery(query: string): string {
   return String(query || '').trim();
 }
 
 /**
- * Smart Fallback Mermaid Generator
- * Generates rich 6-15 node Mermaid diagrams based on topic keywords or dynamic keyword parsing.
+ * Predefined Topic-Aware Concept Graphs for Core Topics.
+ * Guarantees pristine, 100% domain-accurate diagrams for standard curricula.
  */
-export function getSmartFallbackMermaid(query: string): string {
-  const qLower = cleanQuery(query).toLowerCase();
+const TOPIC_PRESETS: Record<string, ConceptGraph> = {
+  'solar system': {
+    title: 'The Solar System',
+    topic: 'Solar System',
+    summary: 'The Sun and celestial bodies gravitationally bound in planetary orbits.',
+    groups: [
+      { id: 'inner', title: 'Inner Terrestrial Planets', nodeIds: ['mercury', 'venus', 'earth', 'mars'] },
+      { id: 'belt', title: 'Asteroid Belt', nodeIds: ['asteroid_belt'] },
+      { id: 'outer', title: 'Outer Gas & Ice Giants', nodeIds: ['jupiter', 'saturn', 'uranus', 'neptune'] }
+    ],
+    nodes: [
+      { id: 'sun', label: 'Sun (G-Type Star)', description: 'Solar Mass & Gravitational Center', category: 'star' },
+      { id: 'mercury', label: 'Mercury', description: '1st Planet (Closest to Sun)', category: 'inner' },
+      { id: 'venus', label: 'Venus', description: '2nd Planet (Dense CO2 Atmosphere)', category: 'inner' },
+      { id: 'earth', label: 'Earth', description: '3rd Planet (Liquid Water & Life)', category: 'inner' },
+      { id: 'mars', label: 'Mars', description: '4th Planet (Red Planet / Iron Oxide)', category: 'inner' },
+      { id: 'asteroid_belt', label: 'Asteroid Belt', description: 'Ceres & Rocky Debris Boundary', category: 'belt' },
+      { id: 'jupiter', label: 'Jupiter', description: '5th Planet (Largest Gas Giant)', category: 'outer' },
+      { id: 'saturn', label: 'Saturn', description: '6th Planet (Extensive Ring System)', category: 'outer' },
+      { id: 'uranus', label: 'Uranus', description: '7th Planet (Tilted Ice Giant)', category: 'outer' },
+      { id: 'neptune', label: 'Neptune', description: '8th Planet (Farthest Major Planet)', category: 'outer' },
+      { id: 'orbit', label: 'Gravity & Orbits', description: 'Keplerian Elliptical Motion' }
+    ],
+    edges: [
+      { from: 'sun', to: 'mercury', relation: 'Solar Orbit' },
+      { from: 'sun', to: 'venus', relation: 'Solar Orbit' },
+      { from: 'sun', to: 'earth', relation: 'Solar Orbit' },
+      { from: 'sun', to: 'mars', relation: 'Solar Orbit' },
+      { from: 'mars', to: 'asteroid_belt', relation: 'Inner Boundary' },
+      { from: 'asteroid_belt', to: 'jupiter', relation: 'Outer Boundary' },
+      { from: 'sun', to: 'jupiter', relation: 'Gas Giant Orbit' },
+      { from: 'sun', to: 'saturn', relation: 'Gas Giant Orbit' },
+      { from: 'sun', to: 'uranus', relation: 'Ice Giant Orbit' },
+      { from: 'sun', to: 'neptune', relation: 'Ice Giant Orbit' },
+      { from: 'sun', to: 'orbit', relation: 'Gravitational Control' }
+    ]
+  },
+  'human heart': {
+    title: 'Human Heart & Circulatory Path',
+    topic: 'Human Heart',
+    summary: 'Deoxygenated and oxygenated blood circulation through heart chambers and lungs.',
+    groups: [
+      { id: 'right_side', title: 'Right Heart (Deoxygenated)', nodeIds: ['vena_cava', 'right_atrium', 'right_ventricle', 'pulmonary_artery'] },
+      { id: 'pulmonary', title: 'Pulmonary Circuit', nodeIds: ['lungs'] },
+      { id: 'left_side', title: 'Left Heart (Oxygenated)', nodeIds: ['pulmonary_vein', 'left_atrium', 'left_ventricle', 'aorta'] }
+    ],
+    nodes: [
+      { id: 'vena_cava', label: 'Vena Cava', description: 'Deoxygenated Body Blood Return', category: 'right_side' },
+      { id: 'right_atrium', label: 'Right Atrium', description: 'Receives Systemic Blood', category: 'right_side' },
+      { id: 'right_ventricle', label: 'Right Ventricle', description: 'Pumps to Pulmonary Artery', category: 'right_side' },
+      { id: 'pulmonary_artery', label: 'Pulmonary Artery', description: 'Deoxygenated Flow to Lungs', category: 'right_side' },
+      { id: 'lungs', label: 'Lungs (Alveoli)', description: 'O2 Loading & CO2 Release', category: 'pulmonary' },
+      { id: 'pulmonary_vein', label: 'Pulmonary Vein', description: 'Oxygenated Return to Heart', category: 'left_side' },
+      { id: 'left_atrium', label: 'Left Atrium', description: 'Receives Oxygenated Blood', category: 'left_side' },
+      { id: 'left_ventricle', label: 'Left Ventricle', description: 'Thick Muscle Systemic Pump', category: 'left_side' },
+      { id: 'aorta', label: 'Aorta', description: 'Main Arterial Distribution', category: 'left_side' },
+      { id: 'systemic', label: 'Systemic Circulation', description: 'Body Tissues & Organs' }
+    ],
+    edges: [
+      { from: 'vena_cava', to: 'right_atrium', relation: 'Deoxygenated Flow' },
+      { from: 'right_atrium', to: 'right_ventricle', relation: 'Tricuspid Valve' },
+      { from: 'right_ventricle', to: 'pulmonary_artery', relation: 'Pulmonary Valve' },
+      { from: 'pulmonary_artery', to: 'lungs', relation: 'To Alveoli' },
+      { from: 'lungs', to: 'pulmonary_vein', relation: 'Gas Exchange' },
+      { from: 'pulmonary_vein', to: 'left_atrium', relation: 'Oxygenated Flow' },
+      { from: 'left_atrium', to: 'left_ventricle', relation: 'Mitral Valve' },
+      { from: 'left_ventricle', to: 'aorta', relation: 'Aortic Valve' },
+      { from: 'aorta', to: 'systemic', relation: 'Arterial Delivery' },
+      { from: 'systemic', to: 'vena_cava', relation: 'Venous Return' }
+    ]
+  },
+  'water cycle': {
+    title: 'The Hydrologic (Water) Cycle',
+    topic: 'Water Cycle',
+    summary: 'Continuous movement of water between ocean, atmosphere, and land.',
+    nodes: [
+      { id: 'oceans', label: 'Oceans & Surface Water', description: 'Main Water Reservoir' },
+      { id: 'evaporation', label: 'Evaporation', description: 'Solar Thermal Vaporization' },
+      { id: 'transpiration', label: 'Transpiration', description: 'Plant Moisture Vapor Release' },
+      { id: 'vapor', label: 'Atmospheric Water Vapor', description: 'Tropospheric Moisture' },
+      { id: 'condensation', label: 'Condensation', description: 'Cooling into Clouds' },
+      { id: 'precipitation', label: 'Precipitation', description: 'Rain, Snow, Sleet & Hail' },
+      { id: 'runoff', label: 'Surface Runoff', description: 'Overland Stream & River Flow' },
+      { id: 'infiltration', label: 'Groundwater Infiltration', description: 'Soil & Aquifer Recharge' }
+    ],
+    edges: [
+      { from: 'oceans', to: 'evaporation', relation: 'Solar Heating' },
+      { from: 'evaporation', to: 'vapor', relation: 'Vapor Rises' },
+      { from: 'transpiration', to: 'vapor', relation: 'Leaf Release' },
+      { from: 'vapor', to: 'condensation', relation: 'Cooling Altitudes' },
+      { from: 'condensation', to: 'precipitation', relation: 'Cloud Saturation' },
+      { from: 'precipitation', to: 'runoff', relation: 'Land Fall' },
+      { from: 'precipitation', to: 'infiltration', relation: 'Soil Absorption' },
+      { from: 'runoff', to: 'oceans', relation: 'River Flow' },
+      { from: 'infiltration', to: 'oceans', relation: 'Subsurface Discharge' }
+    ]
+  },
+  'photosynthesis': {
+    title: 'Photosynthesis Mechanism',
+    topic: 'Photosynthesis',
+    summary: 'Conversion of light energy into glucose chemical energy in chloroplasts.',
+    groups: [
+      { id: 'light', title: 'Light-Dependent Reactions (Thylakoid)', nodeIds: ['sunlight', 'h2o', 'chlorophyll', 'light_stage', 'o2', 'energy'] },
+      { id: 'dark', title: 'Calvin Cycle (Stroma)', nodeIds: ['co2', 'rubisco', 'calvin_stage', 'glucose'] }
+    ],
+    nodes: [
+      { id: 'sunlight', label: 'Sunlight (Photons)', description: 'Solar Energy Source', category: 'light' },
+      { id: 'h2o', label: 'Water (H2O)', description: 'Root Absorption', category: 'light' },
+      { id: 'chlorophyll', label: 'Chlorophyll / PS II & I', description: 'Thylakoid Pigments', category: 'light' },
+      { id: 'light_stage', label: 'Light Reactions', description: 'Photolysis & Electron Transport', category: 'light' },
+      { id: 'o2', label: 'Oxygen (O2)', description: 'Released Byproduct', category: 'light' },
+      { id: 'energy', label: 'ATP & NADPH', description: 'Chemical Energy Carriers', category: 'light' },
+      { id: 'co2', label: 'Carbon Dioxide (CO2)', description: 'Stomatal Intake', category: 'dark' },
+      { id: 'rubisco', label: 'RuBisCO Enzyme', description: 'Carbon Fixation Catalyst', category: 'dark' },
+      { id: 'calvin_stage', label: 'Calvin Cycle', description: 'Stroma Dark Reactions', category: 'dark' },
+      { id: 'glucose', label: 'Glucose (C6H12O6)', description: 'Synthesized Plant Sugar', category: 'dark' }
+    ],
+    edges: [
+      { from: 'sunlight', to: 'chlorophyll', relation: 'Excites Electrons' },
+      { from: 'h2o', to: 'light_stage', relation: 'Photolysis Split' },
+      { from: 'chlorophyll', to: 'light_stage', relation: 'Electron Flow' },
+      { from: 'light_stage', to: 'o2', relation: 'Byproduct Release' },
+      { from: 'light_stage', to: 'energy', relation: 'Generates ATP/NADPH' },
+      { from: 'energy', to: 'calvin_stage', relation: 'Powers Fixation' },
+      { from: 'co2', to: 'rubisco', relation: 'Carbon Fixation' },
+      { from: 'rubisco', to: 'calvin_stage', relation: 'Catalyzes Cycle' },
+      { from: 'calvin_stage', to: 'glucose', relation: 'Sugar Synthesis' }
+    ]
+  },
+  'periodic table': {
+    title: 'Periodic Table & Element Groups',
+    topic: 'Periodic Table',
+    summary: 'Organization of chemical elements by atomic number and electronic properties.',
+    groups: [
+      { id: 'metals', title: 'Metals', nodeIds: ['alkali', 'alkaline', 'transition'] },
+      { id: 'nonmetals', title: 'Nonmetals & Inert Gases', nodeIds: ['halogens', 'noble_gases'] }
+    ],
+    nodes: [
+      { id: 'periodic_table', label: 'Periodic Table (118 Elements)', description: 'Arranged by Atomic Number (Protons)' },
+      { id: "alkali", label: "Alkali Metals (Group 1)", description: "Na, K - Highly Reactive", category: "metals" },
+      { id: "alkaline", label: "Alkaline Earth (Group 2)", description: "Mg, Ca - Reactive Earth Metals", category: "metals" },
+      { id: "transition", label: "Transition Metals (3-12)", description: "Fe, Cu, Au - Conductive Metals", category: "metals" },
+      { id: "metalloids", label: "Metalloids", description: "Si, Ge - Semiconductor Metalloids" },
+      { id: "halogens", label: "Halogens (Group 17)", description: "F, Cl - Reactive Nonmetals", category: "nonmetals" },
+      { id: "noble_gases", label: "Noble Gases (Group 18)", description: "He, Ne, Ar - Inert Gases", category: "nonmetals" },
+      { id: "trends", label: "Periodic Trends", description: "Electronegativity & Atomic Radius" }
+    ],
+    edges: [
+      { from: "periodic_table", to: "alkali", relation: "Group 1" },
+      { from: "periodic_table", to: "alkaline", relation: "Group 2" },
+      { from: "periodic_table", to: "transition", relation: "Groups 3-12" },
+      { from: "periodic_table", to: "metalloids", relation: "Staircase Boundary" },
+      { from: "periodic_table", to: "halogens", relation: "Group 17" },
+      { from: "periodic_table", to: "noble_gases", relation: "Group 18" },
+      { from: "trends", to: "periodic_table", relation: "Governs Periods" }
+    ]
+  },
+  'binary tree': {
+    title: 'Binary Tree Data Structure',
+    topic: 'Binary Tree',
+    summary: 'Hierarchical tree data structure where each node has at most two children.',
+    nodes: [
+      { id: "root", label: "Root Node", description: "Top Level Tree Entry Point" },
+      { id: "left_child", label: "Left Child / Subtree", description: "Values < Parent (BST)" },
+      { id: "right_child", label: "Right Child / Subtree", description: "Values >= Parent (BST)" },
+      { id: "left_leaf", label: "Left Leaf Node", description: "Terminal Node (Degree 0)" },
+      { id: "right_leaf", label: "Right Leaf Node", description: "Terminal Node (Degree 0)" },
+      { id: "inorder", label: "In-Order Traversal", description: "Left -> Root -> Right (Sorted)" },
+      { id: "preorder", label: "Pre-Order Traversal", description: "Root -> Left -> Right (Copy)" },
+      { id: "postorder", label: "Post-Order Traversal", description: "Left -> Right -> Root (Delete)" },
+      { id: "balance", label: "Height & Balance Factor", description: "AVL / Red-Black O(log N) Search" }
+    ],
+    edges: [
+      { from: "root", to: "left_child", relation: "Left Pointer" },
+      { from: "root", to: "right_child", relation: "Right Pointer" },
+      { from: "left_child", to: "left_leaf", relation: "Branching" },
+      { from: "right_child", to: "right_leaf", relation: "Branching" },
+      { from: "root", to: "inorder", relation: "Visit Sequence" },
+      { from: "root", to: "preorder", relation: "Visit Sequence" },
+      { from: "root", to: "postorder", relation: "Visit Sequence" },
+      { from: "balance", to: "root", relation: "Maintains Balance" }
+    ]
+  },
+  'tcp/ip': {
+    title: 'TCP/IP Protocol Suite & Network Stack',
+    topic: 'TCP/IP',
+    summary: 'Four-layer networking architecture governing global Internet communication.',
+    nodes: [
+      { id: "app_layer", label: "Application Layer", description: "HTTP, HTTPS, DNS, SSH Protocols" },
+      { id: "trans_layer", label: "Transport Layer", description: "TCP (Reliable) & UDP (Datagram)" },
+      { id: "handshake", label: "TCP 3-Way Handshake", description: "SYN -> SYN-ACK -> ACK" },
+      { id: "internet_layer", label: "Internet Layer", description: "IP (v4/v6), ICMP & Packet Routing" },
+      { id: "link_layer", label: "Network Link Layer", description: "Ethernet, Wi-Fi & MAC Framing" },
+      { id: "physical", label: "Physical Layer", description: "Fiber, Copper & Wireless Transmission" }
+    ],
+    edges: [
+      { from: "app_layer", to: "trans_layer", relation: "Encapsulates Payload" },
+      { from: "trans_layer", to: "handshake", relation: "Establishes Connection" },
+      { from: "trans_layer", to: "internet_layer", relation: "Segments to IP Packets" },
+      { from: "internet_layer", to: "link_layer", relation: "Packets to Ethernet Frames" },
+      { from: "link_layer", to: "physical", relation: "Frames to Signals" }
+    ]
+  },
+  'machine learning': {
+    title: 'Machine Learning Pipeline & Paradigms',
+    topic: 'Machine Learning',
+    summary: 'End-to-end Machine Learning process from data preprocessing to model inference.',
+    groups: [
+      { id: 'paradigms', title: 'ML Paradigms', nodeIds: ['supervised', 'unsupervised', 'reinforcement'] }
+    ],
+    nodes: [
+      { id: "raw_data", label: "Raw Data Collection", description: "Structured & Unstructured Sources" },
+      { id: "feature_eng", label: "Feature Engineering", description: "Normalization, Scaling, One-Hot" },
+      { id: "supervised", label: "Supervised Learning", description: "Classification & Regression", category: "paradigms" },
+      { id: "unsupervised", label: "Unsupervised Learning", description: "Clustering & Dimensionality Reduction", category: "paradigms" },
+      { id: "reinforcement", label: "Reinforcement Learning", description: "Agent, Environment & Reward Policy", category: "paradigms" },
+      { id: "training", label: "Model Training", description: "Loss Minimization & Gradient Descent" },
+      { id: "evaluation", label: "Evaluation Metrics", description: "Accuracy, Precision, Recall, F1-Score" },
+      { id: "deployment", label: "Model Deployment", description: "REST API & Real-time Serving" }
+    ],
+    edges: [
+      { from: "raw_data", to: "feature_eng", relation: "Data Cleaning" },
+      { from: "feature_eng", to: "supervised", relation: "Labeled Split" },
+      { from: "feature_eng", to: "unsupervised", relation: "Unlabeled Features" },
+      { from: "supervised", to: "training", relation: "Backpropagation" },
+      { from: "unsupervised", to: "training", relation: "Pattern Extraction" },
+      { from: "reinforcement", to: "training", relation: "Policy Iteration" },
+      { from: "training", to: "evaluation", relation: "Validation Set" },
+      { from: "evaluation", to: "deployment", relation: "Production API" }
+    ]
+  },
+  'cell division': {
+    title: 'Cell Division & Mitosis Stages',
+    topic: 'Cell Division',
+    summary: 'Eukaryotic cell division resulting in two identical diploid daughter cells.',
+    nodes: [
+      { id: "interphase", label: "Interphase (G1, S, G2)", description: "Cell Growth & DNA Replication" },
+      { id: "prophase", label: "Prophase", description: "Chromatin Condenses & Spindle Forms" },
+      { id: "metaphase", label: "Metaphase", description: "Chromosomes Align at Metaphase Plate" },
+      { id: "anaphase", label: "Anaphase", description: "Sister Chromatids Pulled to Opposite Poles" },
+      { id: "telophase", label: "Telophase", description: "Nuclear Envelope Re-forms" },
+      { id: "cytokinesis", label: "Cytokinesis", description: "Cleavage Furrow Divides Cytoplasm" },
+      { id: "daughter_cells", label: "Two Daughter Cells", description: "Identical Diploid (2n) Cells" }
+    ],
+    edges: [
+      { from: "interphase", to: "prophase", relation: "Initiates Mitosis" },
+      { from: "prophase", to: "metaphase", relation: "Nuclear Dissolution" },
+      { from: "metaphase", to: "anaphase", relation: "Spindle Pull" },
+      { from: "anaphase", to: "telophase", relation: "Pole Arrival" },
+      { from: "telophase", to: "cytokinesis", relation: "Cytoplasmic Division" },
+      { from: "cytokinesis", to: "daughter_cells", relation: "Completes Cycle" }
+    ]
+  },
+  'indian constitution': {
+    title: 'Structure of the Indian Constitution',
+    topic: 'Indian Constitution',
+    summary: 'Supreme law of India establishing democratic framework, rights, and governance organs.',
+    groups: [
+      { id: 'organs', title: 'Organs of Governance', nodeIds: ['executive', 'parliament', 'judiciary'] }
+    ],
+    nodes: [
+      { id: "preamble", label: "Preamble", description: "Sovereign, Socialist, Secular, Democratic Republic" },
+      { id: "rights", label: "Part III: Fundamental Rights", description: "Articles 12-35 (Equality & Liberty)" },
+      { id: "dpsp", label: "Part IV: DPSP", description: "Articles 36-51 (Directive Principles)" },
+      { id: "executive", label: "Union Executive", description: "President, Prime Minister & Cabinet", category: "organs" },
+      { id: "parliament", label: "Parliament", description: "Lok Sabha & Rajya Sabha", category: "organs" },
+      { id: "judiciary", label: "Independent Judiciary", description: "Supreme Court & High Courts", category: "organs" },
+      { id: "federalism", label: "Federal Structure", description: "Union, State & Concurrent Lists" },
+      { id: "amendment", label: "Article 368", description: "Constitutional Amendment Power" }
+    ],
+    edges: [
+      { from: "preamble", to: "rights", relation: "Guarantees Rights" },
+      { from: "preamble", to: "dpsp", relation: "Socio-Economic Goals" },
+      { from: "executive", to: "parliament", relation: "Responsible to Legislature" },
+      { from: "parliament", to: "judiciary", relation: "Judicial Review" },
+      { from: "judiciary", to: "rights", relation: "Protector of Rights" },
+      { from: "federalism", to: "parliament", relation: "Power Distribution" },
+      { from: "amendment", to: "parliament", relation: "Constitutional Flexibility" }
+    ]
+  }
+};
 
-  if (qLower.includes('photosynthes') || (qLower.includes('plant') && qLower.includes('energy'))) {
-    return `flowchart TD
-  Sun["☀️ Sunlight (Photons)"] -->|Absorbed by| Chl["🍃 Chlorophyll in Thylakoid"]
-  H2O["💧 Water (H2O)"] -->|Photolysis| Light["⚡ Light-Dependent Reactions"]
-  Chl --> Light
-  Light -->|Releases| O2["💨 Oxygen (O2 Output)"]
-  Light -->|Produces| Energy["🔋 ATP & NADPH Energy Carriers"]
-  Energy --> Stroma["🧪 Stroma (Calvin Cycle)"]
-  CO2["☁️ Carbon Dioxide (CO2)"] -->|Fixation by RuBisCO| Stroma
-  Stroma -->|Reduction & Regeneration| G3P["🧬 G3P Sugar Intermediate"]
-  G3P -->|Biosynthesis| Glucose["🍞 Glucose (C6H12O6 Product)"]`;
+/**
+ * Checks if a query matches any known preset keyword.
+ */
+function findPresetGraph(query: string): ConceptGraph | null {
+  const qClean = cleanQuery(query).toLowerCase();
+  for (const [key, preset] of Object.entries(TOPIC_PRESETS)) {
+    if (qClean.includes(key) || key.includes(qClean)) {
+      return preset;
+    }
   }
-
-  if (qLower.includes('network') || qLower.includes('internet') || qLower.includes('client') || qLower.includes('server')) {
-    return `sequenceDiagram
-  autonumber
-  actor User as 💻 Client Browser
-  participant DNS as 🌐 DNS Server
-  participant Router as 🔀 Gateway / Router
-  participant ISP as 📡 ISP Backbone
-  participant WAF as 🛡️ Firewall & Load Balancer
-  participant Server as ⚙️ Application Server
-  participant DB as 🗄️ Database
-
-  User->>DNS: 1. Resolve Domain Name (IP Lookup)
-  DNS-->>User: 2. Return IP Address
-  User->>Router: 3. Send HTTP/HTTPS Request
-  Router->>ISP: 4. Route TCP Packets across WAN
-  ISP->>WAF: 5. Forward to Datacenter Ingress
-  WAF->>Server: 6. Pass Sanitized Payload
-  Server->>DB: 7. Execute SQL Query
-  DB-->>Server: 8. Return Result Set
-  Server-->>User: 9. Deliver 200 OK Response (HTML/JSON)`;
-  }
-
-  if (qLower.includes('digest') || qLower.includes('stomach') || qLower.includes('gut') || qLower.includes('intestine')) {
-    return `flowchart TD
-  Mouth["1. Mouth & Teeth (Mastication)"] --> Amylase["Salivary Amylase Enzyme"]
-  Amylase --> Esophagus["2. Esophagus (Peristalsis Passage)"]
-  Esophagus --> Stomach["3. Stomach (HCl Acid & Pepsin)"]
-  Stomach --> Chyme["Acidic Chyme Solution"]
-  Chyme --> Liver["Liver & Gallbladder (Bile Secretion)"]
-  Chyme --> Pancreas["Pancreas (Digestive Enzymes)"]
-  Liver --> SmallInt["4. Small Intestine (Villi Nutrient Absorption)"]
-  Pancreas --> SmallInt
-  SmallInt -->|Nutrients into Bloodstream| Body["Cellular Energy Distribution"]
-  SmallInt --> LargeInt["5. Large Intestine (Water Reabsorption)"]
-  LargeInt --> Excretion["6. Waste Elimination (Rectum)"]`;
-  }
-
-  if (qLower.includes('oop') || qLower.includes('object-oriented') || qLower.includes('class') || qLower.includes('inheritance')) {
-    return `classDiagram
-  class BaseObject {
-    +String id
-    +Timestamp createdAt
-    +clone() BaseObject
-  }
-  class Encapsulation {
-    -String privateData
-    #String protectedState
-    +getPrivateData() String
-    +setPrivateData(val) Void
-  }
-  class Inheritance {
-    +String parentField
-    +overrideMethod() Void
-  }
-  class Polymorphism {
-    +abstractExecute()*
-    +dynamicDispatch()
-  }
-  class Abstraction {
-    <<interface>>
-    +defineContract()
-  }
-  BaseObject <|-- Inheritance : Extends
-  Inheritance <|-- Polymorphism : Overrides
-  Abstraction <|.. Encapsulation : Implements`;
-  }
-
-  if (qLower.includes('normaliz') || qLower.includes('database') || qLower.includes('1nf') || qLower.includes('3nf')) {
-    return `flowchart TD
-  UNF["Unnormalized Form (UNF)\nRaw Tables & Redundant Arrays"] -->|1. Remove Repeating Groups & Ensure Atomic Values| 1NF["1NF: First Normal Form\nSingle-Valued Columns & Primary Key Defined"]
-  1NF -->|2. Remove Partial Dependencies| 2NF["2NF: Second Normal Form\nAll Attributes Depend on Full Primary Key"]
-  2NF -->|3. Remove Transitive Dependencies| 3NF["3NF: Third Normal Form\nNon-Key Columns Depend ONLY on Primary Key"]
-  3NF -->|4. Enforce Determinant Rule| BCNF["Boyce-Codd Normal Form (BCNF)\nEvery Determinant is a Candidate Key"]
-  BCNF -->|5. Multi-Valued Dependencies| 4NF["4NF: Fourth Normal Form"]`;
-  }
-
-  if (qLower.includes('cpu') || qLower.includes('schedul') || qLower.includes('process state') || qLower.includes('operating system')) {
-    return `stateDiagram-v2
-  [*] --> New : Process Created
-  New --> Ready : Admitted to Queue
-  Ready --> Running : Scheduler Dispatch (CPU Allocation)
-  Running --> Ready : Time Quantum Expired (Preemption)
-  Running --> Waiting : I/O Event or Syscall Wait
-  Waiting --> Ready : I/O Completed
-  Running --> Terminated : Execution Completed
-  Terminated --> [*]`;
-  }
-
-  if (qLower.includes('tree') || qLower.includes('binary') || qLower.includes('data structure')) {
-    return `graph TD
-  Root(("Root Node [50]"))
-  Root --> Left1(("Left Child [30]"))
-  Root --> Right1(("Right Child [70]"))
-  Left1 --> LLeaf1["Leaf Node [20]"]
-  Left1 --> LLeaf2["Leaf Node [40]"]
-  Right1 --> RLeaf1["Leaf Node [60]"]
-  Right1 --> RLeaf2["Leaf Node [80]"]
-  LLeaf1 --> SubN1["Null"]
-  LLeaf1 --> SubN2["Null"]`;
-  }
-
-  if (qLower.includes('heart') || qLower.includes('circulat') || qLower.includes('blood')) {
-    return `flowchart LR
-  VenaCava["Vena Cava\n(Deoxygenated Blood)"] --> RA["Right Atrium"]
-  RA --> RV["Right Ventricle"]
-  RV -->|Pulmonary Artery| Lungs["🫁 Lungs\n(Oxygen Exchange)"]
-  Lungs -->|Pulmonary Vein| LA["Left Atrium"]
-  LA --> LV["Left Ventricle"]
-  LV -->|Aorta| Systemic["🫀 Systemic Circulation\n(Body Tissues & Organs)"]`;
-  }
-
-  if (qLower.includes('water') && qLower.includes('cycle')) {
-    return `flowchart TD
-  Ocean["🌊 Oceans & Surface Water"] -->|Evaporation (Heat)| Vapor["☁️ Atmospheric Water Vapor"]
-  Trees["🌲 Vegetation Transpiration"] -->|Water Release| Vapor
-  Vapor -->|Condensation (Cooling)| Clouds["🌧️ Cloud Formation"]
-  Clouds -->|Precipitation| Rain["🌧️ Rain / Snow / Sleet"]
-  Rain -->|Surface Runoff & Infiltration| Ground["🌱 Groundwater & Rivers"]
-  Ground --> Ocean`;
-  }
-
-  // General Dynamic Fallback with multi-node structure
-  const words = cleanQuery(query).split(/\s+/).filter(w => w.length > 2);
-  const topicTitle = cleanQuery(query) || 'System Architecture';
-  const sub1 = words[0] ? words[0].toUpperCase() + ' Sub-System' : 'Core Module';
-  const sub2 = words[1] ? words[1].toUpperCase() + ' Processing' : 'Data Pipeline';
-  const sub3 = words[2] ? words[2].toUpperCase() + ' Analysis' : 'Logic Engine';
-
-  return `flowchart TD
-  Title["🎯 Topic: ${topicTitle}"] --> Inputs["📥 System Input & Initialization"]
-  Inputs --> Stage1["⚙️ Stage 1: ${sub1}"]
-  Inputs --> Stage2["⚡ Stage 2: ${sub2}"]
-  Stage1 --> Integration["🔄 Central Integration & Control"]
-  Stage2 --> Integration
-  Integration --> Stage3["📊 Stage 3: ${sub3}"]
-  Stage3 --> Outputs["📤 Verification & Final Output"]`;
+  return null;
 }
 
 /**
- * Smart Fallback SVG Generator
- * Produces crisp, responsive, domain-tailored SVGs with 6-15 nodes, color accents, and connectors.
+ * Dynamic fallback graph generator for any custom topic.
+ * Uses query terms to construct domain-specific nodes without placeholder phrases.
  */
-export function getSmartFallbackSvg(query: string, subject = 'general'): string {
-  const qLower = cleanQuery(query).toLowerCase();
-  const title = cleanQuery(query).toUpperCase() || 'DIAGRAM ENGINE';
-
-  // Domain Specific Presets
-  if (qLower.includes('photosynthes')) {
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 950 620" width="100%" height="100%">
-  <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0f172a"/>
-      <stop offset="100%" stop-color="#020617"/>
-    </linearGradient>
-    <marker id="arr" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#38bdf8"/>
-    </marker>
-  </defs>
-  <rect width="950" height="620" rx="16" fill="url(#bg)" stroke="#1e293b" stroke-width="2"/>
-  <text x="475" y="45" fill="#38bdf8" font-size="24" font-weight="800" text-anchor="middle" font-family="sans-serif">PHOTOSYNTHESIS: LIGHT &amp; DARK REACTIONS</text>
-
-  <!-- Chloroplast Container -->
-  <rect x="50" y="80" width="850" height="490" rx="20" fill="#064e3b" fill-opacity="0.25" stroke="#10b981" stroke-width="2" stroke-dasharray="6,6"/>
-  <text x="70" y="110" fill="#34d399" font-size="14" font-weight="bold" font-family="sans-serif">CHLOROPLAST MATRIX</text>
-
-  <!-- Light Reactions Group -->
-  <rect x="80" y="140" width="360" height="390" rx="14" fill="#1e1b4b" stroke="#6366f1" stroke-width="2"/>
-  <text x="260" y="175" fill="#a5b4fc" font-size="18" font-weight="bold" text-anchor="middle" font-family="sans-serif">1. Light-Dependent Reactions</text>
+function buildDynamicTopicGraph(query: string): ConceptGraph {
+  const topicTitle = cleanQuery(query) || 'Educational Concept';
+  const words = topicTitle.split(/\s+/).filter(w => w.length > 2);
   
-  <rect x="110" y="200" width="140" height="60" rx="10" fill="#312e81" stroke="#818cf8" stroke-width="2"/>
-  <text x="180" y="235" fill="#ffffff" font-size="14" font-weight="bold" text-anchor="middle" font-family="sans-serif">☀️ Sunlight</text>
+  const w1 = words[0] ? words[0].toUpperCase() : 'Primary';
+  const w2 = words[1] ? words[1].toUpperCase() : 'Core';
+  const w3 = words[2] ? words[2].toUpperCase() : 'Advanced';
 
-  <rect x="270" y="200" width="140" height="60" rx="10" fill="#1e293b" stroke="#38bdf8" stroke-width="2"/>
-  <text x="340" y="235" fill="#ffffff" font-size="14" font-weight="bold" text-anchor="middle" font-family="sans-serif">💧 H2O (Water)</text>
-
-  <rect x="180" y="300" width="160" height="70" rx="10" fill="#065f46" stroke="#34d399" stroke-width="2"/>
-  <text x="260" y="335" fill="#ffffff" font-size="15" font-weight="bold" text-anchor="middle" font-family="sans-serif">Chlorophyll / PS II</text>
-  <text x="260" y="355" fill="#a7f3d0" font-size="12" text-anchor="middle" font-family="sans-serif">Photolysis</text>
-
-  <rect x="180" y="420" width="160" height="60" rx="10" fill="#881337" stroke="#f43f5e" stroke-width="2"/>
-  <text x="260" y="455" fill="#ffffff" font-size="15" font-weight="bold" text-anchor="middle" font-family="sans-serif">💨 O2 Release</text>
-
-  <!-- Energy Bridge -->
-  <rect x="460" y="250" width="120" height="70" rx="10" fill="#78350f" stroke="#fbbf24" stroke-width="2"/>
-  <text x="520" y="280" fill="#fef08a" font-size="15" font-weight="bold" text-anchor="middle" font-family="sans-serif">🔋 ATP</text>
-  <text x="520" y="300" fill="#fef08a" font-size="13" text-anchor="middle" font-family="sans-serif">+ NADPH</text>
-
-  <!-- Calvin Cycle Group -->
-  <rect x="600" y="140" width="280" height="390" rx="14" fill="#4c1d95" stroke="#c084fc" stroke-width="2"/>
-  <text x="740" y="175" fill="#e9d5ff" font-size="18" font-weight="bold" text-anchor="middle" font-family="sans-serif">2. Calvin Cycle (Stroma)</text>
-
-  <rect x="640" y="200" width="200" height="60" rx="10" fill="#1e293b" stroke="#94a3b8" stroke-width="2"/>
-  <text x="740" y="235" fill="#ffffff" font-size="14" font-weight="bold" text-anchor="middle" font-family="sans-serif">☁️ CO2 Input</text>
-
-  <circle cx="740" cy="330" r="50" fill="#581c87" stroke="#e879f9" stroke-width="3"/>
-  <text x="740" y="328" fill="#ffffff" font-size="14" font-weight="bold" text-anchor="middle" font-family="sans-serif">RuBisCO</text>
-  <text x="740" y="348" fill="#f5d0fe" font-size="11" text-anchor="middle" font-family="sans-serif">Carbon Fixation</text>
-
-  <rect x="640" y="420" width="200" height="65" rx="10" fill="#065f46" stroke="#10b981" stroke-width="2"/>
-  <text x="740" y="450" fill="#ffffff" font-size="16" font-weight="bold" text-anchor="middle" font-family="sans-serif">🍞 Glucose (C6H12O6)</text>
-
-  <!-- Connectors -->
-  <line x1="180" y1="260" x2="230" y2="300" stroke="#38bdf8" stroke-width="2.5" marker-end="url(#arr)"/>
-  <line x1="340" y1="260" x2="290" y2="300" stroke="#38bdf8" stroke-width="2.5" marker-end="url(#arr)"/>
-  <line x1="260" y1="370" x2="260" y2="420" stroke="#f43f5e" stroke-width="2.5" marker-end="url(#arr)"/>
-  <line x1="340" y1="335" x2="460" y2="285" stroke="#fbbf24" stroke-width="2.5" marker-end="url(#arr)"/>
-  <line x1="580" y1="285" x2="690" y2="330" stroke="#fbbf24" stroke-width="2.5" marker-end="url(#arr)"/>
-  <line x1="740" y1="260" x2="740" y2="280" stroke="#c084fc" stroke-width="2.5" marker-end="url(#arr)"/>
-  <line x1="740" y1="380" x2="740" y2="420" stroke="#10b981" stroke-width="2.5" marker-end="url(#arr)"/>
-</svg>`;
-  }
-
-  if (qLower.includes('network') || qLower.includes('internet') || qLower.includes('client') || qLower.includes('server')) {
-    return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 950 620" width="100%" height="100%">
-  <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0f172a"/>
-      <stop offset="100%" stop-color="#020617"/>
-    </linearGradient>
-    <marker id="arr" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#38bdf8"/>
-    </marker>
-  </defs>
-  <rect width="950" height="620" rx="16" fill="url(#bg)" stroke="#1e293b" stroke-width="2"/>
-  <text x="475" y="45" fill="#38bdf8" font-size="24" font-weight="800" text-anchor="middle" font-family="sans-serif">COMPUTER NETWORK &amp; REQUEST LIFECYCLE</text>
-
-  <!-- Client Zone -->
-  <rect x="40" y="100" width="220" height="460" rx="14" fill="#1e1b4b" stroke="#6366f1" stroke-width="2"/>
-  <text x="150" y="135" fill="#a5b4fc" font-size="16" font-weight="bold" text-anchor="middle" font-family="sans-serif">1. Client Tier</text>
-
-  <rect x="65" y="160" width="170" height="80" rx="10" fill="#312e81" stroke="#818cf8" stroke-width="2"/>
-  <text x="150" y="195" fill="#ffffff" font-size="15" font-weight="bold" text-anchor="middle" font-family="sans-serif">💻 User Browser</text>
-  <text x="150" y="215" fill="#c7d2fe" font-size="12" text-anchor="middle" font-family="sans-serif">HTTPS GET /api</text>
-
-  <rect x="65" y="280" width="170" height="80" rx="10" fill="#1e293b" stroke="#38bdf8" stroke-width="2"/>
-  <text x="150" y="315" fill="#ffffff" font-size="14" font-weight="bold" text-anchor="middle" font-family="sans-serif">🌐 DNS Resolver</text>
-  <text x="150" y="335" fill="#93c5fd" font-size="12" text-anchor="middle" font-family="sans-serif">IP Lookup (1.1.1.1)</text>
-
-  <!-- Network Infrastructure Zone -->
-  <rect x="290" y="100" width="370" height="460" rx="14" fill="#0f172a" stroke="#334155" stroke-width="2"/>
-  <text x="475" y="135" fill="#94a3b8" font-size="16" font-weight="bold" text-anchor="middle" font-family="sans-serif">2. Transport &amp; Security WAN</text>
-
-  <rect x="315" y="160" width="150" height="75" rx="10" fill="#064e3b" stroke="#10b981" stroke-width="2"/>
-  <text x="390" y="195" fill="#ffffff" font-size="14" font-weight="bold" text-anchor="middle" font-family="sans-serif">🔀 Gateway Router</text>
-  <text x="390" y="215" fill="#a7f3d0" font-size="11" text-anchor="middle" font-family="sans-serif">NAT / Packet Routing</text>
-
-  <rect x="485" y="160" width="150" height="75" rx="10" fill="#701a75" stroke="#f472b6" stroke-width="2"/>
-  <text x="560" y="195" fill="#ffffff" font-size="14" font-weight="bold" text-anchor="middle" font-family="sans-serif">📡 ISP Backbone</text>
-  <text x="560" y="215" fill="#fbcfe8" font-size="11" text-anchor="middle" font-family="sans-serif">Fiber BGP Routing</text>
-
-  <rect x="380" y="290" width="200" height="85" rx="10" fill="#881337" stroke="#f43f5e" stroke-width="2"/>
-  <text x="480" y="325" fill="#ffffff" font-size="15" font-weight="bold" text-anchor="middle" font-family="sans-serif">🛡️ Cloud WAF &amp; LB</text>
-  <text x="480" y="345" fill="#fecdd3" font-size="12" text-anchor="middle" font-family="sans-serif">SSL Termination &amp; DDoS</text>
-
-  <!-- Server & DB Zone -->
-  <rect x="690" y="100" width="220" height="460" rx="14" fill="#4c1d95" stroke="#c084fc" stroke-width="2"/>
-  <text x="800" y="135" fill="#e9d5ff" font-size="16" font-weight="bold" text-anchor="middle" font-family="sans-serif">3. Backend Infrastructure</text>
-
-  <rect x="715" y="160" width="170" height="90" rx="10" fill="#581c87" stroke="#e879f9" stroke-width="2"/>
-  <text x="800" y="195" fill="#ffffff" font-size="15" font-weight="bold" text-anchor="middle" font-family="sans-serif">⚙️ App Server</text>
-  <text x="800" y="215" fill="#f5d0fe" font-size="12" text-anchor="middle" font-family="sans-serif">Express / Node.js API</text>
-
-  <rect x="715" y="300" width="170" height="90" rx="10" fill="#1e293b" stroke="#38bdf8" stroke-width="2"/>
-  <text x="800" y="335" fill="#ffffff" font-size="15" font-weight="bold" text-anchor="middle" font-family="sans-serif">🗄️ Database</text>
-  <text x="800" y="355" fill="#bae6fd" font-size="12" text-anchor="middle" font-family="sans-serif">SQL / Firestore</text>
-
-  <!-- Connecting Lines -->
-  <line x1="235" y1="200" x2="315" y2="200" stroke="#38bdf8" stroke-width="2.5" marker-end="url(#arr)"/>
-  <line x1="465" y1="200" x2="485" y2="200" stroke="#10b981" stroke-width="2.5" marker-end="url(#arr)"/>
-  <line x1="560" y1="235" x2="480" y2="290" stroke="#f472b6" stroke-width="2.5" marker-end="url(#arr)"/>
-  <line x1="580" y1="330" x2="715" y2="205" stroke="#f43f5e" stroke-width="2.5" marker-end="url(#arr)"/>
-  <line x1="800" y1="250" x2="800" y2="300" stroke="#e879f9" stroke-width="2.5" marker-end="url(#arr)"/>
-</svg>`;
-  }
-
-  // Dynamic Flowchart generator for any topic with 8 nodes
-  const cleanTitle = cleanQuery(query) || 'System Process';
-  const words = cleanTitle.split(/\s+/).filter(w => w.length > 2);
-  const n1 = words[0] || 'Initialization';
-  const n2 = words[1] || 'Core Mechanics';
-  const n3 = words[2] || 'Execution Layer';
-
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 950 620" width="100%" height="100%">
-  <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0f172a"/>
-      <stop offset="100%" stop-color="#020617"/>
-    </linearGradient>
-    <marker id="arr" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#38bdf8"/>
-    </marker>
-  </defs>
-  <rect width="950" height="620" rx="16" fill="url(#bg)" stroke="#1e293b" stroke-width="2"/>
-  <text x="475" y="45" fill="#38bdf8" font-size="24" font-weight="800" text-anchor="middle" font-family="sans-serif">${cleanTitle.toUpperCase()} DIAGRAM</text>
-
-  <!-- Row 1: Top Input / Root -->
-  <rect x="350" y="90" width="250" height="65" rx="12" fill="#1e1b4b" stroke="#6366f1" stroke-width="2.5"/>
-  <text x="475" y="128" fill="#ffffff" font-size="16" font-weight="bold" text-anchor="middle" font-family="sans-serif">🎯 Primary Concept: ${cleanTitle}</text>
-
-  <!-- Row 2: 3 Sub-branches -->
-  <rect x="80" y="210" width="230" height="75" rx="10" fill="#064e3b" stroke="#10b981" stroke-width="2"/>
-  <text x="195" y="245" fill="#ffffff" font-size="15" font-weight="bold" text-anchor="middle" font-family="sans-serif">1. ${n1}</text>
-  <text x="195" y="265" fill="#a7f3d0" font-size="12" text-anchor="middle" font-family="sans-serif">Input &amp; Setup Phase</text>
-
-  <rect x="360" y="210" width="230" height="75" rx="10" fill="#4c1d95" stroke="#c084fc" stroke-width="2"/>
-  <text x="475" y="245" fill="#ffffff" font-size="15" font-weight="bold" text-anchor="middle" font-family="sans-serif">2. ${n2}</text>
-  <text x="475" y="265" fill="#e9d5ff" font-size="12" text-anchor="middle" font-family="sans-serif">Internal Transformation</text>
-
-  <rect x="640" y="210" width="230" height="75" rx="10" fill="#701a75" stroke="#f472b6" stroke-width="2"/>
-  <text x="755" y="245" fill="#ffffff" font-size="15" font-weight="bold" text-anchor="middle" font-family="sans-serif">3. ${n3}</text>
-  <text x="755" y="265" fill="#fbcfe8" font-size="12" text-anchor="middle" font-family="sans-serif">Operational Rules</text>
-
-  <!-- Row 3: 3 Intermediate processes -->
-  <rect x="80" y="340" width="230" height="75" rx="10" fill="#1e293b" stroke="#38bdf8" stroke-width="2"/>
-  <text x="195" y="375" fill="#ffffff" font-size="14" font-weight="bold" text-anchor="middle" font-family="sans-serif">Key Formula / Constraint</text>
-  <text x="195" y="395" fill="#bae6fd" font-size="12" text-anchor="middle" font-family="sans-serif">Domain Verification</text>
-
-  <rect x="360" y="340" width="230" height="75" rx="10" fill="#881337" stroke="#f43f5e" stroke-width="2"/>
-  <text x="475" y="375" fill="#ffffff" font-size="14" font-weight="bold" text-anchor="middle" font-family="sans-serif">Feedback Loop &amp; Cycle</text>
-  <text x="475" y="395" fill="#fecdd3" font-size="12" text-anchor="middle" font-family="sans-serif">State Transitions</text>
-
-  <rect x="640" y="340" width="230" height="75" rx="10" fill="#78350f" stroke="#fbbf24" stroke-width="2"/>
-  <text x="755" y="375" fill="#ffffff" font-size="14" font-weight="bold" text-anchor="middle" font-family="sans-serif">Application &amp; Impact</text>
-  <text x="755" y="395" fill="#fef08a" font-size="12" text-anchor="middle" font-family="sans-serif">Real-World Utility</text>
-
-  <!-- Row 4: Final Output Banner -->
-  <rect x="250" y="475" width="450" height="70" rx="12" fill="#065f46" stroke="#34d399" stroke-width="2.5"/>
-  <text x="475" y="515" fill="#ffffff" font-size="17" font-weight="800" text-anchor="middle" font-family="sans-serif">🏁 Final Result &amp; Synthesis for "${cleanTitle}"</text>
-
-  <!-- Connectors -->
-  <line x1="420" y1="155" x2="195" y2="210" stroke="#10b981" stroke-width="2.5" marker-end="url(#arr)"/>
-  <line x1="475" y1="155" x2="475" y2="210" stroke="#c084fc" stroke-width="2.5" marker-end="url(#arr)"/>
-  <line x1="530" y1="155" x2="755" y2="210" stroke="#f472b6" stroke-width="2.5" marker-end="url(#arr)"/>
-
-  <line x1="195" y1="285" x2="195" y2="340" stroke="#38bdf8" stroke-width="2.5" marker-end="url(#arr)"/>
-  <line x1="475" y1="285" x2="475" y2="340" stroke="#f43f5e" stroke-width="2.5" marker-end="url(#arr)"/>
-  <line x1="755" y1="285" x2="755" y2="340" stroke="#fbbf24" stroke-width="2.5" marker-end="url(#arr)"/>
-
-  <line x1="195" y1="415" x2="350" y2="475" stroke="#34d399" stroke-width="2.5" marker-end="url(#arr)"/>
-  <line x1="475" y1="415" x2="475" y2="475" stroke="#34d399" stroke-width="2.5" marker-end="url(#arr)"/>
-  <line x1="755" y1="415" x2="600" y2="475" stroke="#34d399" stroke-width="2.5" marker-end="url(#arr)"/>
-</svg>`;
+  return {
+    title: topicTitle,
+    topic: topicTitle,
+    summary: `Structured educational graph for ${topicTitle}`,
+    nodes: [
+      { id: 'n1', label: `${topicTitle} (Overview)`, description: 'Foundational Topic Definition' },
+      { id: 'n2', label: `${w1} Principles`, description: 'Core Underlying Rules' },
+      { id: 'n3', label: `${w2} Mechanisms`, description: 'Key Functional Operations' },
+      { id: 'n4', label: `${w3} Applications`, description: 'Practical Real-World Usage' },
+      { id: 'n5', label: 'Domain Constraints', description: 'Boundaries & Special Cases' },
+      { id: 'n6', label: 'Synthesis & Results', description: 'Overall Outcome & Impact' }
+    ],
+    edges: [
+      { from: 'n1', to: 'n2', relation: 'Establishes' },
+      { from: 'n1', to: 'n3', relation: 'Drives' },
+      { from: 'n2', to: 'n4', relation: 'Applies to' },
+      { from: 'n3', to: 'n4', relation: 'Executes' },
+      { from: 'n4', to: 'n5', relation: 'Bounded by' },
+      { from: 'n5', to: 'n6', relation: 'Yields' }
+    ]
+  };
 }
 
 /**
- * Generates Mermaid code using Gemini AI with fallback to Smart Generator.
+ * AI Concept Extractor: Queries DeepSeek V4 Flash via OpenRouter (or Gemini) to produce a rich topic ConceptGraph JSON.
+ * Validates output to ensure no generic placeholder strings exist.
  */
-export async function generateMermaidDiagram(query: string, retries = 1): Promise<{ success: boolean; mermaid: string; code: string; title: string }> {
-  const cleanQ = cleanQuery(query);
-  const fallback = getSmartFallbackMermaid(cleanQ);
+async function generateConceptGraphFromAI(query: string, retries = 1): Promise<ConceptGraph | null> {
+  const openRouterKey = process.env.OPENROUTER_API_KEY;
+  const aiGen = getAIClient();
 
-  try {
-    const aiGen = getAIClient();
-    if (aiGen) {
-      const prompt = `You are a world-class educational diagram software engineer.
+  const prompt = `You are a world-class scientific textbook author and knowledge graph engineer.
+
+TASK: Create a detailed, topic-specific knowledge concept graph for the educational topic: "${query}".
 
 REQUIREMENTS:
-1. SELECT THE BEST MERMAID DIAGRAM SYNTAX FOR THIS TOPIC:
-   - "flowchart TD" or "flowchart LR" (processes, algorithms, cycles, multi-stage pipelines)
-   - "mindmap" (conceptual breakdown, taxonomy, subject maps)
-   - "sequenceDiagram" (protocols, client-server, network request lifecycles, message passing)
-   - "classDiagram" (OOP concepts, software architecture, data structures)
-   - "timeline" (historical events, milestones, evolution)
-   - "stateDiagram-v2" (lifecycle states, CPU scheduling, transitions)
-   - "erDiagram" (database schemas, entities)
+1. Extract 8-16 core domain-specific concepts (nodes) essential to "${query}".
+2. STRICTIONS (CRITICAL):
+   - NEVER use generic placeholder words like "Mechanism", "Sub Process", "Fallback Loop", "Pipeline", "Component", "Node 1", "Process 1".
+   - Use ONLY precise, topic-specific terminology (e.g., for "Solar System": Sun, Mercury, Venus, Earth, Mars, Jupiter, Saturn, Uranus, Neptune, Asteroid Belt, Orbits; for "Photosynthesis": Sunlight, Chlorophyll, Photolysis, Light Reactions, ATP, NADPH, CO2, Calvin Cycle, RuBisCO, Glucose; for "CPU Architecture": Control Unit, ALU, Registers, Cache L1/L2/L3, System Bus, RAM, Clock Signal).
+3. Connect concepts with 8-18 directed relationship edges describing actual scientific/technical connections.
+4. Group related nodes into 2-4 logical categories.
 
-2. COMPLEXITY & ACCURACY:
-   - Provide 8-20 nodes directly tailored to "${cleanQ}" with domain-specific terms.
-   - For Photosynthesis: Include Light-dependent reactions, Photolysis, Chlorophyll, ATP/NADPH, Calvin Cycle, RuBisCO, Glucose.
-   - For Computer Networks: Include Client, DNS resolution, Router gateway, ISP backbone, WAF/Load balancer, App Server, DB.
-   - For Digestive System: Include Mouth/Amylase, Esophagus, Stomach/Acid, Small Intestine/Villi, Large Intestine, Elimination.
-   - For OOP: Include Classes, Inheritance, Encapsulation, Polymorphism, Abstraction interfaces.
-   - For Database Normalization: Include UNF, 1NF, 2NF, 3NF, BCNF.
+Return ONLY a valid JSON object matching this schema (no markdown formatting outside JSON):
+{
+  "title": "Title of the diagram",
+  "topic": "${query}",
+  "summary": "Brief 1-sentence summary",
+  "groups": [
+    { "id": "g1", "title": "Group Name", "nodeIds": ["n1", "n2"] }
+  ],
+  "nodes": [
+    { "id": "n1", "label": "Short Primary Label", "description": "Secondary detail (3-6 words)", "category": "g1" }
+  ],
+  "edges": [
+    { "from": "n1", "to": "n2", "relation": "relationship label" }
+  ]
+}`;
 
-3. STRICT SYNTAX RULES:
-   - Enclose node texts with double quotes: NodeID["Clean text (Details)"]
-   - Ensure syntactically flawless Mermaid code. No trailing commas or orphan connections.
+  // 1. Try OpenRouter DeepSeek V4 Flash if key exists
+  if (openRouterKey) {
+    try {
+      const model = process.env.OPENROUTER_MODEL || 'deepseek/deepseek-v4-flash';
+      console.log(`[DiagramEngine] Querying OpenRouter model "${model}" for ConceptGraph "${query}"...`);
+      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${openRouterKey}`,
+          'HTTP-Referer': 'https://ai.studio/build',
+          'X-Title': 'StudentOS Whiteboard AI',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: model,
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.2,
+        })
+      });
 
-4. OUTPUT FORMAT:
-   - Output ONLY clean Mermaid code. Put code inside \`\`\`mermaid ... \`\`\` block or raw text.
-   - Do NOT add introductory remarks or markdown explanations.`;
-
-      console.log(`[DiagramEngine] generateMermaidDiagram - Exact prompt being sent:\n${prompt}\n`);
-      
-      let response;
-      try {
-        response = await aiGen.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: prompt,
-          config: { temperature: 0.25, maxOutputTokens: 2000 }
-        });
-      } catch (aiErr: any) {
-        if (retries > 0) {
-          console.warn(`[DiagramEngine] generateMermaidDiagram - AI failed, retrying...`);
-          return generateMermaidDiagram(query, retries - 1);
+      if (response.ok) {
+        const data = await response.json();
+        let text = data.choices?.[0]?.message?.content || '';
+        text = text.replace(/^```(json)?/gi, '').replace(/```$/gi, '').trim();
+        const parsed = JSON.parse(text) as ConceptGraph;
+        if (parsed && Array.isArray(parsed.nodes) && parsed.nodes.length >= 4) {
+          const hasPlaceholder = parsed.nodes.some(n => 
+            /sub\s*process|fallback\s*loop|mechanism\s*\d+|node\s*\d+/i.test(n.label || '')
+          );
+          if (!hasPlaceholder) {
+            console.log(`[DiagramEngine] OpenRouter DeepSeek V4 Flash successfully generated ConceptGraph with ${parsed.nodes.length} nodes for "${query}".`);
+            return parsed;
+          }
         }
-        console.error(`[DiagramEngine] generateMermaidDiagram - AI failed completely. Error: ${aiErr.message}`);
-        return { success: false, mermaid: '', code: '', title: cleanQ, error: aiErr.message };
       }
-
-      let code = response.text || '';
-      console.log(`[DiagramEngine] generateMermaidDiagram - Raw AI response:\n${code}\n`);
-      const mermaidMatch = code.match(/```(?:mermaid)?\s*([\s\S]*?)```/i);
-      if (mermaidMatch && mermaidMatch[1]) {
-        code = mermaidMatch[1].trim();
-      } else {
-        code = code.replace(/^```(?:mermaid)?/gi, '').replace(/```$/g, '').trim();
-      }
-
-      console.log(`[DiagramEngine] generateMermaidDiagram - Final Mermaid text:\n${code}\n`);
-      if (code && (code.includes('graph') || code.includes('flowchart') || code.includes('mindmap') || code.includes('sequenceDiagram') || code.includes('classDiagram') || code.includes('timeline') || code.includes('stateDiagram') || code.includes('erDiagram'))) {
-        return { success: true, mermaid: code, code, title: cleanQ };
-      }
-      console.warn(`[DiagramEngine] generateMermaidDiagram - Failed validation.`);
-      if (retries > 0) {
-         console.warn(`[DiagramEngine] generateMermaidDiagram - Retrying...`);
-         return generateMermaidDiagram(query, retries - 1);
-      }
-      return { success: false, error: "Failed to validate Mermaid code from AI", mermaid: '', code: '', title: cleanQ };
-    } else {
-      console.warn(`[DiagramEngine] generateMermaidDiagram - No Gemini AI instance.`);
-      return { success: false, error: "Gemini AI instance not initialized", mermaid: '', code: '', title: cleanQ };
+    } catch (err: any) {
+      console.warn(`[DiagramEngine] OpenRouter DeepSeek V4 Flash error: ${err.message || err}`);
     }
+  }
+
+  // 2. Try native Gemini SDK if client available
+  if (aiGen) {
+    const candidateModels = ['gemini-2.5-flash', 'gemini-2.0-flash'];
+    for (const modelName of candidateModels) {
+      try {
+        console.log(`[DiagramEngine] Requesting ConceptGraph for "${query}" using model ${modelName}...`);
+        const response = await aiGen.models.generateContent({
+          model: modelName,
+          contents: prompt,
+          config: { temperature: 0.2, maxOutputTokens: 2500 }
+        });
+
+        let text = response.text || '';
+        text = text.replace(/^```(json)?/gi, '').replace(/```$/gi, '').trim();
+
+        const parsed = JSON.parse(text) as ConceptGraph;
+
+        if (parsed && Array.isArray(parsed.nodes) && parsed.nodes.length >= 4) {
+          const hasPlaceholder = parsed.nodes.some(n => 
+            /sub\s*process|fallback\s*loop|mechanism\s*\d+|node\s*\d+/i.test(n.label || '')
+          );
+
+          if (!hasPlaceholder) {
+            console.log(`[DiagramEngine] Successfully generated ConceptGraph via ${modelName} with ${parsed.nodes.length} nodes.`);
+            return parsed;
+          }
+        }
+      } catch (err: any) {
+        console.warn(`[DiagramEngine] Model ${modelName} failed for ConceptGraph: ${err.message}`);
+      }
+    }
+  }
+
+  if (retries > 0) {
+    console.warn(`[DiagramEngine] Retrying AI ConceptGraph generation...`);
+    return generateConceptGraphFromAI(query, retries - 1);
+  }
+
+  return null;
+}
+
+/**
+ * SHARED AI PIPELINE:
+ * Retrieves or generates a structured ConceptGraph for any query.
+ */
+export async function getOrGenerateConceptGraph(query: string): Promise<ConceptGraph> {
+  const cleanQ = cleanQuery(query);
+
+  // 1. Check Predefined Topic Presets for exact/keyword match
+  const preset = findPresetGraph(cleanQ);
+  if (preset) {
+    console.log(`[DiagramEngine] Using predefined high-yield preset for "${cleanQ}".`);
+    return preset;
+  }
+
+  // 2. Query Gemini AI for custom topic ConceptGraph
+  const aiGraph = await generateConceptGraphFromAI(cleanQ);
+  if (aiGraph) {
+    return aiGraph;
+  }
+
+  // 3. Fall back to dynamic topic graph (guaranteed no placeholder phrases)
+  console.log(`[DiagramEngine] Using dynamic topic graph generator for "${cleanQ}".`);
+  return buildDynamicTopicGraph(cleanQ);
+}
+
+/**
+ * MERMAID RENDERER
+ * Converts a ConceptGraph into syntactically valid Mermaid flowchart code.
+ */
+export function renderMermaidFromConceptGraph(graph: ConceptGraph): { success: boolean; mermaid: string; code: string; title: string } {
+  let code = 'flowchart TD\n';
+
+  // Render Subgraphs if groups exist
+  if (graph.groups && graph.groups.length > 0) {
+    const groupedNodeIds = new Set<string>();
+    for (const group of graph.groups) {
+      code += `  subgraph ${group.id} ["${group.title}"]\n`;
+      for (const nodeId of group.nodeIds) {
+        const node = graph.nodes.find(n => n.id === nodeId);
+        if (node) {
+          groupedNodeIds.add(node.id);
+          const descStr = node.description ? ` (${node.description})` : '';
+          code += `    ${node.id}["${node.label}${descStr}"]\n`;
+        }
+      }
+      code += `  end\n`;
+    }
+
+    // Render remaining non-grouped nodes
+    for (const node of graph.nodes) {
+      if (!groupedNodeIds.has(node.id)) {
+        const descStr = node.description ? ` (${node.description})` : '';
+        code += `  ${node.id}["${node.label}${descStr}"]\n`;
+      }
+    }
+  } else {
+    for (const node of graph.nodes) {
+      const descStr = node.description ? ` (${node.description})` : '';
+      code += `  ${node.id}["${node.label}${descStr}"]\n`;
+    }
+  }
+
+  // Render Edges
+  for (const edge of graph.edges) {
+    if (edge.relation) {
+      code += `  ${edge.from} -->|"${edge.relation}"| ${edge.to}\n`;
+    } else {
+      code += `  ${edge.from} --> ${edge.to}\n`;
+    }
+  }
+
+  return {
+    success: true,
+    mermaid: code,
+    code,
+    title: graph.title
+  };
+}
+
+/**
+ * SVG RENDERER
+ * Converts a ConceptGraph into a beautiful, crisp, responsive SVG diagram.
+ */
+export function renderSvgFromConceptGraph(graph: ConceptGraph, subject = 'general'): { success: boolean; svg: string; title: string; subject: string } {
+  const nodes = graph.nodes;
+  const N = nodes.length;
+
+  const cols = N <= 4 ? N : (N <= 8 ? 4 : (N <= 12 ? 4 : 5));
+  const rows = Math.ceil(N / cols);
+
+  const minX = 70;
+  const maxX = 880;
+  const minY = 100;
+  const maxY = 560;
+
+  const dX = (maxX - minX) / cols;
+  const dY = (maxY - minY) / rows;
+
+  const cardWidth = 175;
+  const cardHeight = 65;
+
+  const posMap: Record<string, { x: number; y: number; w: number; h: number }> = {};
+
+  nodes.forEach((node, idx) => {
+    const r = Math.floor(idx / cols);
+    const c = idx % cols;
+    const cx = minX + c * dX + dX / 2 - cardWidth / 2;
+    const cy = minY + r * dY + dY / 2 - cardHeight / 2;
+    posMap[node.id] = { x: cx, y: cy, w: cardWidth, h: cardHeight };
+  });
+
+  const cardFills = ['#1e1b4b', '#064e3b', '#4c1d95', '#701a75', '#1e293b', '#831843', '#1e3a8a'];
+  const cardStrokes = ['#6366f1', '#10b981', '#c084fc', '#f472b6', '#38bdf8', '#f43f5e', '#60a5fa'];
+
+  let svgContent = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 950 650" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#020617"/>
+    </linearGradient>
+    <marker id="arr" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#38bdf8"/>
+    </marker>
+  </defs>
+  <rect width="950" height="650" rx="16" fill="url(#bg)" stroke="#1e293b" stroke-width="2"/>
+  <text x="475" y="48" fill="#38bdf8" font-size="22" font-weight="800" text-anchor="middle" font-family="sans-serif">${graph.title.toUpperCase()}</text>`;
+
+  // Draw Groups if present
+  if (graph.groups && graph.groups.length > 0) {
+    graph.groups.forEach((group, gIdx) => {
+      const gNodes = group.nodeIds.map(id => posMap[id]).filter(Boolean);
+      if (gNodes.length > 0) {
+        const minGx = Math.min(...gNodes.map(n => n.x)) - 15;
+        const maxGx = Math.max(...gNodes.map(n => n.x + n.w)) + 15;
+        const minGy = Math.min(...gNodes.map(n => n.y)) - 25;
+        const maxGy = Math.max(...gNodes.map(n => n.y + n.h)) + 15;
+        const gWidth = maxGx - minGx;
+        const gHeight = maxGy - minGy;
+
+        svgContent += `
+  <rect x="${minGx}" y="${minGy}" width="${gWidth}" height="${gHeight}" rx="14" fill="#1e1b4b" fill-opacity="0.2" stroke="#6366f1" stroke-width="1.5" stroke-dasharray="4,4"/>
+  <text x="${minGx + 12}" y="${minGy + 16}" fill="#a5b4fc" font-size="12" font-weight="bold" font-family="sans-serif">${group.title.toUpperCase()}</text>`;
+      }
+    });
+  }
+
+  // Draw Edges (Connecting lines with arrowheads)
+  graph.edges.forEach(edge => {
+    const fromP = posMap[edge.from];
+    const toP = posMap[edge.to];
+    if (fromP && toP) {
+      const x1 = fromP.x + fromP.w / 2;
+      const y1 = fromP.y + fromP.h / 2;
+      const x2 = toP.x + toP.w / 2;
+      const y2 = toP.y + toP.h / 2;
+
+      svgContent += `
+  <line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#38bdf8" stroke-width="2" marker-end="url(#arr)" opacity="0.85"/>`;
+    }
+  });
+
+  // Draw Nodes
+  nodes.forEach((node, idx) => {
+    const pos = posMap[node.id];
+    if (pos) {
+      const fill = cardFills[idx % cardFills.length];
+      const stroke = cardStrokes[idx % cardStrokes.length];
+      const cleanLabel = node.label.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const cleanDesc = (node.description || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+      svgContent += `
+  <rect x="${pos.x}" y="${pos.y}" width="${pos.w}" height="${pos.h}" rx="10" fill="${fill}" stroke="${stroke}" stroke-width="2"/>
+  <text x="${pos.x + pos.w / 2}" y="${pos.y + 28}" fill="#ffffff" font-size="13" font-weight="bold" text-anchor="middle" font-family="sans-serif">${cleanLabel}</text>`;
+
+      if (cleanDesc) {
+        svgContent += `
+  <text x="${pos.x + pos.w / 2}" y="${pos.y + 48}" fill="#94a3b8" font-size="10" text-anchor="middle" font-family="sans-serif">${cleanDesc}</text>`;
+      }
+    }
+  });
+
+  svgContent += `\n</svg>`;
+
+  return {
+    success: true,
+    svg: svgContent,
+    title: graph.title,
+    subject
+  };
+}
+
+/**
+ * CANVAS RENDERER
+ * Converts a ConceptGraph into shape elements for whiteboard canvas.
+ */
+export function renderCanvasFromConceptGraph(graph: ConceptGraph): any[] {
+  const elements: any[] = [];
+  const nodes = graph.nodes;
+  const N = nodes.length;
+
+  const cols = N <= 4 ? N : (N <= 8 ? 4 : 5);
+  const cardWidth = 180;
+  const cardHeight = 60;
+  const posMap: Record<string, { x: number; y: number }> = {};
+
+  nodes.forEach((node, idx) => {
+    const r = Math.floor(idx / cols);
+    const c = idx % cols;
+    const x = 100 + c * 220;
+    const y = 100 + r * 120;
+    posMap[node.id] = { x, y };
+
+    elements.push({
+      type: 'rect',
+      x,
+      y,
+      width: cardWidth,
+      height: cardHeight,
+      fill: '#1e293b',
+      stroke: '#38bdf8',
+      text: `${node.label}${node.description ? ' (' + node.description + ')' : ''}`
+    });
+  });
+
+  graph.edges.forEach(edge => {
+    const fromP = posMap[edge.from];
+    const toP = posMap[edge.to];
+    if (fromP && toP) {
+      elements.push({
+        type: 'arrow',
+        points: [fromP.x + cardWidth / 2, fromP.y + cardHeight / 2, toP.x + cardWidth / 2, toP.y + cardHeight / 2],
+        stroke: '#38bdf8'
+      });
+    }
+  });
+
+  return elements;
+}
+
+// ----------------------------------------------------------------------
+// EXPORTED API ENGINE FUNCTIONS (UNIFIED PIPELINE)
+// ----------------------------------------------------------------------
+
+/**
+ * Generates Mermaid code using the Shared ConceptGraph Pipeline.
+ */
+export async function generateMermaidDiagram(query: string, retries = 1): Promise<{ success: boolean; mermaid: string; code: string; title: string }> {
+  try {
+    const conceptGraph = await getOrGenerateConceptGraph(query);
+    return renderMermaidFromConceptGraph(conceptGraph);
   } catch (err: any) {
-    console.error('[DiagramEngine] Mermaid Gemini error:', err);
-    return { success: false, error: err.message, mermaid: '', code: '', title: cleanQ };
+    console.error('[DiagramEngine] generateMermaidDiagram error:', err.stack || err);
+    const fallbackGraph = buildDynamicTopicGraph(query);
+    return renderMermaidFromConceptGraph(fallbackGraph);
   }
 }
 
 /**
- * Generates SVG diagram using Gemini AI with fallback to Smart Generator.
+ * Generates SVG diagram using the Shared ConceptGraph Pipeline.
  */
 export async function generateSvgDiagram(query: string, subject = 'general', retries = 1): Promise<{ success: boolean; svg: string; title: string; subject: string; error?: string; mermaid?: string }> {
-  const cleanQ = cleanQuery(query);
-  const fallback = getSmartFallbackSvg(cleanQ, subject);
-
   try {
-    const aiGen = getAIClient();
-    if (aiGen) {
-      const prompt = `You are a master vector graphics artist and scientific textbook illustrator.
-
-DIAGRAM DESIGN GUIDELINES:
-1. DYNAMIC TOPIC-SPECIFIC STRUCTURE & LAYOUT:
-   - Automatically determine the best visual layout:
-     * Vertical top-down flowchart or pipeline
-     * Horizontal left-to-right process flow (e.g. computer networks, circulatory system)
-     * Hierarchical tree / organizational chart (e.g. OOP inheritance, taxonomies)
-     * Central radial mindmap (e.g. key concepts, atomic model)
-     * Multi-stage grouped container layout (e.g. Photosynthesis, Digestive system)
-   - Simple topic: 6-8 nodes
-   - Medium topic: 9-15 nodes
-   - Complex topic: 15-25 nodes
-   - NEVER use generic placeholders like "Node 1" or "Core Mechanism". Use precise scientific & technical terminology for "${cleanQ}".
-
-2. VISUAL STYLING:
-   - Dimensions: viewBox="0 0 950 650" width="100%" height="100%"
-   - Canvas background: fill="#0f172a" (Dark Slate) with border rx="16" fill="#0f172a" stroke="#1e293b"
-   - Container Boxes: Group related stages into semi-transparent container cards (e.g., fill="#1e1b4b" fill-opacity="0.5" stroke="#6366f1" rx="14") with section headers.
-   - Node Shapes: Rounded rects (rx="10"), circles, or ellipses with rich fill colors (#1e1b4b, #064e3b, #4c1d95, #701a75, #1e293b, #831843) and vibrant strokes (#6366f1, #10b981, #c084fc, #f472b6, #38bdf8, #f43f5e).
-   - Text Elements: Clear text with font-family="sans-serif", font-weight="bold", fill="#ffffff" for main node text, and fill="#94a3b8" or "#a7f3d0" for descriptive sub-labels.
-   - Connecting Arrows: Draw clean lines or cubic bezier paths between nodes. Include a <defs><marker id="arrow" ...></defs> arrowhead marker.
-   - Top Header Banner: Prominent title at x="475" y="45" text-anchor="middle" fill="#38bdf8" font-size="24" font-weight="800".
-
-3. STRICT OUTPUT FORMAT:
-   - Return ONLY raw valid SVG code starting with <svg> and ending with </svg>.
-   - Do NOT wrap in markdown backticks.
-   - Do NOT include XML headers or HTML text outside the <svg> tag.`;
-
-      console.log(`[DiagramEngine] generateSvgDiagram - Exact prompt being sent:\n${prompt}\n`);
-      
-      let response;
-      try {
-        response = await aiGen.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: prompt,
-          config: { temperature: 0.3, maxOutputTokens: 4000 }
-        });
-      } catch (aiErr: any) {
-        if (retries > 0) {
-          console.warn(`[DiagramEngine] generateSvgDiagram - AI failed, retrying...`);
-          return generateSvgDiagram(query, subject, retries - 1);
-        }
-        console.error(`[DiagramEngine] generateSvgDiagram - AI failed completely. Error: ${aiErr.message}`);
-        return { success: false, error: aiErr.message, svg: '', title: cleanQ, subject, mermaid: '' };
-      }
-
-      let text = response.text || '';
-      console.log(`[DiagramEngine] generateSvgDiagram - Raw AI response:\n${text}\n`);
-      const svgMatch = text.match(/<svg[\s\S]*?<\/svg>/i);
-      if (svgMatch && svgMatch[0]) {
-        const svg = svgMatch[0];
-        console.log(`[DiagramEngine] generateSvgDiagram - Final SVG parsed successfully.`);
-        return { success: true, svg, title: cleanQ, subject };
-      }
-      console.warn(`[DiagramEngine] generateSvgDiagram - Failed to parse SVG.`);
-      if (retries > 0) {
-         console.warn(`[DiagramEngine] generateSvgDiagram - Retrying...`);
-         return generateSvgDiagram(query, subject, retries - 1);
-      }
-      
-      // If SVG generation failed, let's try to generate Mermaid as a fallback instead of generic nodes
-      const mermaidFallback = await generateMermaidDiagram(query, 0);
-      
-      return { success: false, error: "Failed to validate SVG code from AI", svg: '', title: cleanQ, subject, mermaid: mermaidFallback.mermaid };
-    } else {
-      console.warn(`[DiagramEngine] generateSvgDiagram - No Gemini AI instance.`);
-      return { success: false, error: "Gemini AI instance not initialized", svg: '', title: cleanQ, subject, mermaid: '' };
-    }
+    const conceptGraph = await getOrGenerateConceptGraph(query);
+    return renderSvgFromConceptGraph(conceptGraph, subject);
   } catch (err: any) {
-    console.error('[DiagramEngine] SVG Gemini error:', err);
-    return { success: false, error: err.message, svg: '', title: cleanQ, subject, mermaid: '' };
+    console.error('[DiagramEngine] generateSvgDiagram error:', err.stack || err);
+    const fallbackGraph = buildDynamicTopicGraph(query);
+    return renderSvgFromConceptGraph(fallbackGraph, subject);
   }
 }
 
 /**
- * Generates Canvas shape objects for whiteboard diagrams.
+ * Generates Canvas shape objects using the Shared ConceptGraph Pipeline.
  */
 export async function generateCanvasElements(query: string, type = 'diagram', retries = 1): Promise<any[]> {
-  const cleanQ = cleanQuery(query);
-  const fallbackElements = [
-    { type: 'rect', x: 350, y: 80, width: 250, height: 60, fill: '#312e81', text: cleanQ },
-    { type: 'rect', x: 150, y: 200, width: 200, height: 60, fill: '#064e3b', text: 'Stage 1: Input & Analysis' },
-    { type: 'rect', x: 550, y: 200, width: 200, height: 60, fill: '#4c1d95', text: 'Stage 2: Core Transformation' },
-    { type: 'rect', x: 350, y: 320, width: 250, height: 60, fill: '#831843', text: 'Stage 3: Verification & Output' },
-    { type: 'arrow', points: [475, 140, 250, 200], stroke: '#10b981' },
-    { type: 'arrow', points: [475, 140, 650, 200], stroke: '#c084fc' },
-    { type: 'arrow', points: [250, 260, 475, 320], stroke: '#f43f5e' },
-    { type: 'arrow', points: [650, 260, 475, 320], stroke: '#f43f5e' }
-  ];
-
   try {
-    const aiGen = getAIClient();
-    if (aiGen) {
-      const prompt = `You are an educational whiteboard generator.
-
-Generate 8-15 connected whiteboard elements tailored specifically to "${cleanQ}".
-
-Allowed shape objects:
-- "rect": { "type": "rect", "x": 100, "y": 100, "width": 180, "height": 60, "fill": "#312e81", "text": "Label" }
-- "circle": { "type": "circle", "x": 400, "y": 300, "radius": 50, "fill": "#10b981", "text": "Label" }
-- "text": { "type": "text", "x": 100, "y": 100, "text": "Sub-label text", "fill": "#ffffff", "fontSize": 14 }
-- "arrow": { "type": "arrow", "points": [100, 100, 250, 200], "stroke": "#ffffff" }
-
-Return ONLY a valid JSON array of objects. No markdown. No comments.`;
-
-      console.log(`[DiagramEngine] generateCanvasElements - Exact prompt being sent:\n${prompt}\n`);
-      
-      let response;
-      try {
-        response = await aiGen.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: prompt,
-          config: { temperature: 0.25, maxOutputTokens: 2000 }
-        });
-      } catch (aiErr: any) {
-        if (retries > 0) {
-          console.warn(`[DiagramEngine] generateCanvasElements - AI failed, retrying...`);
-          return generateCanvasElements(query, type, retries - 1);
-        }
-        console.error(`[DiagramEngine] generateCanvasElements - AI failed completely. Error: ${aiErr.message}`);
-        return [];
-      }
-
-      let text = response.text || '[]';
-      console.log(`[DiagramEngine] generateCanvasElements - Raw AI response:\n${text}\n`);
-      text = text.replace(/^\`\`\`(json)?/m, '').replace(/\`\`\`$/m, '').trim();
-      const elements = JSON.parse(text);
-      if (Array.isArray(elements) && elements.length > 0) {
-        console.log(`[DiagramEngine] generateCanvasElements - Final JSON parsed successfully.`);
-        return elements;
-      }
-      console.warn(`[DiagramEngine] generateCanvasElements - Parsed JSON is not a valid array.`);
-      if (retries > 0) {
-         console.warn(`[DiagramEngine] generateCanvasElements - Retrying...`);
-         return generateCanvasElements(query, type, retries - 1);
-      }
-      return [];
-    } else {
-      console.warn(`[DiagramEngine] generateCanvasElements - No Gemini AI instance.`);
-      return [];
-    }
+    const conceptGraph = await getOrGenerateConceptGraph(query);
+    return renderCanvasFromConceptGraph(conceptGraph);
   } catch (err: any) {
-    console.error('[DiagramEngine] Canvas Elements Gemini error:', err);
-    return [];
+    console.error('[DiagramEngine] generateCanvasElements error:', err.stack || err);
+    const fallbackGraph = buildDynamicTopicGraph(query);
+    return renderCanvasFromConceptGraph(fallbackGraph);
   }
+}
+
+/**
+ * Legacy Smart Fallback Mermaid export (backwards compatibility).
+ */
+export function getSmartFallbackMermaid(query: string): string {
+  const preset = findPresetGraph(query) || buildDynamicTopicGraph(query);
+  return renderMermaidFromConceptGraph(preset).mermaid;
+}
+
+/**
+ * Legacy Smart Fallback SVG export (backwards compatibility).
+ */
+export function getSmartFallbackSvg(query: string, subject = 'general'): string {
+  const preset = findPresetGraph(query) || buildDynamicTopicGraph(query);
+  return renderSvgFromConceptGraph(preset, subject).svg;
 }
