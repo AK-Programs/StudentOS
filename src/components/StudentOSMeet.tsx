@@ -264,6 +264,15 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
     };
   }, [activeView, isInWaitingRoom, isCameraOn, isMicOn, selectedVideoDevice, selectedAudioDevice]);
 
+  // Keep local video element srcObject synchronized across re-renders and layout changes (e.g. spotlight, featured tile)
+  useEffect(() => {
+    if (activeView === 'room' && isCameraOn && localStreamRef.current && localVideoRef.current) {
+      if (localVideoRef.current.srcObject !== localStreamRef.current) {
+        localVideoRef.current.srcObject = localStreamRef.current;
+      }
+    }
+  }, [activeView, isCameraOn, spotlightUserId, pinnedParticipantId, screenSharingUserId, participants]);
+
   const startLocalMediaStream = async () => {
     try {
       if (localStreamRef.current) {
