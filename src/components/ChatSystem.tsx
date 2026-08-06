@@ -28,6 +28,7 @@ interface ChatSystemProps {
   setActiveChatTargetId: (id: string) => void;
   showNotification: (msg: string) => void;
   students?: UserProfile[];
+  activeTab?: string;
 }
 
 interface ActiveCall {
@@ -51,8 +52,25 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
   activeChatTargetId,
   setActiveChatTargetId,
   showNotification,
-  students = []
+  students = [],
+  activeTab
 }) => {
+  // Mobile long press message state
+  const [mobileSelectedMsg, setMobileSelectedMsg] = useState<ChatMessage | null>(null);
+
+  const handleTouchStart = (msg: ChatMessage) => {
+    if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = setTimeout(() => {
+      setMobileSelectedMsg(msg);
+    }, 400);
+  };
+
+  const handleTouchEnd = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
   // Sidebar & Navigation states
   const [chatSearchQuery, setChatSearchQuery] = useState('');
   const [messageSearchQuery, setMessageSearchQuery] = useState('');
@@ -513,6 +531,17 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
   const handleStartCall = async (targetUser: UserProfile, type: 'audio' | 'video') => {
     if (!currentUser) return;
     const callId = `call-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        video: type === 'video'
+      });
+      localMediaStreamRef.current = stream;
+    } catch (e) {
+      console.warn('Microphone/Camera access note during call start', e);
+    }
+
     setActiveCall({
       callId,
       targetUser,
@@ -841,7 +870,9 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
   const availableUsersList = allProfiles.length > 0 ? allProfiles : students;
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-12 gap-5 h-[calc(100vh-8.5rem)] md:h-[calc(100vh-9.5rem)] min-h-[500px] max-w-7xl mx-auto shadow-2xl animate-fadeIn font-sans">
+    <>
+      <div className={activeTab === 'peer_chat' || !activeTab ? 'h-full flex flex-col' : 'hidden'}>
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-5 h-[calc(100vh-8.5rem)] md:h-[calc(100vh-9.5rem)] min-h-[500px] max-w-7xl mx-auto shadow-2xl animate-fadeIn font-sans">
       
       {/* Left Column: Chat Rooms & Direct Messages Sidebar */}
       <div className={`md:col-span-4 bg-slate-900/90 border border-white/10 rounded-3xl p-4 flex flex-col min-h-0 justify-between ${showChatSidebarMobile ? 'flex h-full' : 'hidden md:flex'}`}>
@@ -1241,7 +1272,12 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
                     )}
 
                     {/* Main Bubble */}
-                    <div className={`p-3 rounded-2xl text-xs relative group ${isMine ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-slate-950 border border-white/10 text-slate-200 rounded-tl-none'}`}>
+                    <div
+                      onTouchStart={() => handleTouchStart(msg)}
+                      onTouchEnd={handleTouchEnd}
+                      onTouchMove={handleTouchEnd}
+                      className={`p-3 rounded-2xl text-xs relative group ${isMine ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-slate-950 border border-white/10 text-slate-200 rounded-tl-none'}`}
+                    >
                       
                       {/* Flagged warning badge */}
                       {msg.flaggedReason && (
@@ -2097,8 +2133,10 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
           </div>
         </div>
       )}
+    </div>
+  </div>
 
-      {/* ACTIVE VOICE & VIDEO CALL MODAL OVERLAY */}
+  {/* ACTIVE VOICE & VIDEO CALL MODAL OVERLAY */}
       {activeCall && (
         <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-2xl flex items-center justify-center p-4 z-50 animate-fadeIn">
           <div className="bg-slate-900 border border-white/10 rounded-3xl max-w-md w-full p-6 shadow-2xl relative space-y-6 text-center">
@@ -2290,6 +2328,116 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
         </div>
       )}
 
-    </div>
+      {/* MOBILE LONG PRESS ACTION SHEET MODAL */}
+      {mobileSelectedMsg && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[9999] flex items-end justify-center p-4 animate-fadeIn">
+          <div className="bg-slate-900 border border-white/10 rounded-3xl max-w-sm w-full p-5 space-y-4 shadow-2xl relative">
+            <button
+              onClick={() => setMobileSelectedMsg(null)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-white p-1 rounded-full bg-white/5"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            {/* Message preview */}
+            <div className="p-3 bg-slate-950 rounded-2xl border border-white/10 text-xs text-slate-200 font-medium max-h-24 overflow-y-auto">
+              <p className="font-bold text-indigo-400 text-[10px] uppercase mb-0.5">{mobileSelectedMsg.name}</p>
+              <p className="line-clamp-2">{mobileSelectedMsg.message}</p>
+            </div>
+
+            {/* Quick Reactions Bar */}
+            <div className="flex items-center justify-around bg-slate-950/80 p-2.5 rounded-2xl border border-white/10">
+              {['👍', '❤️', '😂', '😮', '🎉'].map(emoji => (
+                <button
+                  key={emoji}
+                  onClick={() => {
+                    handleAddReaction(mobileSelectedMsg.id, emoji);
+                    setMobileSelectedMsg(null);
+                  }}
+                  className="text-2xl hover:scale-125 transition-transform active:scale-90"
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+
+            {/* Options list */}
+            <div className="space-y-1.5 pt-1">
+              <button
+                onClick={() => {
+                  setReplyingTo(mobileSelectedMsg);
+                  setMobileSelectedMsg(null);
+                }}
+                className="w-full p-2.5 bg-slate-950/60 hover:bg-slate-800 rounded-xl text-xs font-bold text-slate-200 flex items-center gap-3"
+              >
+                <Reply className="w-4 h-4 text-indigo-400" />
+                <span>Reply</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(mobileSelectedMsg.message);
+                  showNotification('Message copied!');
+                  setMobileSelectedMsg(null);
+                }}
+                className="w-full p-2.5 bg-slate-950/60 hover:bg-slate-800 rounded-xl text-xs font-bold text-slate-200 flex items-center gap-3"
+              >
+                <Copy className="w-4 h-4 text-emerald-400" />
+                <span>Copy Text</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  handleTogglePin(mobileSelectedMsg.id);
+                  setMobileSelectedMsg(null);
+                }}
+                className="w-full p-2.5 bg-slate-950/60 hover:bg-slate-800 rounded-xl text-xs font-bold text-slate-200 flex items-center gap-3"
+              >
+                <Pin className="w-4 h-4 text-amber-400" />
+                <span>Pin / Unpin Message</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setForwardingMsg(mobileSelectedMsg);
+                  setMobileSelectedMsg(null);
+                }}
+                className="w-full p-2.5 bg-slate-950/60 hover:bg-slate-800 rounded-xl text-xs font-bold text-slate-200 flex items-center gap-3"
+              >
+                <Forward className="w-4 h-4 text-sky-400" />
+                <span>Forward Message</span>
+              </button>
+
+              {mobileSelectedMsg.senderId === currentUser?.uid && (
+                <button
+                  onClick={() => {
+                    setEditingMsgId(mobileSelectedMsg.id);
+                    setEditText(mobileSelectedMsg.message);
+                    setMobileSelectedMsg(null);
+                  }}
+                  className="w-full p-2.5 bg-slate-950/60 hover:bg-slate-800 rounded-xl text-xs font-bold text-slate-200 flex items-center gap-3"
+                >
+                  <Edit3 className="w-4 h-4 text-indigo-400" />
+                  <span>Edit Message</span>
+                </button>
+              )}
+
+              {(mobileSelectedMsg.senderId === currentUser?.uid || isModerator) && (
+                <button
+                  onClick={() => {
+                    handleDeleteMessage(mobileSelectedMsg.id, true);
+                    setMobileSelectedMsg(null);
+                  }}
+                  className="w-full p-2.5 bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/20 rounded-xl text-xs font-bold text-rose-400 flex items-center gap-3"
+                >
+                  <Trash2 className="w-4 h-4 text-rose-400" />
+                  <span>Delete Message</span>
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 };
