@@ -165,14 +165,217 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
   // Voice & Video Calls State
   const [activeCall, setActiveCall] = useState<ActiveCall | null>(null);
   const [callDuration, setCallDuration] = useState(0);
+  const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+
   const callTimerRef = useRef<any>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const localMediaStreamRef = useRef<MediaStream | null>(null);
   const activeCallRef = useRef<any>(null);
 
+  const localVideoRef = useRef<HTMLVideoElement | null>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  const ringtoneCtxRef = useRef<AudioContext | null>(null);
+  const ringtoneTimerRef = useRef<any>(null);
+
+  const startRingtoneSound = (type: 'incoming' | 'outgoing') => {
+    stopRingtoneSound();
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      ringtoneCtxRef.current = ctx;
+
+      const playPulse = () => {
+        if (!ringtoneCtxRef.current) return;
+        if (ringtoneCtxRef.current.state === 'suspended') {
+          ringtoneCtxRef.current.resume();
+        }
+        const now = ringtoneCtxRef.current.currentTime;
+        const osc1 = ringtoneCtxRef.current.createOscillator();
+        const osc2 = ringtoneCtxRef.current.createOscillator();
+        const gain = ringtoneCtxRef.current.createGain();
+
+        if (type === 'incoming') {
+          osc1.frequency.setValueAtTime(440, now);
+          osc2.frequency.setValueAtTime(480, now);
+          gain.gain.setValueAtTime(0.12, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 1.2);
+          osc1.connect(gain);
+          osc2.connect(gain);
+          gain.connect(ringtoneCtxRef.current.destination);
+          osc1.start(now);
+          osc2.start(now);
+          osc1.stop(now + 1.2);
+          osc2.stop(now + 1.2);
+        } else {
+          osc1.frequency.setValueAtTime(425, now);
+          osc2.frequency.setValueAtTime(450, now);
+          gain.gain.setValueAtTime(0.08, now);
+          gain.gain.exponentialRampToValueAtTime(0.001, now + 1.5);
+          osc1.connect(gain);
+          osc2.connect(gain);
+          gain.connect(ringtoneCtxRef.current.destination);
+          osc1.start(now);
+          osc2.start(now);
+          osc1.stop(now + 1.5);
+          osc2.stop(now + 1.5);
+        }
+      };
+
+      playPulse();
+      ringtoneTimerRef.current = setInterval(playPulse, type === 'incoming' ? 2400 : 3600);
+    } catch (err) {
+      console.warn('Ringtone init note:', err);
+    }
+  };
+
+  const stopRingtoneSound = () => {
+    if (ringtoneTimerRef.current) {
+      clearInterval(ringtoneTimerRef.current);
+      ringtoneTimerRef.current = null;
+    }
+    if (ringtoneCtxRef.current) {
+      try {
+        ringtoneCtxRef.current.close();
+      } catch (_) {}
+      ringtoneCtxRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    if (!activeCall) {
+      stopRingtoneSound();
+      return;
+    }
+    if (activeCall.mode === 'incoming') {
+      startRingtoneSound('incoming');
+    } else if (activeCall.mode === 'outgoing') {
+      startRingtoneSound('outgoing');
+    } else {
+      stopRingtoneSound();
+    }
+    return () => {
+      stopRingtoneSound();
+    };
+  }, [activeCall?.mode, activeCall?.callId]);
+
   useEffect(() => {
     activeCallRef.current = activeCall;
   }, [activeCall]);
+
+  // Video and Audio element media stream bindings (Prevents flickering/blinking)
+  useEffect(() => {
+    if (localVideoRef.current && localMediaStreamRef.current) {
+      if (localVideoRef.current.srcObject !== localMediaStreamRef.current) {
+        localVideoRef.current.srcObject = localMediaStreamRef.current;
+      }
+    }
+  }, [activeCall?.mode, activeCall?.type, activeCall?.isVideoOff]);
+
+  useEffect(() => {
+    if (remoteVideoRef.current && remoteStream) {
+      if (remoteVideoRef.current.srcObject !== remoteStream) {
+        remoteVideoRef.current.srcObject = remoteStream;
+      }
+    }
+    if (remoteAudioRef.current && remoteStream) {
+      if (remoteAudioRef.current.srcObject !== remoteStream) {
+        remoteAudioRef.current.srcObject = remoteStream;
+      }
+    }
+  }, [remoteStream, activeCall?.mode]);
+
+  // WebRTC Signal Exchange Channel Effect
+  useEffect(() => {
+    if (!activeCall || activeCall.mode !== 'connected') return;
+
+    const channelId = `call_signal_${activeCall.callId}`;
+    const signalChannel = supabase.channel(channelId);
+
+    signalChannel
+      .on('broadcast', { event: 'webrtc_signal' }, async (payload) => {
+        const data = payload.payload;
+        if (!data || data.senderUid === currentUser?.uid) return;
+
+        const pc = peerConnectionRef.current;
+        if (!pc) return;
+
+        try {
+          if (data.offer) {
+            await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            signalChannel.send({
+              type: 'broadcast',
+              event: 'webrtc_signal',
+              payload: { answer, senderUid: currentUser?.uid }
+            });
+          } else if (data.answer) {
+            await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
+          } else if (data.candidate) {
+            await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+          }
+        } catch (e) {
+          console.warn('WebRTC signal processing note:', e);
+        }
+      })
+      .subscribe();
+
+    const initiateWebRTC = async () => {
+      if (!peerConnectionRef.current) {
+        const pc = new RTCPeerConnection({
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' }
+          ]
+        });
+        peerConnectionRef.current = pc;
+
+        if (localMediaStreamRef.current) {
+          localMediaStreamRef.current.getTracks().forEach(track => {
+            pc.addTrack(track, localMediaStreamRef.current!);
+          });
+        }
+
+        pc.ontrack = (event) => {
+          if (event.streams && event.streams[0]) {
+            setRemoteStream(event.streams[0]);
+          }
+        };
+
+        pc.onicecandidate = (evt) => {
+          if (evt.candidate) {
+            try {
+              signalChannel.send({
+                type: 'broadcast',
+                event: 'webrtc_signal',
+                payload: { candidate: evt.candidate, senderUid: currentUser?.uid }
+              });
+            } catch (_) {}
+          }
+        };
+
+        // Create initial offer
+        try {
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          signalChannel.send({
+            type: 'broadcast',
+            event: 'webrtc_signal',
+            payload: { offer, senderUid: currentUser?.uid }
+          });
+        } catch (_) {}
+      }
+    };
+
+    initiateWebRTC();
+
+    return () => {
+      supabase.removeChannel(signalChannel);
+    };
+  }, [activeCall?.callId, activeCall?.mode]);
 
   // Global Call Realtime Listener for Direct Calls
   useEffect(() => {
@@ -204,20 +407,32 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
       })
       .on('broadcast', { event: 'call_rejected' }, (payload) => {
         if (activeCallRef.current && payload.payload?.callId === activeCallRef.current.callId) {
+          if (peerConnectionRef.current) {
+            peerConnectionRef.current.close();
+            peerConnectionRef.current = null;
+          }
           if (localMediaStreamRef.current) {
             localMediaStreamRef.current.getTracks().forEach(t => t.stop());
             localMediaStreamRef.current = null;
           }
+          setRemoteStream(null);
+          stopRingtoneSound();
           setActiveCall(null);
           showNotification('Call declined.');
         }
       })
       .on('broadcast', { event: 'call_ended' }, (payload) => {
         if (activeCallRef.current && payload.payload?.callId === activeCallRef.current.callId) {
+          if (peerConnectionRef.current) {
+            peerConnectionRef.current.close();
+            peerConnectionRef.current = null;
+          }
           if (localMediaStreamRef.current) {
             localMediaStreamRef.current.getTracks().forEach(t => t.stop());
             localMediaStreamRef.current = null;
           }
+          setRemoteStream(null);
+          stopRingtoneSound();
           setActiveCall(null);
           showNotification('Call ended.');
         }
@@ -593,10 +808,16 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
         }
       } catch (_) {}
     }
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close();
+      peerConnectionRef.current = null;
+    }
     if (localMediaStreamRef.current) {
       localMediaStreamRef.current.getTracks().forEach(t => t.stop());
       localMediaStreamRef.current = null;
     }
+    setRemoteStream(null);
+    stopRingtoneSound();
     setActiveCall(null);
     showNotification('Call ended.');
   };
@@ -2183,23 +2404,38 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
 
             {/* Video preview area when video call connected */}
             {activeCall.type === 'video' && activeCall.mode === 'connected' && (
-              <div className="aspect-video bg-slate-950 rounded-2xl overflow-hidden relative border border-white/10 flex items-center justify-center">
-                <video
-                  ref={(el) => {
-                    if (el && localMediaStreamRef.current) {
-                      el.srcObject = localMediaStreamRef.current;
-                    }
-                  }}
-                  autoPlay
-                  playsInline
-                  muted
-                  className="w-full h-full object-cover"
-                />
-                <span className="absolute bottom-2 left-2 px-2.5 py-1 bg-black/70 backdrop-blur-md rounded-lg text-[10px] font-mono text-white font-bold">
-                  Your Video Feed
-                </span>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 aspect-video bg-slate-950 rounded-2xl overflow-hidden relative border border-white/10 p-2">
+                {/* Remote Video Stream */}
+                <div className="relative w-full h-full bg-slate-900 rounded-xl overflow-hidden flex items-center justify-center">
+                  <video
+                    ref={remoteVideoRef}
+                    autoPlay
+                    playsInline
+                    className="w-full h-full object-cover"
+                  />
+                  <span className="absolute bottom-2 left-2 px-2.5 py-1 bg-black/70 backdrop-blur-md rounded-lg text-[10px] font-mono text-white font-bold">
+                    {activeCall.targetUser.name}'s Video
+                  </span>
+                </div>
+
+                {/* Local Video Stream */}
+                <div className="relative w-full h-full bg-slate-900 rounded-xl overflow-hidden flex items-center justify-center">
+                  <video
+                    ref={localVideoRef}
+                    autoPlay
+                    playsInline
+                    muted
+                    className="w-full h-full object-cover"
+                  />
+                  <span className="absolute bottom-2 left-2 px-2.5 py-1 bg-black/70 backdrop-blur-md rounded-lg text-[10px] font-mono text-white font-bold">
+                    You
+                  </span>
+                </div>
               </div>
             )}
+
+            {/* Hidden Audio element for remote audio stream playback */}
+            <audio ref={remoteAudioRef} autoPlay playsInline />
 
             {/* Controls based on Call Mode */}
             <div className="pt-2">
