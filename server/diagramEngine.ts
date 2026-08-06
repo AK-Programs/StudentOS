@@ -1,4 +1,4 @@
-import { getAIClient } from './aiClient';
+import { getAIClient, generateAICompletion } from './aiClient';
 
 export interface ConceptNode {
   id: string;
@@ -439,9 +439,6 @@ function buildDynamicTopicGraph(query: string): ConceptGraph {
  * Validates output to ensure no generic placeholder strings exist.
  */
 async function generateConceptGraphFromAI(query: string, retries = 1): Promise<ConceptGraph | null> {
-  const openRouterKey = process.env.OPENROUTER_API_KEY || process.env.VITE_OPENROUTER_API_KEY;
-  const aiGen = getAIClient();
-
   const prompt = `You are a world-class scientific textbook author and knowledge graph engineer.
 
 TASK: Create a detailed, topic-specific knowledge concept graph for the educational topic: "${query}".
@@ -470,86 +467,36 @@ Return ONLY a valid JSON object matching this schema (no markdown formatting out
   ]
 }`;
 
-  // 1. Try OpenRouter DeepSeek V4 Flash if key exists
-  if (openRouterKey) {
-    const candidateOpenRouterModels = [
-      process.env.OPENROUTER_MODEL || 'deepseek/deepseek-v4-flash',
-      'deepseek/deepseek-r1',
-      'deepseek/deepseek-chat',
-      'meta-llama/llama-3.3-70b-instruct'
-    ];
+  try {
+    console.log(`[DiagramEngine] Requesting AI ConceptGraph for query: "${query}"...`);
+    const rawText = await generateAICompletion({
+      systemInstruction: 'You are a knowledge graph generation engine. Output strictly valid JSON matching the requested schema.',
+      prompt: prompt,
+      temperature: 0.2,
+      jsonMode: true,
+      endpointName: 'DiagramEngine'
+    });
 
-    for (const model of candidateOpenRouterModels) {
-      try {
-        console.log(`[DiagramEngine] Querying OpenRouter model "${model}" for ConceptGraph "${query}"...`);
-        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${openRouterKey}`,
-            'HTTP-Referer': 'https://ai.studio/build',
-            'X-Title': 'StudentOS Whiteboard AI',
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: model,
-            messages: [{ role: 'user', content: prompt }],
-            temperature: 0.2,
-          })
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          let text = data.choices?.[0]?.message?.content || '';
-          const parsed = extractJsonFromText(text) as ConceptGraph;
-          if (parsed && Array.isArray(parsed.nodes) && parsed.nodes.length >= 4) {
-            const hasPlaceholder = parsed.nodes.some(n => 
-              /sub\s*process|fallback\s*loop|mechanism\s*\d+|node\s*\d+/i.test(n.label || '')
-            );
-            if (!hasPlaceholder) {
-              console.log(`[DiagramEngine] OpenRouter "${model}" successfully generated ConceptGraph with ${parsed.nodes.length} nodes for "${query}".`);
-              return parsed;
-            }
-          }
-        }
-      } catch (err: any) {
-        console.warn(`[DiagramEngine] OpenRouter "${model}" error: ${err.message || err}`);
+    const parsed = extractJsonFromText(rawText) as ConceptGraph;
+    if (parsed && Array.isArray(parsed.nodes) && parsed.nodes.length >= 4) {
+      const hasPlaceholder = parsed.nodes.some(n => 
+        /sub\s*process|fallback\s*loop|mechanism\s*\d+|node\s*\d+/i.test(n.label || '')
+      );
+      if (!hasPlaceholder) {
+        console.log(`[DiagramEngine] Successfully generated ConceptGraph with ${parsed.nodes.length} nodes for "${query}".`);
+        return parsed;
+      } else {
+        console.warn(`[DiagramEngine] Generated graph contained placeholder phrases, rejecting.`);
       }
+    } else {
+      console.warn(`[DiagramEngine] Parsed JSON did not match expected ConceptGraph structure.`);
     }
-  }
-
-  // 2. Try native Gemini SDK if client available
-  if (aiGen) {
-    const candidateModels = ['gemini-2.5-flash', 'gemini-2.0-flash'];
-    for (const modelName of candidateModels) {
-      try {
-        console.log(`[DiagramEngine] Requesting ConceptGraph for "${query}" using model ${modelName}...`);
-        const response = await aiGen.models.generateContent({
-          model: modelName,
-          contents: prompt,
-          config: { temperature: 0.2, maxOutputTokens: 2500 }
-        });
-
-        let text = response.text || '';
-        const parsed = extractJsonFromText(text) as ConceptGraph;
-
-        if (parsed && Array.isArray(parsed.nodes) && parsed.nodes.length >= 4) {
-          const hasPlaceholder = parsed.nodes.some(n => 
-            /sub\s*process|fallback\s*loop|mechanism\s*\d+|node\s*\d+/i.test(n.label || '')
-          );
-
-          if (!hasPlaceholder) {
-            console.log(`[DiagramEngine] Successfully generated ConceptGraph via ${modelName} with ${parsed.nodes.length} nodes.`);
-            return parsed;
-          }
-        }
-      } catch (err: any) {
-        console.warn(`[DiagramEngine] Model ${modelName} failed for ConceptGraph: ${err.message}`);
-      }
-    }
+  } catch (err: any) {
+    console.warn(`[DiagramEngine] ConceptGraph generation error: ${err.message || err}`);
   }
 
   if (retries > 0) {
-    console.warn(`[DiagramEngine] Retrying AI ConceptGraph generation...`);
+    console.warn(`[DiagramEngine] Retrying AI ConceptGraph generation (${retries} retries left)...`);
     return generateConceptGraphFromAI(query, retries - 1);
   }
 
