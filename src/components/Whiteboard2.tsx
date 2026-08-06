@@ -22,7 +22,8 @@ const KonvaImage = KonvaImageComp as any;
 import { 
   Download, Eraser, MousePointer2, Pen, PenTool, Square, Circle as CircleIcon, 
   Triangle, Minus, ChevronDown, Trash2, Sliders, Settings2, Plus, Copy,
-  ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Maximize2, ArrowUp, ArrowDown, Type, Sparkles
+  ChevronLeft, ChevronRight, ZoomIn, ZoomOut, Maximize2, ArrowUp, ArrowDown, Type, Sparkles,
+  Undo2, Redo2, Image as ImageIcon, StickyNote, FileText
 } from 'lucide-react';
 
 interface ShapeObj {
@@ -949,6 +950,104 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
     }
   };
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleExportPNG = () => {
+    if (!stageRef.current) return;
+    if (trRef.current) trRef.current.nodes([]);
+    const dataUrl = stageRef.current.toDataURL({ pixelRatio: 2 });
+    const link = document.createElement('a');
+    link.download = `smartboard_slide_${activeSlideIdx + 1}.png`;
+    link.href = dataUrl;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setAiTip(`🖼️ Exported Slide ${activeSlideIdx + 1} as PNG`);
+  };
+
+  const handleExportPDF = () => {
+    if (!stageRef.current) return;
+    if (trRef.current) trRef.current.nodes([]);
+    const dataUrl = stageRef.current.toDataURL({ pixelRatio: 2 });
+    const printWindow = window.open('', '_blank');
+    if (printWindow) {
+      printWindow.document.write(`
+        <html>
+          <head>
+            <title>SmartBoard Slide ${activeSlideIdx + 1} Export</title>
+            <style>
+              body { margin: 0; display: flex; align-items: center; justify-content: center; background: #0f172a; height: 100vh; font-family: sans-serif; }
+              img { max-width: 95%; max-height: 95vh; object-fit: contain; box-shadow: 0 10px 30px rgba(0,0,0,0.6); border-radius: 12px; }
+              @media print {
+                body { background: #fff; }
+                img { max-width: 100%; height: auto; box-shadow: none; border-radius: 0; }
+              }
+            </style>
+          </head>
+          <body>
+            <img src="${dataUrl}" onload="window.print();" />
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+    }
+    setAiTip(`📄 PDF export ready for Slide ${activeSlideIdx + 1}`);
+  };
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const src = evt.target?.result as string;
+      if (!src) return;
+      const img = new Image();
+      img.src = src;
+      img.onload = () => {
+        const imgShape: ShapeObj = {
+          id: `img_${Date.now()}`,
+          type: 'svg_node',
+          x: 120,
+          y: 120,
+          width: Math.min(img.width, 500) || 400,
+          height: Math.min(img.height, 350) || 300,
+          stroke: '#818cf8',
+          strokeWidth: 0,
+          imageObj: img
+        };
+        setSlides(prev => {
+          const updated = [...prev];
+          updated[activeSlideIdx].shapes.push(imgShape);
+          return updated;
+        });
+        setAiTip(`🖼️ Inserted image onto whiteboard`);
+      };
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  };
+
+  const handleInsertStickyNote = (color: string = '#fef08a') => {
+    const stickyShape: ShapeObj = {
+      id: `sticky_${Date.now()}`,
+      type: 'rect',
+      x: 180 + Math.random() * 60,
+      y: 150 + Math.random() * 60,
+      width: 220,
+      height: 190,
+      stroke: '#eab308',
+      strokeWidth: 2,
+      fill: color,
+      text: 'Double-click to edit note'
+    };
+    setSlides(prev => {
+      const updated = [...prev];
+      updated[activeSlideIdx].shapes.push(stickyShape);
+      return updated;
+    });
+    setAiTip(`📝 Sticky note inserted!`);
+  };
+
   const currentSlide = slides[activeSlideIdx] || { id: 'default', shapes: [], lines: [] };
 
   return (
@@ -1126,6 +1225,53 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
               </div>
             )}
           </div>
+          {/* Sticky Notes & Media Tools */}
+          <button 
+            onClick={() => handleInsertStickyNote('#fef08a')}
+            className="p-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/20 rounded-xl transition-all flex items-center gap-1.5 text-xs font-bold"
+            title="Insert Sticky Note"
+          >
+            <StickyNote className="w-4 h-4" />
+            <span className="hidden lg:inline text-[10px] uppercase font-black">Sticky</span>
+          </button>
+
+          <button 
+            onClick={() => fileInputRef.current?.click()}
+            className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-white/10 rounded-xl transition-all flex items-center gap-1.5 text-xs font-bold"
+            title="Upload Image File"
+          >
+            <ImageIcon className="w-4 h-4 text-indigo-400" />
+            <span className="hidden lg:inline text-[10px] uppercase font-black">Image</span>
+          </button>
+          <input 
+            type="file" 
+            ref={fileInputRef} 
+            onChange={handleImageUpload} 
+            accept="image/*" 
+            className="hidden" 
+          />
+
+          <div className="h-5 w-px bg-white/10 mx-0.5" />
+
+          {/* Export PNG / PDF */}
+          <button 
+            onClick={handleExportPNG}
+            className="p-2 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 rounded-xl transition-all flex items-center gap-1 text-xs font-bold"
+            title="Export Board as PNG Image"
+          >
+            <Download className="w-4 h-4" />
+            <span className="hidden xl:inline text-[10px] uppercase font-black">PNG</span>
+          </button>
+
+          <button 
+            onClick={handleExportPDF}
+            className="p-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-300 border border-indigo-500/20 rounded-xl transition-all flex items-center gap-1 text-xs font-bold"
+            title="Print / Save Board as PDF Document"
+          >
+            <FileText className="w-4 h-4" />
+            <span className="hidden xl:inline text-[10px] uppercase font-black">PDF</span>
+          </button>
+
           <button 
             onClick={handleClearCanvas}
             className="p-2 bg-slate-800 hover:bg-red-950 hover:text-red-300 text-slate-400 hover:border-red-500/35 rounded-xl transition-all border border-white/5"
