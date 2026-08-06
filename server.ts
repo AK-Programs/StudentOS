@@ -7,7 +7,7 @@ import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
-import { getAIClient } from './server/aiClient';
+import { getAIClient, generateAICompletion } from './server/aiClient';
 import dotenv from 'dotenv';
 import { WebSocketServer, WebSocket as WSWebSocket } from 'ws';
 import { generateMermaidDiagram, generateSvgDiagram, generateCanvasElements } from './server/diagramEngine.js';
@@ -50,175 +50,7 @@ function sanitizeHistory(history: any[] = []): { role: 'user' | 'assistant'; con
   return sanitized;
 }
 
-/**
- * Universal AI completions provider supporting OpenRouter and local native Gemini SDK.
- */
-async function generateAICompletion(systemInstruction: string, prompt: string, history: any[] = []): Promise<string> {
-  const openRouterKey = process.env.OPENROUTER_API_KEY;
-  const ai = getAIClient();
 
-  const sanitizedHistory = sanitizeHistory(history);
-
-  // 1. Parse Image Base64 from prompt if present
-  let imageUrl: string | null = null;
-  let cleanPrompt = prompt;
-
-  const imageMatch = prompt.match(/Image Data: (data:(image\/[a-zA-Z+.-]+);base64,([A-Za-z0-9+/=\s\r\n]+))/);
-  if (imageMatch) {
-    imageUrl = imageMatch[1].trim();
-    const mimeType = imageMatch[2];
-    const base64Data = imageMatch[3].trim();
-    
-    // Replace the huge image base64 in prompt with a simple, clean placeholder
-    cleanPrompt = prompt.replace(/Image Data: data:image\/[a-zA-Z+.-]+;base64,[A-Za-z0-9+/=\s\r\n]+/, '[See attached diagram/image]');
-  }
-
-  // 2. Detect any file or attachment in prompt
-  const hasAttachments = 
-    prompt.includes('[Attached Document:') || 
-    prompt.includes('[Attached Diagram/Image:') ||
-    prompt.includes('.pdf') ||
-    prompt.includes('.docx') ||
-    prompt.includes('.pptx') ||
-    prompt.includes('.ppt') ||
-    prompt.includes('.txt') ||
-    prompt.includes('.csv') ||
-    prompt.includes('.json') ||
-    prompt.includes('.md') ||
-    imageUrl !== null;
-
-  if (openRouterKey) {
-    try {
-      let model = process.env.OPENROUTER_MODEL || "deepseek/deepseek-v4-flash";
-      if (hasAttachments) {
-        model = "google/gemini-2.5-flash";
-        console.log(`[AI Server] Attachment detected. Overriding OpenRouter model to "${model}" for rich, high-context document understanding.`);
-      } else {
-        console.log(`[AI Server] Directing API request to OpenRouter using model "${model}"...`);
-      }
-      
-      const messages = [
-        { role: 'system', content: systemInstruction },
-        ...sanitizedHistory.map((msg) => ({
-          role: msg.role === 'assistant' ? 'assistant' : 'user',
-          content: msg.content
-        })),
-        { 
-          role: 'user', 
-          content: imageUrl 
-            ? [
-                { type: 'text', text: cleanPrompt },
-                { type: 'image_url', image_url: { url: imageUrl } }
-              ]
-            : cleanPrompt
-        }
-      ];
-
-      const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${openRouterKey}`,
-          'HTTP-Referer': 'https://ai.studio/build',
-          'X-Title': 'StudentOS',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: model,
-          messages: messages,
-          temperature: 0.7,
-        })
-      });
-
-      if (!response.ok) {
-        const errText = await response.text();
-        throw new Error(`OpenRouter API error (status ${response.status}): ${errText}`);
-      }
-
-      const data = await response.json();
-      const text = data.choices?.[0]?.message?.content;
-      if (text) {
-        return text;
-      }
-      throw new Error('Empty response message content returned from OpenRouter.');
-    } catch (err: any) {
-      console.warn(`[AI Server] OpenRouter request failed, fallback to native Gemini SDK client if available. Error:`, err.message || err);
-    }
-  }
-
-  if (ai) {
-    const contentsList: any[] = [];
-    
-    let startIdx = 0;
-    if (sanitizedHistory.length > 0 && sanitizedHistory[0].role === 'assistant') {
-      contentsList.push({
-        role: 'user',
-        parts: [{ text: `[Prior Tutor Context]: ${sanitizedHistory[0].content}` }]
-      });
-      startIdx = 1;
-    }
-
-    for (let i = startIdx; i < sanitizedHistory.length; i++) {
-      const msg = sanitizedHistory[i];
-      contentsList.push({
-        role: msg.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: msg.content }]
-      });
-    }
-
-    if (imageUrl) {
-      const rawBase64 = imageUrl.split(';base64,')[1];
-      const mimeType = imageUrl.split(';base64,')[0].replace('data:', '');
-      
-      contentsList.push({
-        role: 'user',
-        parts: [
-          { inlineData: { mimeType: mimeType, data: rawBase64 } },
-          { text: cleanPrompt }
-        ]
-      });
-    } else {
-      contentsList.push({
-        role: 'user',
-        parts: [{ text: cleanPrompt }]
-      });
-    }
-
-    const modelsToTry = [
-      'gemini-2.5-flash',
-      'gemini-2.5-flash-lite',
-      'gemini-2.0-flash'
-    ];
-    
-    let lastError = null;
-    for (const modelName of modelsToTry) {
-      for (let attempt = 1; attempt <= 2; attempt++) {
-        try {
-          console.log(`[AI Server] Invoking native Gemini SDK ${modelName} (Attempt ${attempt}/2) with ${imageUrl ? 'multimodal' : 'text'} payload...`);
-          const response = await ai.models.generateContent({
-            model: modelName,
-            contents: contentsList,
-            config: {
-              systemInstruction: systemInstruction,
-              temperature: 0.7,
-            }
-          });
-          if (response && response.text) {
-            return response.text;
-          }
-        } catch (err: any) {
-          console.warn(`[AI Server] Model ${modelName} failed on attempt ${attempt}:`, err.message || err);
-          lastError = err;
-          if (attempt < 2) {
-            await new Promise(resolve => setTimeout(resolve, 600));
-          }
-        }
-      }
-    }
-    throw lastError || new Error('All model fallback queries exhausted in native Gemini SDK.');
-  }
-
-  throw new Error('No AI Provider available. Please configure OPENROUTER_API_KEY or GEMINI_API_KEY inside the Secrets panel.');
-}
 
 
 // API Routes
@@ -278,45 +110,16 @@ app.post('/api/ai/chat', async (req, res) => {
   }
 
   try {
-    const ai = getAIClient();
-    if (ai) {
-      // Use native Gemini with search tools
-      const sanitizedHistory = sanitizeHistory(history || []);
-      const contentsList: any[] = [];
-      let startIdx = 0;
-      if (sanitizedHistory.length > 0 && sanitizedHistory[0].role === 'assistant') {
-        contentsList.push({
-          role: 'user',
-          parts: [{ text: `[Prior Context]: ${sanitizedHistory[0].content}` }]
-        });
-        startIdx = 1;
-      }
-      for (let i = startIdx; i < sanitizedHistory.length; i++) {
-        const msg = sanitizedHistory[i];
-        contentsList.push({
-          role: msg.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: msg.content }]
-        });
-      }
-      contentsList.push({ role: 'user', parts: [{ text: prompt }] });
-      
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: contentsList,
-        config: {
-          systemInstruction: systemInstruction,
-          temperature: 0.7,
-          tools: [{ googleSearch: {} }] // Part 2: Web Search enabled
-        }
-      });
-      if (response && response.text) return res.json({ text: response.text });
-    } else {
-      // Fallback
-      const reply = await generateAICompletion(systemInstruction, prompt, history);
-      return res.json({ text: reply });
-    }
+    const text = await generateAICompletion({
+      systemInstruction,
+      prompt,
+      history: sanitizeHistory(history || []),
+      temperature: 0.7,
+      endpointName: 'AIChat'
+    });
+    return res.json({ text });
   } catch (apiErr: any) {
-    const openRouterKey = process.env.OPENROUTER_API_KEY;
+    const openRouterKey = process.env.OPENROUTER_API_KEY || process.env.VITE_OPENROUTER_API_KEY;
     const geminiKey = process.env.GEMINI_API_KEY;
     
     if (!openRouterKey && !geminiKey) {
@@ -373,14 +176,15 @@ app.post('/api/ai/chat', async (req, res) => {
 
 // Secure API endpoint for Orion Diagram Generator
 app.post('/api/ai/diagram', async (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
   try {
     const { query, type = 'diagram' } = req.body || {};
     if (!query) return res.status(400).json({ error: 'Query is required' });
     const elements = await generateCanvasElements(query, type);
-    return res.json({ elements });
+    return res.status(200).json({ elements });
   } catch (err: any) {
     console.error('[AI Server] Diagram error. Stack trace:', err.stack || err);
-    return res.json({ elements: [] });
+    return res.status(200).json({ elements: [] });
   }
 });
 
@@ -390,11 +194,13 @@ app.post('/api/ai/mermaid', async (req, res) => {
   try {
     const { query } = req.body || {};
     if (!query) return res.status(400).json({ success: false, error: 'Query is required' });
+    console.log(`[AI Server] POST /api/ai/mermaid received query: "${query}"`);
     const result = await generateMermaidDiagram(query);
-    return res.json(result);
+    console.log(`[AI Server] POST /api/ai/mermaid completed successfully. Title: "${result?.title}"`);
+    return res.status(200).json(result);
   } catch (err: any) {
-    console.error('[AI Server] Mermaid error. Stack trace:', err.stack || err);
-    return res.json({ success: false, error: 'Failed to generate Mermaid diagram', mermaid: `graph TD\n  Start[${req.body?.query || 'Concept'}]`, code: `graph TD\n  Start[${req.body?.query || 'Concept'}]`, title: req.body?.query || 'Diagram' });
+    console.error('[AI Server] Mermaid endpoint failure. Stack trace:\n', err.stack || err);
+    return res.status(200).json({ success: false, error: 'Failed to generate Mermaid diagram', mermaid: `graph TD\n  Start["${req.body?.query || 'Concept'}"]`, code: `graph TD\n  Start["${req.body?.query || 'Concept'}"]`, title: req.body?.query || 'Diagram' });
   }
 });
 
@@ -404,11 +210,13 @@ app.post('/api/ai/svg-diagram', async (req, res) => {
   try {
     const { query, subject = 'general' } = req.body || {};
     if (!query) return res.status(400).json({ success: false, error: 'Query is required' });
+    console.log(`[AI Server] POST /api/ai/svg-diagram received query: "${query}" (subject: ${subject})`);
     const result = await generateSvgDiagram(query, subject);
-    return res.json(result);
+    console.log(`[AI Server] POST /api/ai/svg-diagram completed successfully. Title: "${result?.title}"`);
+    return res.status(200).json(result);
   } catch (err: any) {
-    console.error('[AI Server] SVG Diagram error. Stack trace:', err.stack || err);
-    return res.json({ success: false, error: 'Failed to generate SVG diagram', svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 400"><rect width="600" height="400" fill="#0f172a"/><text x="300" y="200" fill="#ffffff" font-size="20" text-anchor="middle">${req.body?.query || 'Diagram'}</text></svg>`, title: req.body?.query || 'Diagram', subject: req.body?.subject || 'general' });
+    console.error('[AI Server] SVG Diagram endpoint failure. Stack trace:\n', err.stack || err);
+    return res.status(200).json({ success: false, error: 'Failed to generate SVG diagram', svg: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 400"><rect width="600" height="400" fill="#0f172a"/><text x="300" y="200" fill="#ffffff" font-size="20" text-anchor="middle">${req.body?.query || 'Diagram'}</text></svg>`, title: req.body?.query || 'Diagram', subject: req.body?.subject || 'general' });
   }
 });
 
