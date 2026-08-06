@@ -11054,7 +11054,7 @@ Could you please guide me step-by-step on how to solve this, explaining the theo
               )}
 
               {/* Tab 8: Peer global chat matrix */}
-              {activeTab === 'peer_chat' && (
+              <div className={activeTab === 'peer_chat' ? 'h-full flex flex-col' : 'hidden'}>
                 <ChatSystem
                   currentUser={currentUser}
                   effectiveRole={effectiveRole as any}
@@ -11067,7 +11067,7 @@ Could you please guide me step-by-step on how to solve this, explaining the theo
                   showNotification={showNotification}
                   students={students}
                 />
-              )}
+              </div>
 
               {/* Tab 9: Faculty Dashboard View */}
               {activeTab === 'faculty' && effectiveRole === 'teacher' && (
