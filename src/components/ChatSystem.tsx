@@ -150,6 +150,66 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
   const callTimerRef = useRef<any>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const localMediaStreamRef = useRef<MediaStream | null>(null);
+  const activeCallRef = useRef<any>(null);
+
+  useEffect(() => {
+    activeCallRef.current = activeCall;
+  }, [activeCall]);
+
+  // Global Call Realtime Listener for Direct Calls
+  useEffect(() => {
+    if (!currentUser?.uid) return;
+
+    const userCallsChannel = supabase.channel(`user_calls_${currentUser.uid}`);
+
+    userCallsChannel
+      .on('broadcast', { event: 'call_invite' }, (payload) => {
+        const data = payload.payload;
+        if (data && data.targetUid === currentUser.uid) {
+          const caller = resolveUser(data.callerUid);
+          setActiveCall({
+            callId: data.callId,
+            targetUser: caller,
+            type: data.callType || 'audio',
+            mode: 'incoming',
+            isMuted: false,
+            isVideoOff: false,
+            isScreenSharing: false
+          });
+        }
+      })
+      .on('broadcast', { event: 'call_accepted' }, (payload) => {
+        if (activeCallRef.current && payload.payload?.callId === activeCallRef.current.callId) {
+          setActiveCall(prev => prev ? { ...prev, mode: 'connected', startTime: Date.now() } : null);
+          showNotification('Call connected!');
+        }
+      })
+      .on('broadcast', { event: 'call_rejected' }, (payload) => {
+        if (activeCallRef.current && payload.payload?.callId === activeCallRef.current.callId) {
+          if (localMediaStreamRef.current) {
+            localMediaStreamRef.current.getTracks().forEach(t => t.stop());
+            localMediaStreamRef.current = null;
+          }
+          setActiveCall(null);
+          showNotification('Call declined.');
+        }
+      })
+      .on('broadcast', { event: 'call_ended' }, (payload) => {
+        if (activeCallRef.current && payload.payload?.callId === activeCallRef.current.callId) {
+          if (localMediaStreamRef.current) {
+            localMediaStreamRef.current.getTracks().forEach(t => t.stop());
+            localMediaStreamRef.current = null;
+          }
+          setActiveCall(null);
+          showNotification('Call ended.');
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(userCallsChannel);
+    };
+  }, [currentUser?.uid]);
 
   // Active Room Realtime Subscription Hook
   useEffect(() => {
@@ -189,19 +249,27 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
         }
       })
       .on('broadcast', { event: 'call_accepted' }, (payload) => {
-        if (activeCall && payload.payload?.callId === activeCall.callId) {
+        if (activeCallRef.current && payload.payload?.callId === activeCallRef.current.callId) {
           setActiveCall(prev => prev ? { ...prev, mode: 'connected', startTime: Date.now() } : null);
           showNotification('Call connected!');
         }
       })
       .on('broadcast', { event: 'call_rejected' }, (payload) => {
-        if (activeCall && payload.payload?.callId === activeCall.callId) {
+        if (activeCallRef.current && payload.payload?.callId === activeCallRef.current.callId) {
+          if (localMediaStreamRef.current) {
+            localMediaStreamRef.current.getTracks().forEach(t => t.stop());
+            localMediaStreamRef.current = null;
+          }
           setActiveCall(null);
-          showNotification('Call declined or ended.');
+          showNotification('Call declined.');
         }
       })
       .on('broadcast', { event: 'call_ended' }, (payload) => {
-        if (activeCall && payload.payload?.callId === activeCall.callId) {
+        if (activeCallRef.current && payload.payload?.callId === activeCallRef.current.callId) {
+          if (localMediaStreamRef.current) {
+            localMediaStreamRef.current.getTracks().forEach(t => t.stop());
+            localMediaStreamRef.current = null;
+          }
           setActiveCall(null);
           showNotification('Call ended.');
         }
@@ -456,15 +524,21 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
     });
 
     try {
+      const payload = {
+        callId,
+        callerUid: currentUser.uid,
+        targetUid: targetUser.uid,
+        callType: type
+      };
       supabase.channel(`room_channel_${activeChatTargetId}`).send({
         type: 'broadcast',
         event: 'call_invite',
-        payload: {
-          callId,
-          callerUid: currentUser.uid,
-          targetUid: targetUser.uid,
-          callType: type
-        }
+        payload
+      });
+      supabase.channel(`user_calls_${targetUser.uid}`).send({
+        type: 'broadcast',
+        event: 'call_invite',
+        payload
       });
     } catch (_) {}
 
@@ -475,15 +549,24 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
   const handleEndCall = () => {
     if (activeCall) {
       try {
+        const payload = { callId: activeCall.callId };
         supabase.channel(`room_channel_${activeChatTargetId}`).send({
           type: 'broadcast',
           event: 'call_ended',
-          payload: { callId: activeCall.callId }
+          payload
         });
+        if (activeCall.targetUser?.uid) {
+          supabase.channel(`user_calls_${activeCall.targetUser.uid}`).send({
+            type: 'broadcast',
+            event: 'call_ended',
+            payload
+          });
+        }
       } catch (_) {}
     }
     if (localMediaStreamRef.current) {
       localMediaStreamRef.current.getTracks().forEach(t => t.stop());
+      localMediaStreamRef.current = null;
     }
     setActiveCall(null);
     showNotification('Call ended.');
@@ -2088,12 +2171,24 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
                   <button
                     onClick={() => {
                       try {
+                        const payload = { callId: activeCall.callId };
                         supabase.channel(`room_channel_${activeChatTargetId}`).send({
                           type: 'broadcast',
                           event: 'call_rejected',
-                          payload: { callId: activeCall.callId }
+                          payload
                         });
+                        if (activeCall.targetUser?.uid) {
+                          supabase.channel(`user_calls_${activeCall.targetUser.uid}`).send({
+                            type: 'broadcast',
+                            event: 'call_rejected',
+                            payload
+                          });
+                        }
                       } catch (_) {}
+                      if (localMediaStreamRef.current) {
+                        localMediaStreamRef.current.getTracks().forEach(t => t.stop());
+                        localMediaStreamRef.current = null;
+                      }
                       setActiveCall(null);
                       showNotification('Call declined.');
                     }}
@@ -2108,7 +2203,7 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
                     onClick={async () => {
                       try {
                         const stream = await navigator.mediaDevices.getUserMedia({
-                          audio: true,
+                          audio: { echoCancellation: true, noiseSuppression: true },
                           video: activeCall.type === 'video'
                         });
                         localMediaStreamRef.current = stream;
@@ -2117,11 +2212,19 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
                       }
 
                       try {
+                        const payload = { callId: activeCall.callId };
                         supabase.channel(`room_channel_${activeChatTargetId}`).send({
                           type: 'broadcast',
                           event: 'call_accepted',
-                          payload: { callId: activeCall.callId }
+                          payload
                         });
+                        if (activeCall.targetUser?.uid) {
+                          supabase.channel(`user_calls_${activeCall.targetUser.uid}`).send({
+                            type: 'broadcast',
+                            event: 'call_accepted',
+                            payload
+                          });
+                        }
                       } catch (_) {}
 
                       setActiveCall(prev => prev ? { ...prev, mode: 'connected', startTime: Date.now() } : null);
