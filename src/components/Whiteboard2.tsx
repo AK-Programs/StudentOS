@@ -1167,61 +1167,38 @@ export const Whiteboard2 = ({ onClose, currentUser }: any) => {
           <div className="relative">
             <button 
               onClick={() => setAiPromptOpen(!aiPromptOpen)}
-              className="p-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/20 rounded-xl transition-all"
-              title="Generate Diagram with AI"
-              disabled={isGeneratingDiagram}
+              className="p-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border border-indigo-500/20 rounded-xl transition-all flex items-center gap-1.5 text-xs font-bold"
+              title="AI Whiteboard (Coming Soon)"
             >
-              {isGeneratingDiagram ? '⏳' : '✨ AI Draw'}
+              <span>🚀</span>
+              <span>AI Whiteboard</span>
             </button>
             {aiPromptOpen && (
-              <div className="absolute top-full mt-2 right-0 w-80 bg-slate-900 border border-indigo-500/30 rounded-2xl p-4 shadow-2xl z-50 space-y-4">
-                <div className="space-y-1">
-                  <p className="text-xs text-indigo-400 font-black uppercase tracking-wider">Orion AI Board Assistant</p>
-                  <p className="text-[10px] text-slate-400">Instantly render educational concepts on the whiteboard.</p>
+              <div className="absolute top-full mt-2 right-0 w-80 bg-slate-900 border border-indigo-500/30 rounded-2xl p-5 shadow-2xl z-50 space-y-3 backdrop-blur-xl animate-fadeIn">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">🚀</span>
+                    <h4 className="text-sm font-extrabold text-white tracking-tight">AI Whiteboard</h4>
+                  </div>
+                  <button onClick={() => setAiPromptOpen(false)} className="text-slate-400 hover:text-white p-1 rounded-lg">✕</button>
                 </div>
                 
-                {/* Mode Selector Tabs */}
-                <div className="grid grid-cols-3 gap-1 bg-slate-950 p-1 rounded-xl border border-white/5">
-                  {(['auto', 'mermaid', 'svg', 'mindmap', 'diagram', 'assistant'] as const).map((mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      onClick={() => setAiToolType(mode)}
-                      className={`py-1.5 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${
-                        aiToolType === mode ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white'
-                      }`}
-                    >
-                      {mode === 'auto' && '✨ Auto Route'}
-                      {mode === 'mermaid' && '🧜‍♂️ Mermaid'}
-                      {mode === 'svg' && '🎨 SVG Science'}
-                      {mode === 'mindmap' && '🧠 Mindmap'}
-                      {mode === 'diagram' && '📐 Diagram'}
-                      {mode === 'assistant' && '📚 Lesson'}
-                    </button>
-                  ))}
+                <div className="inline-block px-2.5 py-1 bg-amber-500/10 border border-amber-500/30 text-amber-300 rounded-lg text-[10px] font-black uppercase tracking-wider">
+                  Coming Soon
                 </div>
 
-                <form onSubmit={handleGenerateDiagram} className="space-y-3">
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-slate-400 block">Topic / Educational Query</label>
-                    <input 
-                      autoFocus
-                      type="text" 
-                      value={aiPromptQuery}
-                      onChange={e => setAiPromptQuery(e.target.value)}
-                      placeholder={
-                        aiToolType === 'mindmap' ? 'e.g. Photosynthesis, Ancient Rome...' :
-                        aiToolType === 'assistant' ? 'e.g. Newton\'s 3 Laws, Mitosis...' :
-                        'e.g. Solar System, Food Chain...'
-                      }
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-white placeholder-slate-700 focus:border-indigo-500 focus:outline-none"
-                    />
-                  </div>
-                  <div className="flex justify-end gap-2 pt-1 border-t border-white/5">
-                    <button type="button" onClick={() => setAiPromptOpen(false)} className="px-3 py-1.5 text-xs text-slate-400 hover:text-white transition-all">Cancel</button>
-                    <button type="submit" className="px-4 py-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold transition-all shadow-md">Generate ✨</button>
-                  </div>
-                </form>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  AI-powered SVG diagrams, Mermaid diagrams, intelligent flowcharts, concept maps, visual learning, and advanced whiteboard AI will arrive in a future StudentOS update.
+                </p>
+
+                <div className="pt-2 border-t border-white/10 flex justify-end">
+                  <button 
+                    onClick={() => setAiPromptOpen(false)} 
+                    className="px-4 py-1.5 text-xs bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold transition-all shadow-md"
+                  >
+                    Got it
+                  </button>
+                </div>
               </div>
             )}
           </div>
