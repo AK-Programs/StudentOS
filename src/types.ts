@@ -325,7 +325,182 @@ export interface JarvisHistoryItem {
   actionExecuted?: string;
 }
 
-// StudentOS Meet Types
+// Phase 5 StudentOS Life Types
+export type CompetitionCategory = 'Debate' | 'Quiz' | 'Coding' | 'Chess' | 'Drawing' | 'Science Fair' | 'Sports' | 'Robotics' | 'Olympiad' | 'Cultural' | 'Hackathon';
+
+export interface Competition {
+  id: string;
+  title: string;
+  description: string;
+  category: CompetitionCategory;
+  startDate: string;
+  endDate: string;
+  location: string;
+  mode: 'Online' | 'Offline' | 'Hybrid';
+  type: 'Individual' | 'Team';
+  maxTeamSize?: number;
+  eligibility: string;
+  prizePool?: string;
+  status: 'Upcoming' | 'Live' | 'Completed';
+  createdBy: string;
+  registeredCount: number;
+  bannerUrl?: string;
+  rules?: string[];
+  schedule?: { time: string; event: string }[];
+  winners?: { rank: number; name: string; house?: string; grade?: string; prize?: string }[];
+  createdAt: string;
+}
+
+export interface CompetitionRegistration {
+  id: string;
+  competitionId: string;
+  studentUid: string;
+  studentName: string;
+  studentEmail: string;
+  grade?: string;
+  house?: string;
+  teamName?: string;
+  teamMembers?: string[];
+  registeredAt: string;
+  certificateUrl?: string;
+}
+
+export interface HouseDetail {
+  id: HouseType;
+  name: string;
+  color: string;
+  points: number;
+  rank: number;
+  captain: string;
+  viceCaptain?: string;
+  motto: string;
+  houseTeacher?: string;
+  trophies: number;
+  bannerUrl?: string;
+}
+
+export interface HouseAnnouncement {
+  id: string;
+  house: HouseType;
+  title: string;
+  content: string;
+  postedBy: string;
+  createdAt: string;
+}
+
+export interface Club {
+  id: string;
+  name: string; // e.g. "Coding Club", "Robotics Club", "Science Club", "Music Club", "Art Club", "Debate Club", "Literature Club"
+  category: string;
+  description: string;
+  icon: string;
+  leadTeacher: string;
+  studentHead: string;
+  memberCount: number;
+  membersList?: string[]; // student UIDs/emails
+  meetingDays: string;
+  location: string;
+  bannerUrl?: string;
+}
+
+export interface ClubActivity {
+  id: string;
+  clubId: string;
+  title: string;
+  description: string;
+  date: string;
+  time: string;
+  location: string;
+  completed?: boolean;
+}
+
+export interface StudentBadge {
+  id: string;
+  title: string; // e.g. "Top Performer", "Perfect Attendance", "Competition Winner", "Coding Champion", "Book Lover", "Artist", "Athlete"
+  icon: string; // e.g. "🏆", "⭐", "🥇", "💻", "📚", "🎨", "🏃"
+  category: string;
+  awardedToUid: string;
+  awardedToName: string;
+  awardedBy: string;
+  reason: string;
+  awardedAt: string;
+}
+
+export interface SchoolEvent {
+  id: string;
+  title: string;
+  category: 'Holiday' | 'Exam' | 'Competition' | 'Parent Meeting' | 'Sports Day' | 'Annual Day' | 'Cultural' | 'Birthday' | 'Deadline';
+  date: string; // YYYY-MM-DD
+  time?: string;
+  location?: string;
+  description: string;
+  createdBy?: string;
+}
+
+export interface GalleryPhoto {
+  id: string;
+  albumId: string;
+  title: string;
+  url: string;
+  uploadedBy: string;
+  uploadedAt: string;
+  likes?: number;
+}
+
+export interface GalleryAlbum {
+  id: string;
+  title: string;
+  category: 'Events' | 'Sports' | 'Annual Day' | 'Trips' | 'Functions' | 'Celebrations' | 'Competitions';
+  coverUrl: string;
+  photoCount: number;
+  createdAt: string;
+  photos?: GalleryPhoto[];
+}
+
+export interface SchoolNews {
+  id: string;
+  title: string;
+  category: 'News' | 'Success Story' | 'Announcement' | 'Achievement';
+  content: string;
+  author: string;
+  imageUrl?: string;
+  publishedAt: string;
+  featured?: boolean;
+}
+
+export interface PollOption {
+  id: string;
+  text: string;
+  votes: number;
+  votedUserUids?: string[];
+}
+
+export interface SchoolPoll {
+  id: string;
+  question: string;
+  category: 'Best House' | 'Event Feedback' | 'Student Council Elections' | 'General Class Poll';
+  options: PollOption[];
+  totalVotes: number;
+  createdBy: string;
+  createdAt: string;
+  expiresAt?: string;
+  isActive: boolean;
+  userVotedOptionId?: string;
+}
+
+export interface EngagementGame {
+  id: string;
+  title: string;
+  type: 'Quiz Battle' | 'Rapid Fire' | 'Spin Wheel' | 'Random Student Picker' | 'Poll Battle' | 'True/False' | 'Guess Image' | 'Memory Game' | 'Word Chain' | 'Dice Roll';
+  hostedBy: string;
+  activeQuestion?: string;
+  options?: string[];
+  timerSeconds?: number;
+  status: 'Waiting' | 'Live' | 'Ended';
+  participantsCount: number;
+  scores?: { name: string; score: number }[];
+}
+
 export interface Meeting {
   id: string; // Secure Meeting ID (e.g. "meet-892-412-890")
   title: string;
