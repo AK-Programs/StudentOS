@@ -53,6 +53,8 @@ import { NotificationCenter } from './components/NotificationCenter';
 import { BroadcastModal } from './components/BroadcastModal';
 import { LiveBroadcastBanner } from './components/LiveBroadcastBanner';
 import { CollaborativeLectureNotes } from './components/CollaborativeLectureNotes';
+import { StudentOSLife } from './components/StudentOSLife';
+import { TeacherFunZone } from './components/TeacherFunZone';
 import { MOCK_QUIZZES, AI_PERSONAS, INITIAL_ANNOUNCEMENTS, INITIAL_FEEDBACK, INITIAL_MATERIALS, MOCK_SCHEDULES } from './mockData';
 
 // Stub Integrations
@@ -6804,12 +6806,26 @@ ${roleLabel}: ${userQuery}`;
                             <span className="text-2xl">📊</span>
                             <span className="text-xs font-bold text-white">Performance Stats</span>
                           </button>
+                          <button
+                            onClick={() => handleTabSelect('life')}
+                            className="p-4 bg-gradient-to-br from-indigo-900/80 to-purple-900/80 hover:from-indigo-800 hover:to-purple-800 border border-indigo-500/30 rounded-2xl flex flex-col items-center justify-center text-center gap-2 hover:border-indigo-400 hover:shadow-lg transition-all shadow-md"
+                          >
+                            <span className="text-2xl">🚀</span>
+                            <span className="text-xs font-bold text-white">StudentOS Life</span>
+                          </button>
                         </>
                       )}
 
                       {/* Teacher Cards */}
                       {effectiveRole === 'teacher' && (
                         <>
+                          <button
+                            onClick={() => handleTabSelect('funzone')}
+                            className="p-4 bg-gradient-to-br from-purple-900/80 to-amber-900/80 hover:from-purple-800 hover:to-amber-800 border border-amber-500/30 rounded-2xl flex flex-col items-center justify-center text-center gap-2 hover:border-amber-400 hover:shadow-lg transition-all shadow-md"
+                          >
+                            <span className="text-2xl">🎡</span>
+                            <span className="text-xs font-bold text-white">Teacher Fun Zone</span>
+                          </button>
                           <button
                             onClick={() => handleTabSelect('panel_mode')}
                             className="p-4 bg-slate-900/60 hover:bg-indigo-950/40 border border-white/10 rounded-2xl flex flex-col items-center justify-center text-center gap-2 hover:border-indigo-500/50 hover:shadow-lg transition-all"
@@ -11090,6 +11106,36 @@ Could you please guide me step-by-step on how to solve this, explaining the theo
               {/* Tab 11: Admin Center */}
               {activeTab === 'admin' && (effectiveRole === 'admin' || effectiveRole === 'super_admin') && (
                 <AdminCenter currentUser={currentUser} showNotification={showNotification} />
+              )}
+
+              {/* Tab 12: StudentOS Life Community Hub */}
+              {(activeTab === 'life' || activeTab === 'studentos_life') && (
+                <StudentOSLife currentUser={currentUser || {
+                  uid: 'guest',
+                  name: 'Guest Student',
+                  role: 'student',
+                  house: 'Emerald',
+                  section: 'Solara',
+                  grade: 'Grade 10',
+                  streakDays: 5,
+                  quizzesTaken: 3,
+                  studyHours: 12
+                }} />
+              )}
+
+              {/* Tab 13: Teacher Fun Zone */}
+              {(activeTab === 'funzone' || activeTab === 'teacher_fun_zone') && (
+                <TeacherFunZone currentUser={currentUser || {
+                  uid: 'guest',
+                  name: 'Guest Teacher',
+                  role: 'teacher',
+                  house: 'Ruby',
+                  section: 'Ruby',
+                  grade: 'Grade 12',
+                  streakDays: 10,
+                  quizzesTaken: 12,
+                  studyHours: 40
+                }} />
               )}
 
             </main>
