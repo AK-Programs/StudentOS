@@ -11,6 +11,16 @@ import {
   Club, StudentBadge, SchoolEvent, GalleryAlbum, SchoolNews, 
   SchoolPoll, HouseDetail
 } from '../types';
+import {
+  fetchCompetitions, createCompetition,
+  fetchSchoolEvents, createSchoolEvent,
+  fetchClubs, createClub,
+  fetchBadges, awardBadge,
+  fetchGallery, createGalleryAlbum,
+  fetchHouses, updateHousePoints,
+  fetchPolls, createPoll,
+  fetchNews, subscribeToLifeTable
+} from '../lib/supabaseLife';
 
 interface StudentOSLifeProps {
   currentUser: UserProfile;
@@ -231,6 +241,56 @@ export const StudentOSLife: React.FC<StudentOSLifeProps> = ({
   const [gallery, setGallery] = useState<GalleryAlbum[]>(INITIAL_GALLERY);
   const [newsList, setNewsList] = useState<SchoolNews[]>(INITIAL_NEWS);
 
+  // Supabase Realtime Sync
+  const loadAllLifeData = async () => {
+    try {
+      const [comps, evs, clbs, bdgs, gal, hses, pls, nws] = await Promise.all([
+        fetchCompetitions(),
+        fetchSchoolEvents(),
+        fetchClubs(),
+        fetchBadges(),
+        fetchGallery(),
+        fetchHouses(),
+        fetchPolls(),
+        fetchNews()
+      ]);
+
+      if (comps.length > 0) setCompetitions(comps);
+      if (evs.length > 0) setEvents(evs);
+      if (clbs.length > 0) setClubs(clbs);
+      if (bdgs.length > 0) setBadges(bdgs);
+      if (gal.length > 0) setGallery(gal);
+      if (hses.length > 0) setHouses(hses);
+      if (pls.length > 0) setPolls(pls);
+      if (nws.length > 0) setNewsList(nws);
+    } catch (err) {
+      console.warn("Error fetching Supabase Life data:", err);
+    }
+  };
+
+  useEffect(() => {
+    loadAllLifeData();
+
+    // Subscribe to realtime changes for all life tables
+    const unsubComp = subscribeToLifeTable('life_competitions', loadAllLifeData);
+    const unsubEvent = subscribeToLifeTable('life_events', loadAllLifeData);
+    const unsubClub = subscribeToLifeTable('life_clubs', loadAllLifeData);
+    const unsubBadge = subscribeToLifeTable('life_achievements', loadAllLifeData);
+    const unsubGallery = subscribeToLifeTable('life_gallery', loadAllLifeData);
+    const unsubHouse = subscribeToLifeTable('life_houses', loadAllLifeData);
+    const unsubPoll = subscribeToLifeTable('life_polls', loadAllLifeData);
+
+    return () => {
+      unsubComp();
+      unsubEvent();
+      unsubClub();
+      unsubBadge();
+      unsubGallery();
+      unsubHouse();
+      unsubPoll();
+    };
+  }, []);
+
   // Filters
   const [compCategoryFilter, setCompCategoryFilter] = useState<string>('All');
   const [leaderboardCategory, setLeaderboardCategory] = useState<'Academic' | 'Competition' | 'Sports' | 'Attendance' | 'House' | 'Club'>('Academic');
@@ -335,7 +395,7 @@ export const StudentOSLife: React.FC<StudentOSLifeProps> = ({
     }));
   };
 
-  const handleCreateCompetition = (e: React.FormEvent) => {
+  const handleCreateCompetition = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newCompForm.title.trim()) return;
     const created: Competition = {
@@ -343,8 +403,8 @@ export const StudentOSLife: React.FC<StudentOSLifeProps> = ({
       title: newCompForm.title,
       description: newCompForm.description || 'Inter-school competitive event.',
       category: newCompForm.category,
-      startDate: newCompForm.startDate || '2026-08-20',
-      endDate: newCompForm.endDate || '2026-08-20',
+      startDate: newCompForm.startDate || new Date().toISOString().split('T')[0],
+      endDate: newCompForm.endDate || new Date().toISOString().split('T')[0],
       location: newCompForm.location || 'School Campus',
       mode: newCompForm.mode,
       type: newCompForm.type,
@@ -357,6 +417,7 @@ export const StudentOSLife: React.FC<StudentOSLifeProps> = ({
       createdAt: new Date().toISOString().split('T')[0]
     };
     setCompetitions(prev => [created, ...prev]);
+    await createCompetition(created);
     setShowCreateCompModal(false);
     setNewCompForm({
       title: '', description: '', category: 'Coding', startDate: '', endDate: '',
@@ -364,7 +425,7 @@ export const StudentOSLife: React.FC<StudentOSLifeProps> = ({
     });
   };
 
-  const handleAwardBadge = (e: React.FormEvent) => {
+  const handleAwardBadge = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newBadgeForm.awardedToName.trim()) return;
     const newB: StudentBadge = {
@@ -379,11 +440,12 @@ export const StudentOSLife: React.FC<StudentOSLifeProps> = ({
       awardedAt: new Date().toISOString().split('T')[0]
     };
     setBadges(prev => [newB, ...prev]);
+    await awardBadge(newB);
     setShowAwardBadgeModal(false);
     setNewBadgeForm({ title: 'Top Performer', category: 'Academic', icon: '🏆', awardedToName: '', reason: '' });
   };
 
-  const handleAddEvent = (e: React.FormEvent) => {
+  const handleAddEvent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newEventForm.title.trim()) return;
     const ev: SchoolEvent = {
@@ -397,11 +459,12 @@ export const StudentOSLife: React.FC<StudentOSLifeProps> = ({
       createdBy: currentUser.name
     };
     setEvents(prev => [...prev, ev]);
+    await createSchoolEvent(ev);
     setShowAddEventModal(false);
     setNewEventForm({ title: '', category: 'Competition', date: '', time: '', location: '', description: '' });
   };
 
-  const handleCreatePoll = (e: React.FormEvent) => {
+  const handleCreatePoll = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newPollForm.question.trim()) return;
     const opts = newPollForm.optionsText.split(',').map((t, idx) => ({
@@ -420,6 +483,7 @@ export const StudentOSLife: React.FC<StudentOSLifeProps> = ({
       isActive: true
     };
     setPolls(prev => [newP, ...prev]);
+    await createPoll(newP);
     setShowCreatePollModal(false);
     setNewPollForm({ question: '', category: 'Best House', optionsText: '' });
   };
