@@ -842,12 +842,28 @@ export const StudentOSJarvis: React.FC<StudentOSJarvisProps> = ({
     actionTriggered = aiVerdict.action;
     
     // Handle the parsed actions dynamically based on Intent Engine classification
-    const allowedTabs = ['materials', 'whiteboard', 'ai_teacher', 'quiz', 'planner', 'feedback', 'homework', 'chats', 'assignments', 'timetable_viewer', 'worksheet_viewer', 'notice_viewer', 'attendance_manager', 'dashboard'];
+    const allowedTabs = ['materials', 'whiteboard', 'ai_teacher', 'quiz', 'planner', 'feedback', 'homework', 'chats', 'assignments', 'timetable_viewer', 'worksheet_viewer', 'notice_viewer', 'attendance_manager', 'dashboard', 'life', 'meet', 'funzone'];
     
-    if (actionTriggered === 'navigate_tab' && aiVerdict.targetValue) {
+    // Quick direct text match triggers for Orion 2.0 operating assistant
+    if (textLow.includes('studentos life') || textLow.includes('open life') || textLow.includes('show competitions') || textLow.includes('school events') || textLow.includes('clubs')) {
+      setActiveTab('life' as any);
+      resolvedFeedback = '🚀 Opening StudentOS Life portal.';
+    } else if (textLow.includes('studentos meet') || textLow.includes('open meet') || textLow.includes('start meeting')) {
+      setActiveTab('meet' as any);
+      resolvedFeedback = '📹 Opening StudentOS Meet video conferencing room.';
+    } else if (textLow.includes('fun zone') || textLow.includes('teacher fun zone') || textLow.includes('classroom game')) {
+      setActiveTab('funzone' as any);
+      resolvedFeedback = '🎡 Opening Teacher Fun Zone interactive smartboard games.';
+    } else if (actionTriggered === 'navigate_tab' && aiVerdict.targetValue) {
       const tabVal = aiVerdict.targetValue.toLowerCase();
       if (allowedTabs.includes(tabVal)) {
         setActiveTab(tabVal as any);
+      } else if (tabVal.includes('life') || tabVal.includes('competition') || tabVal.includes('event')) {
+        setActiveTab('life' as any);
+      } else if (tabVal.includes('meet') || tabVal.includes('conference')) {
+        setActiveTab('meet' as any);
+      } else if (tabVal.includes('fun') || tabVal.includes('game')) {
+        setActiveTab('funzone' as any);
       } else if (tabVal.includes('assignment')) {
         setActiveTab('assignments');
       } else if (tabVal.includes('attendance')) {
