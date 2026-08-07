@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Sparkles, Dices, Shuffle, Zap, HelpCircle, Trophy, RefreshCw, 
-  Play, Pause, RotateCcw, Volume2, Flame, CheckCircle, Clock, Users, Gift
+  Play, Pause, RotateCcw, Volume2, Flame, CheckCircle, Clock, Users, Gift,
+  Maximize, Minimize, Shield, Award, Check, X, Star, Bell, Music, Smile,
+  Grid, Compass, Hash, Send, Brain
 } from 'lucide-react';
-import { UserProfile } from '../types';
+import { UserProfile, HouseType } from '../types';
 
 interface TeacherFunZoneProps {
   currentUser: UserProfile;
@@ -17,7 +19,7 @@ const MOCK_STUDENTS = [
 ];
 
 const DEFAULT_WHEEL_ITEMS = [
-  'Answer Next Question ❓', 'Choose Next Student 👈', '+10 House Points 🌟',
+  'Answer Next Question ❓', 'Choose Next Student 👈', '+20 House Points 🌟',
   'Bonus Star Badge ⭐', 'Sing a Song 🎵', 'Tell a Math Joke 😂',
   'Skip Turn 🛑', 'Pass Question to Friend 🤝'
 ];
@@ -28,11 +30,81 @@ const RAPID_FIRE_QUESTIONS = [
   { q: 'Who discovered Penicillin?', a: 'Alexander Fleming' },
   { q: 'What is the derivative of sin(x)?', a: 'cos(x)' },
   { q: 'In which year did India gain independence?', a: '1947' },
-  { q: 'What is the powerhouse of the cell?', a: 'Mitochondria' }
+  { q: 'What is the powerhouse of the cell?', a: 'Mitochondria' },
+  { q: 'Which planet is known as the Red Planet?', a: 'Mars' },
+  { q: 'What is the chemical formula of Water?', a: 'H2O' }
 ];
 
+const EMOJI_GUESS_QUESTIONS = [
+  { emoji: '🍎 🔍 📐', answer: 'Isaac Newton & Gravity', hint: 'Physics discovery' },
+  { emoji: '⚡ 💡 🏛️', answer: 'Electricity & Benjamin Franklin', hint: 'Invention' },
+  { emoji: '🚀 🌑 👨‍🚀', answer: 'Apollo 11 Moon Landing', hint: 'Space milestone' },
+  { emoji: '🧪 ⚗️ 🧫', answer: 'Chemistry Experiment', hint: 'Science lab' }
+];
+
+const TRUE_FALSE_QUESTIONS = [
+  { q: 'Sound travels faster in water than in air.', a: true, explanation: 'Water is denser, so sound waves propagate faster (~1480 m/s vs 343 m/s).' },
+  { q: 'The sun is a planet.', a: false, explanation: 'The Sun is a main-sequence star.' },
+  { q: 'Light travels in straight lines.', a: true, explanation: 'Except when bent by heavy gravitational fields or refraction.' },
+  { q: 'DNA stands for Deoxyribonucleic Acid.', a: true, explanation: 'Correct genetic molecule name.' }
+];
+
+// Audio Sound Effect Helper using Web Audio API
+const playSound = (type: 'beep' | 'win' | 'buzzer' | 'tick' | 'fanfare') => {
+  try {
+    const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+
+    if (type === 'tick') {
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(600, ctx.currentTime);
+      gain.gain.setValueAtTime(0.05, ctx.currentTime);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.05);
+    } else if (type === 'win') {
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(523.25, ctx.currentTime); // C5
+      osc.frequency.setValueAtTime(659.25, ctx.currentTime + 0.1); // E5
+      osc.frequency.setValueAtTime(783.99, ctx.currentTime + 0.2); // G5
+      osc.frequency.setValueAtTime(1046.50, ctx.currentTime + 0.3); // C6
+      gain.gain.setValueAtTime(0.2, ctx.currentTime);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.5);
+    } else if (type === 'buzzer') {
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(150, ctx.currentTime);
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.3);
+    } else if (type === 'beep') {
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(800, ctx.currentTime);
+      gain.gain.setValueAtTime(0.1, ctx.currentTime);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.1);
+    }
+  } catch (e) {
+    // Audio context silent catch
+  }
+};
+
 export const TeacherFunZone: React.FC<TeacherFunZoneProps> = ({ currentUser }) => {
-  const [activeGame, setActiveGame] = useState<'picker' | 'wheel' | 'rapid' | 'dice' | 'wordchain'>('picker');
+  const [activeGame, setActiveGame] = useState<'picker' | 'wheel' | 'rapid' | 'buzzer' | 'emoji' | 'tf' | 'math' | 'dice'>('picker');
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  // House/Team Scoreboard State
+  const [houseScores, setHouseScores] = useState<Record<string, number>>({
+    Ruby: 120,
+    Emerald: 110,
+    Sapphire: 95,
+    Topaz: 90
+  });
+
+  // Confetti / Celebration
+  const [celebrationWinner, setCelebrationWinner] = useState<string | null>(null);
 
   // Random Student Picker State
   const [pickedStudent, setPickedStudent] = useState<string | null>(null);
@@ -47,27 +119,70 @@ export const TeacherFunZone: React.FC<TeacherFunZoneProps> = ({ currentUser }) =
   // Rapid Fire State
   const [currentQIndex, setCurrentQIndex] = useState(0);
   const [showAnswer, setShowAnswer] = useState(false);
-  const [score, setScore] = useState(0);
   const [timer, setTimer] = useState(30);
   const [timerActive, setTimerActive] = useState(false);
 
+  // Buzzer Quiz State
+  const [buzzedStudent, setBuzzedStudent] = useState<string | null>(null);
+  const [buzzerActive, setBuzzerActive] = useState(false);
+
+  // Emoji Quiz State
+  const [emojiIdx, setEmojiIdx] = useState(0);
+  const [showEmojiAns, setShowEmojiAns] = useState(false);
+
+  // True or False State
+  const [tfIdx, setTfIdx] = useState(0);
+  const [tfFeedback, setTfFeedback] = useState<string | null>(null);
+
+  // Math Race State
+  const [mathProblem, setMathProblem] = useState({ q: '24 × 8 + 16', a: 208 });
+  const [mathInput, setMathInput] = useState('');
+  const [mathResult, setMathResult] = useState<string | null>(null);
+
   // Dice Roll State
-  const [diceCount, setDiceCount] = useState(1);
-  const [diceResults, setDiceResults] = useState<number[]>([6]);
+  const [diceCount, setDiceCount] = useState(2);
+  const [diceResults, setDiceResults] = useState<number[]>([4, 6]);
   const [isRolling, setIsRolling] = useState(false);
 
+  // Timer Effect
+  useEffect(() => {
+    let interval: any;
+    if (timerActive && timer > 0) {
+      interval = setInterval(() => {
+        setTimer(t => {
+          if (t <= 1) {
+            playSound('buzzer');
+            setTimerActive(false);
+            return 0;
+          }
+          playSound('tick');
+          return t - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [timerActive, timer]);
+
   // Handlers
+  const triggerCelebration = (msg: string) => {
+    setCelebrationWinner(msg);
+    playSound('win');
+    setTimeout(() => setCelebrationWinner(null), 4000);
+  };
+
   const handlePickRandomStudent = () => {
     setIsPicking(true);
     setPickedStudent(null);
     let count = 0;
     const interval = setInterval(() => {
+      playSound('tick');
       const idx = Math.floor(Math.random() * MOCK_STUDENTS.length);
       setPickedStudent(MOCK_STUDENTS[idx]);
       count++;
       if (count > 20) {
         clearInterval(interval);
         setIsPicking(false);
+        triggerCelebration(`🎯 Selected: ${MOCK_STUDENTS[idx]}`);
       }
     }, 80);
   };
@@ -76,7 +191,8 @@ export const TeacherFunZone: React.FC<TeacherFunZoneProps> = ({ currentUser }) =
     if (spinning) return;
     setSpinning(true);
     setWheelWinner(null);
-    const extraDeg = Math.floor(Math.random() * 360) + 1440; // 4 full turns + random
+    playSound('beep');
+    const extraDeg = Math.floor(Math.random() * 360) + 1440;
     const newRotation = wheelRotation + extraDeg;
     setWheelRotation(newRotation);
 
@@ -85,66 +201,159 @@ export const TeacherFunZone: React.FC<TeacherFunZoneProps> = ({ currentUser }) =
       const actualDeg = newRotation % 360;
       const sliceSize = 360 / wheelItems.length;
       const winnerIdx = Math.floor((360 - (actualDeg % 360)) / sliceSize) % wheelItems.length;
-      setWheelWinner(wheelItems[winnerIdx]);
+      const result = wheelItems[winnerIdx];
+      setWheelWinner(result);
+      triggerCelebration(`🎡 Result: ${result}`);
     }, 3500);
+  };
+
+  const handlePressBuzzer = (studentName: string) => {
+    if (!buzzerActive) return;
+    setBuzzedStudent(studentName);
+    setBuzzerActive(false);
+    playSound('buzzer');
+    triggerCelebration(`🔔 ${studentName} buzzed in first!`);
   };
 
   const handleRollDice = () => {
     setIsRolling(true);
+    playSound('beep');
     setTimeout(() => {
       const results = Array.from({ length: diceCount }, () => Math.floor(Math.random() * 6) + 1);
       setDiceResults(results);
       setIsRolling(false);
-    }, 500);
+      playSound('win');
+    }, 600);
+  };
+
+  const generateNewMath = () => {
+    const a = Math.floor(Math.random() * 20) + 10;
+    const b = Math.floor(Math.random() * 10) + 2;
+    const c = Math.floor(Math.random() * 30) + 5;
+    const ans = a * b + c;
+    setMathProblem({ q: `${a} × ${b} + ${c}`, a: ans });
+    setMathInput('');
+    setMathResult(null);
+  };
+
+  const addHouseScore = (house: string, pts: number) => {
+    setHouseScores(prev => ({
+      ...prev,
+      [house]: (prev[house] || 0) + pts
+    }));
+    playSound('win');
   };
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-8 text-slate-100">
-      {/* Title Header */}
-      <div className="bg-gradient-to-r from-purple-900 via-indigo-900 to-slate-900 p-6 rounded-3xl border border-purple-500/30 shadow-2xl flex flex-col md:flex-row items-center justify-between gap-4">
+    <div className={`min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans transition-all ${isFullscreen ? 'p-2' : 'p-6 max-w-7xl mx-auto space-y-6'}`}>
+      
+      {/* Celebration Banner */}
+      <AnimatePresence>
+        {celebrationWinner && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8, y: -20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.8 }}
+            className="fixed top-12 left-1/2 -translate-x-1/2 z-[9999] bg-gradient-to-r from-amber-500 via-purple-600 to-indigo-600 border-2 border-amber-300 px-8 py-4 rounded-3xl shadow-2xl text-center"
+          >
+            <div className="flex items-center gap-3">
+              <Trophy className="w-8 h-8 text-amber-300 animate-bounce" />
+              <div>
+                <span className="text-[10px] font-black uppercase text-amber-200 tracking-widest block">WINNER CELEBRATION</span>
+                <span className="text-xl font-black text-white">{celebrationWinner}</span>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Title & House Scoreboard Bar */}
+      <div className="bg-gradient-to-r from-purple-900 via-indigo-900 to-slate-900 p-6 rounded-3xl border border-purple-500/30 shadow-2xl flex flex-col lg:flex-row items-center justify-between gap-6">
         <div>
           <div className="flex items-center gap-2 mb-2">
             <span className="px-3 py-1 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5">
-              <Sparkles className="w-3.5 h-3.5" /> Interactive Classroom Engagement
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" /> Smart-Board Classroom Experience
+            </span>
+            <span className="px-2.5 py-0.5 bg-indigo-500/20 text-indigo-300 rounded-full text-[10px] font-bold border border-indigo-500/30">
+              Interactive Games Engine
             </span>
           </div>
-          <h2 className="text-2xl md:text-3xl font-black text-white tracking-tight">
-            Teacher <span className="text-amber-400">Fun Zone</span>
+          <h2 className="text-3xl font-black text-white tracking-tight flex items-center gap-3">
+            Teacher <span className="bg-gradient-to-r from-amber-400 via-amber-200 to-yellow-400 bg-clip-text text-transparent">Fun Zone</span>
           </h2>
-          <p className="text-xs text-slate-300 mt-1">
-            Energize your live classes with random pickers, prize wheels, rapid-fire quizzes, and dice rolls.
+          <p className="text-xs text-slate-300 mt-1 max-w-xl">
+            Energize live classes with random pickers, rapid-fire quizzes, buzzers, emoji games, true/false battles, and real-time house scorekeeping.
           </p>
         </div>
 
-        <div className="flex items-center gap-2 bg-slate-950 p-1.5 rounded-2xl border border-white/10 overflow-x-auto">
-          {[
-            { id: 'picker', label: 'Random Student', icon: Shuffle },
-            { id: 'wheel', label: 'Spin Wheel', icon: RefreshCw },
-            { id: 'rapid', label: 'Rapid Fire Quiz', icon: Zap },
-            { id: 'dice', label: 'Dice Roller', icon: Dices }
-          ].map(g => {
-            const Icon = g.icon;
-            const isActive = activeGame === g.id;
+        {/* Live House Scoreboard */}
+        <div className="bg-slate-950/80 p-3 rounded-2xl border border-white/10 flex items-center gap-3">
+          {Object.entries(houseScores).map(([house, pts]) => {
+            const colors: Record<string, string> = {
+              Ruby: 'text-rose-400 border-rose-500/30 bg-rose-500/10',
+              Emerald: 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10',
+              Sapphire: 'text-indigo-400 border-indigo-500/30 bg-indigo-500/10',
+              Topaz: 'text-amber-400 border-amber-500/30 bg-amber-500/10'
+            };
             return (
-              <button
-                key={g.id}
-                onClick={() => setActiveGame(g.id as any)}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${
-                  isActive
-                    ? 'bg-purple-600 text-white shadow-lg'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-900'
-                }`}
-              >
-                <Icon className="w-4 h-4" />
-                <span>{g.label}</span>
-              </button>
+              <div key={house} className={`px-3 py-1.5 rounded-xl border flex flex-col items-center ${colors[house]}`}>
+                <span className="text-[10px] font-black uppercase">{house}</span>
+                <span className="text-sm font-mono font-black">{pts} pts</span>
+                <button
+                  onClick={() => addHouseScore(house, 10)}
+                  className="mt-1 text-[9px] font-bold text-white bg-white/10 hover:bg-white/20 px-1.5 py-0.5 rounded"
+                  title="Add +10 points"
+                >
+                  +10
+                </button>
+              </div>
             );
           })}
+
+          <button
+            onClick={() => setIsFullscreen(!isFullscreen)}
+            className="p-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-white/10 transition-all ml-2"
+            title="Toggle Smart-Board Fullscreen"
+          >
+            {isFullscreen ? <Minimize className="w-5 h-5 text-amber-400" /> : <Maximize className="w-5 h-5 text-amber-400" />}
+          </button>
         </div>
       </div>
 
-      {/* Game Stage */}
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl">
+      {/* Game Mode Navigation Tabs */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none bg-slate-900/90 p-2 rounded-2xl border border-slate-800">
+        {[
+          { id: 'picker', label: 'Random Student', icon: Shuffle },
+          { id: 'wheel', label: 'Spin Wheel', icon: RefreshCw },
+          { id: 'rapid', label: 'Rapid Fire Quiz', icon: Zap },
+          { id: 'buzzer', label: 'Buzzer Race', icon: Bell },
+          { id: 'emoji', label: 'Emoji Guess', icon: Smile },
+          { id: 'tf', label: 'True or False', icon: CheckCircle },
+          { id: 'math', label: 'Math Race', icon: Brain },
+          { id: 'dice', label: 'Dice Roller', icon: Dices }
+        ].map(g => {
+          const Icon = g.icon;
+          const isActive = activeGame === g.id;
+          return (
+            <button
+              key={g.id}
+              onClick={() => setActiveGame(g.id as any)}
+              className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all shrink-0 ${
+                isActive
+                  ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg shadow-indigo-600/30'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              <Icon className="w-4 h-4" />
+              <span>{g.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* GAME STAGE */}
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl flex-1 flex flex-col justify-center">
+        
         {/* GAME 1: RANDOM STUDENT PICKER */}
         {activeGame === 'picker' && (
           <div className="space-y-6 text-center max-w-2xl mx-auto py-8">
@@ -155,7 +364,6 @@ export const TeacherFunZone: React.FC<TeacherFunZoneProps> = ({ currentUser }) =
             <h3 className="text-2xl font-black text-white">Random Student Picker</h3>
             <p className="text-xs text-slate-400">Fairly select a student to answer, demonstrate, or lead the next discussion.</p>
 
-            {/* Display Box */}
             <div className="h-32 bg-slate-950 border-2 border-indigo-500/40 rounded-3xl flex items-center justify-center p-6 shadow-inner relative overflow-hidden">
               <span className={`text-2xl md:text-3xl font-black font-mono tracking-tight ${isPicking ? 'text-indigo-400 animate-bounce' : 'text-amber-300'}`}>
                 {pickedStudent || 'Click "Pick Random Student" below!'}
@@ -178,14 +386,11 @@ export const TeacherFunZone: React.FC<TeacherFunZoneProps> = ({ currentUser }) =
             <h3 className="text-xl font-black text-white">Classroom Reward Spin Wheel</h3>
             <p className="text-xs text-slate-400">Spin for bonus house points, star badges, or classroom activities.</p>
 
-            {/* Wheel Canvas Mock */}
             <div className="relative w-64 h-64 mx-auto my-4">
-              {/* Pointer */}
               <div className="absolute -top-3 left-1/2 -translate-x-1/2 text-2xl z-20 text-red-500 drop-shadow-md">
                 ▼
               </div>
 
-              {/* Rotating Wheel Container */}
               <div
                 className="w-full h-full rounded-full border-4 border-amber-400 bg-slate-950 shadow-2xl relative overflow-hidden transition-transform duration-[3500ms] ease-out flex items-center justify-center"
                 style={{ transform: `rotate(${wheelRotation}deg)` }}
@@ -218,16 +423,21 @@ export const TeacherFunZone: React.FC<TeacherFunZoneProps> = ({ currentUser }) =
           <div className="space-y-6 max-w-xl mx-auto py-4">
             <div className="flex items-center justify-between bg-slate-950 p-4 rounded-2xl border border-white/5">
               <div className="flex items-center gap-2">
-                <Flame className="w-5 h-5 text-amber-400" />
-                <span className="text-xs font-bold text-slate-300">Question {currentQIndex + 1} / {RAPID_FIRE_QUESTIONS.length}</span>
+                <Clock className="w-5 h-5 text-amber-400" />
+                <span className="text-xs font-mono font-bold text-amber-400">Timer: {timer}s</span>
               </div>
-              <div className="flex items-center gap-2">
-                <Trophy className="w-4 h-4 text-amber-400" />
-                <span className="text-xs font-mono font-bold text-amber-400">Score: {score}</span>
-              </div>
+              <button
+                onClick={() => { setTimer(30); setTimerActive(!timerActive); }}
+                className="px-3 py-1 bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 text-xs font-bold rounded-lg"
+              >
+                {timerActive ? 'Pause Timer' : 'Start 30s Timer'}
+              </button>
             </div>
 
             <div className="bg-slate-950 border border-slate-800 rounded-3xl p-6 text-center space-y-4">
+              <span className="text-[10px] font-black uppercase tracking-widest text-indigo-400">
+                Question {currentQIndex + 1} of {RAPID_FIRE_QUESTIONS.length}
+              </span>
               <h4 className="text-lg font-black text-white leading-relaxed">
                 {RAPID_FIRE_QUESTIONS[currentQIndex].q}
               </h4>
@@ -249,20 +459,10 @@ export const TeacherFunZone: React.FC<TeacherFunZoneProps> = ({ currentUser }) =
             <div className="flex items-center justify-between gap-3">
               <button
                 onClick={() => {
-                  setScore(s => s + 10);
                   setShowAnswer(false);
                   setCurrentQIndex(i => (i + 1) % RAPID_FIRE_QUESTIONS.length);
                 }}
-                className="flex-1 py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow-md"
-              >
-                Correct (+10 pts)
-              </button>
-              <button
-                onClick={() => {
-                  setShowAnswer(false);
-                  setCurrentQIndex(i => (i + 1) % RAPID_FIRE_QUESTIONS.length);
-                }}
-                className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-xl"
+                className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl shadow-md"
               >
                 Next Question →
               </button>
@@ -270,7 +470,163 @@ export const TeacherFunZone: React.FC<TeacherFunZoneProps> = ({ currentUser }) =
           </div>
         )}
 
-        {/* GAME 4: DICE ROLLER */}
+        {/* GAME 4: BUZZER RACE */}
+        {activeGame === 'buzzer' && (
+          <div className="space-y-6 text-center max-w-xl mx-auto py-4">
+            <h3 className="text-2xl font-black text-white">Classroom Buzzer Race</h3>
+            <p className="text-xs text-slate-400">Activate buzzer mode to see who presses in first!</p>
+
+            <button
+              onClick={() => {
+                setBuzzerActive(true);
+                setBuzzedStudent(null);
+                playSound('beep');
+              }}
+              className="px-6 py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs rounded-xl uppercase tracking-wider shadow-lg"
+            >
+              🔔 Arm Classroom Buzzers
+            </button>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-6">
+              {MOCK_STUDENTS.slice(0, 8).map(st => (
+                <button
+                  key={st}
+                  onClick={() => handlePressBuzzer(st)}
+                  className={`p-4 rounded-2xl border text-xs font-extrabold transition-all shadow-md active:scale-95 ${
+                    buzzedStudent === st
+                      ? 'bg-amber-500 text-slate-950 border-amber-300 scale-105'
+                      : 'bg-slate-950 border-white/10 hover:border-indigo-500 text-slate-200'
+                  }`}
+                >
+                  <Bell className="w-5 h-5 mx-auto mb-1 text-amber-400" />
+                  <span>{st}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* GAME 5: EMOJI GUESS */}
+        {activeGame === 'emoji' && (
+          <div className="space-y-6 text-center max-w-lg mx-auto py-6">
+            <h3 className="text-xl font-black text-white">Guess the Academic Concept by Emoji</h3>
+            <div className="p-8 bg-slate-950 border border-white/10 rounded-3xl text-5xl tracking-widest my-4 shadow-2xl">
+              {EMOJI_GUESS_QUESTIONS[emojiIdx].emoji}
+            </div>
+
+            <p className="text-xs text-slate-400 italic">Hint: {EMOJI_GUESS_QUESTIONS[emojiIdx].hint}</p>
+
+            {showEmojiAns ? (
+              <div className="p-4 bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 font-black text-base rounded-2xl">
+                {EMOJI_GUESS_QUESTIONS[emojiIdx].answer}
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowEmojiAns(true)}
+                className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl"
+              >
+                Reveal Concept
+              </button>
+            )}
+
+            <button
+              onClick={() => {
+                setShowEmojiAns(false);
+                setEmojiIdx((emojiIdx + 1) % EMOJI_GUESS_QUESTIONS.length);
+              }}
+              className="block mx-auto text-xs text-indigo-400 hover:underline font-bold mt-2"
+            >
+              Next Emoji Challenge →
+            </button>
+          </div>
+        )}
+
+        {/* GAME 6: TRUE OR FALSE BATTLE */}
+        {activeGame === 'tf' && (
+          <div className="space-y-6 text-center max-w-lg mx-auto py-6">
+            <h3 className="text-xl font-black text-white">True or False Challenge</h3>
+            <div className="p-6 bg-slate-950 border border-white/10 rounded-3xl text-base font-bold text-white shadow-xl">
+              {TRUE_FALSE_QUESTIONS[tfIdx].q}
+            </div>
+
+            <div className="flex gap-4">
+              <button
+                onClick={() => setTfFeedback(TRUE_FALSE_QUESTIONS[tfIdx].a === true ? 'Correct! ' + TRUE_FALSE_QUESTIONS[tfIdx].explanation : 'Incorrect!')}
+                className="flex-1 py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-sm rounded-2xl shadow-lg"
+              >
+                TRUE
+              </button>
+              <button
+                onClick={() => setTfFeedback(TRUE_FALSE_QUESTIONS[tfIdx].a === false ? 'Correct! ' + TRUE_FALSE_QUESTIONS[tfIdx].explanation : 'Incorrect!')}
+                className="flex-1 py-4 bg-rose-600 hover:bg-rose-500 text-white font-black text-sm rounded-2xl shadow-lg"
+              >
+                FALSE
+              </button>
+            </div>
+
+            {tfFeedback && (
+              <div className="p-4 bg-indigo-950 border border-indigo-500/40 text-indigo-200 text-xs font-bold rounded-2xl">
+                {tfFeedback}
+              </div>
+            )}
+
+            <button
+              onClick={() => {
+                setTfFeedback(null);
+                setTfIdx((tfIdx + 1) % TRUE_FALSE_QUESTIONS.length);
+              }}
+              className="block mx-auto text-xs text-indigo-400 hover:underline font-bold"
+            >
+              Next Question →
+            </button>
+          </div>
+        )}
+
+        {/* GAME 7: MATH RACE */}
+        {activeGame === 'math' && (
+          <div className="space-y-6 text-center max-w-md mx-auto py-6">
+            <h3 className="text-xl font-black text-white">Speed Math Sprint</h3>
+            <div className="p-6 bg-slate-950 border-2 border-amber-500/40 rounded-3xl font-mono text-3xl font-black text-amber-300">
+              {mathProblem.q} = ?
+            </div>
+
+            <div className="flex gap-2">
+              <input
+                type="number"
+                value={mathInput}
+                onChange={e => setMathInput(e.target.value)}
+                placeholder="Enter answer..."
+                className="flex-1 bg-slate-950 border border-white/10 rounded-xl px-4 py-3 text-sm text-center text-white font-mono font-bold"
+              />
+              <button
+                onClick={() => {
+                  if (parseInt(mathInput) === mathProblem.a) {
+                    setMathResult('🎉 Correct Answer!');
+                    playSound('win');
+                  } else {
+                    setMathResult('❌ Try again!');
+                    playSound('buzzer');
+                  }
+                }}
+                className="px-5 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs rounded-xl"
+              >
+                Check
+              </button>
+            </div>
+
+            {mathResult && (
+              <div className="p-3 bg-slate-950 border border-white/10 font-bold text-xs text-indigo-300 rounded-xl">
+                {mathResult}
+              </div>
+            )}
+
+            <button onClick={generateNewMath} className="text-xs text-indigo-400 hover:underline font-bold">
+              New Math Question ↻
+            </button>
+          </div>
+        )}
+
+        {/* GAME 8: DICE ROLLER */}
         {activeGame === 'dice' && (
           <div className="space-y-6 text-center max-w-md mx-auto py-8">
             <h3 className="text-xl font-black text-white">Classroom Dice Roller</h3>
@@ -296,6 +652,7 @@ export const TeacherFunZone: React.FC<TeacherFunZoneProps> = ({ currentUser }) =
             </button>
           </div>
         )}
+
       </div>
     </div>
   );
