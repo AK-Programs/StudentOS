@@ -499,50 +499,13 @@ export const StudentOSJarvis: React.FC<StudentOSJarvisProps> = ({
     setSearchQuery(query);
     setActiveJarvisSection('search');
     setGeneratedNotesContent(null);
-    try {
-      // 1. Fetch grounded search findings using dedicated search endpoint
-      let searchData: any = {};
-      try {
-        const response = await fetch('/api/ai/search', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query })
-        });
-        if (!response.ok) {
-           throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        searchData = await response.json();
-      } catch (fetchErr) {
-        console.error("Search API failed:", fetchErr);
-        searchData = { summary: "Search API unreachable. Could not fetch real-time web access.", results: [] };
-      }
-      
-      setSearchResults(searchData.summary || searchData.text || "No results fetched.");
-      setSearchSources(searchData.results || searchData.sources || []);
-
-      // 2. Local material search / resource discovery
-      try {
-        const { data: matchedMaterials, error } = await supabase
-          .from('materials')
-          .select('*')
-          .or(`title.ilike.%${query}%,description.ilike.%${query}%`)
-          .limit(5);
-
-        if (matchedMaterials && !error) {
-          setLocalMaterials(matchedMaterials);
-        } else {
-          setLocalMaterials([]);
-        }
-      } catch (sbErr) {
-        setLocalMaterials([]);
-      }
-    } catch (err) {
-      console.error("Failed to execute internet search:", err);
-      setSearchResults("Connection could not be established. Real-time web access requires active keys.");
+    
+    // Display Coming Soon notice cleanly
+    setTimeout(() => {
+      setSearchResults(`🚀 **Web Search — Coming Soon**\n\nOnline search capabilities and live internet grounding will arrive in a future StudentOS update.`);
       setSearchSources([]);
-    } finally {
       setSearching(false);
-    }
+    }, 300);
   };
 
   const handleRunResourceDiscovery = async (query: string) => {
