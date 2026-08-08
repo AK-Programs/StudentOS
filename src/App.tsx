@@ -1211,11 +1211,71 @@ export default function App() {
       showNotification(`✓ Study Slot: ${subject} added to study planner!`);
     };
 
+    const handleAddTaskEvent = (e: any) => {
+      const { title, dueDate, subject } = e.detail || {};
+      if (!title || !currentUser) return;
+      const uid = currentUser.uid;
+      const taskId = generateUniqueId();
+      const item: Task = {
+        id: taskId,
+        title,
+        completed: false,
+        dueDate: dueDate || 'Tomorrow',
+        subject: subject || currentUser?.specialtySubject || 'General',
+        userId: uid,
+        createdAt: new Date().toISOString()
+      };
+      setTasks(prev => {
+        const updated = [...prev, item];
+        if (currentUser) {
+          const updatedUser = { ...currentUser, raw_data: { ...(currentUser.raw_data || {}), tasks: updated } };
+          setCurrentUser(updatedUser);
+          saveSupabaseUserProfile(updatedUser).catch(e => {});
+        }
+        return updated;
+      });
+      showNotification(`✓ Task: "${title}" added to Task Manager!`);
+    };
+
+    const handleCompleteTaskEvent = (e: any) => {
+      const { title } = e.detail || {};
+      setTasks(prev => {
+        const updated = prev.map(t => (t.id === title || (title && t.title.toLowerCase().includes(title.toLowerCase()))) ? { ...t, completed: true } : t);
+        if (currentUser) {
+          const updatedUser = { ...currentUser, raw_data: { ...(currentUser.raw_data || {}), tasks: updated } };
+          setCurrentUser(updatedUser);
+          saveSupabaseUserProfile(updatedUser).catch(e => {});
+        }
+        return updated;
+      });
+      showNotification(`🎉 Task marked completed!`);
+    };
+
+    const handleDeleteTaskEvent = (e: any) => {
+      const { title } = e.detail || {};
+      setTasks(prev => {
+        const updated = prev.filter(t => !(t.id === title || (title && t.title.toLowerCase().includes(title.toLowerCase()))));
+        if (currentUser) {
+          const updatedUser = { ...currentUser, raw_data: { ...(currentUser.raw_data || {}), tasks: updated } };
+          setCurrentUser(updatedUser);
+          saveSupabaseUserProfile(updatedUser).catch(e => {});
+        }
+        return updated;
+      });
+      showNotification(`Task deleted.`);
+    };
+
     window.addEventListener('s_os_create_note', handleCreateNoteEvent);
     window.addEventListener('s_os_add_schedule', handleAddScheduleEvent);
+    window.addEventListener('s_os_add_task', handleAddTaskEvent);
+    window.addEventListener('s_os_complete_task', handleCompleteTaskEvent);
+    window.addEventListener('s_os_delete_task', handleDeleteTaskEvent);
     return () => {
       window.removeEventListener('s_os_create_note', handleCreateNoteEvent);
       window.removeEventListener('s_os_add_schedule', handleAddScheduleEvent);
+      window.removeEventListener('s_os_add_task', handleAddTaskEvent);
+      window.removeEventListener('s_os_complete_task', handleCompleteTaskEvent);
+      window.removeEventListener('s_os_delete_task', handleDeleteTaskEvent);
     };
   }, [currentUser]);
 
@@ -1714,9 +1774,12 @@ export default function App() {
     });
   }, [currentUser]);
 
-  // Realtime Supabase & Local Custom Event Sync for Orion Automations
+  // Realtime Supabase & Local Custom Event Sync for Orion Automations & Global Broadcasts
   useEffect(() => {
     if (!currentUser) return;
+
+    // Load notifications & global broadcasts from Supabase immediately on auth/load
+    getAppNotifications(currentUser.uid, currentUser.grade).then(list => setNotifications(list));
 
     const handleDbUpdate = (e: any) => {
       const { table } = e.detail || {};
@@ -1725,18 +1788,23 @@ export default function App() {
           if (list && list.length > 0) setHomeworkList(list);
         });
       }
-      if (table === 'notifications' || !table) {
+      if (table === 'notifications' || table === 'notices' || !table) {
         getAppNotifications(currentUser.uid, currentUser.grade).then(list => setNotifications(list));
       }
     };
 
     window.addEventListener('studentos-db-update', handleDbUpdate);
 
+    // Subscribe to both Postgres changes and Realtime Broadcast channel
     const channel = supabase.channel('student-os-live-sync')
       .on('postgres_changes', { event: '*', schema: 'public' }, () => {
         getSupabaseHomework().then(list => {
           if (list && list.length > 0) setHomeworkList(list);
         });
+        getAppNotifications(currentUser.uid, currentUser.grade).then(list => setNotifications(list));
+      })
+      .on('broadcast', { event: 'new_app_notification' }, (payload) => {
+        console.log('[REALTIME-BROADCAST] Received broadcast notification:', payload);
         getAppNotifications(currentUser.uid, currentUser.grade).then(list => setNotifications(list));
       })
       .subscribe();
