@@ -332,7 +332,7 @@ export async function executeCreateBroadcast(
       type: 'Notice',
       description: content,
       uploaded_by: sender,
-      created_at: new Date().toISOString(),
+      created_at: Date.now(),
       created_at_date: new Date().toISOString().split('T')[0],
       is_public: true,
       visibility: 'Public'
