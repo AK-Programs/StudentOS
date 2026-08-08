@@ -21,7 +21,8 @@ import {
   markNotificationAsRead, 
   markAllNotificationsAsRead, 
   deleteNotification,
-  triggerNotificationSound 
+  triggerNotificationSound,
+  isUserEligibleForNotification
 } from '../lib/notifications';
 import { soundService } from '../lib/soundService';
 import { supabase } from '../lib/supabase';
@@ -46,8 +47,9 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
   // Load notifications from Supabase
   const loadNotifications = async () => {
     if (!currentUser) return;
-    const data = await getAppNotifications(currentUser.uid);
-    setNotifications(data);
+    const data = await getAppNotifications(currentUser.uid, currentUser.grade, currentUser.section, currentUser.role);
+    const dismissed: string[] = JSON.parse(localStorage.getItem(`s_os_dismissed_notifs_${currentUser.uid}`) || '[]');
+    setNotifications(data.filter(n => !dismissed.includes(n.id)));
   };
 
   useEffect(() => {
@@ -58,10 +60,12 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
     channel.on('broadcast', { event: 'new_app_notification' }, (payload) => {
       if (payload && payload.payload) {
         const notif = payload.payload as AppNotification;
-        const isForMe = !notif.targetUserId || notif.targetUserId === 'all' || notif.targetUserId === currentUser?.uid;
-        if (isForMe) {
-          setNotifications((prev) => [notif, ...prev.filter((n) => n.id !== notif.id)]);
-          triggerNotificationSound(notif.type);
+        if (isUserEligibleForNotification(notif, currentUser || {})) {
+          const dismissed: string[] = JSON.parse(localStorage.getItem(`s_os_dismissed_notifs_${currentUser?.uid}`) || '[]');
+          if (!dismissed.includes(notif.id)) {
+            setNotifications((prev) => [notif, ...prev.filter((n) => n.id !== notif.id)]);
+            triggerNotificationSound(notif.type);
+          }
         }
       }
     });
@@ -69,7 +73,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [currentUser?.uid]);
+  }, [currentUser?.uid, currentUser?.grade, currentUser?.section, currentUser?.role]);
 
   const toggleSound = () => {
     const muted = soundService.toggleMute();
@@ -91,7 +95,17 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
 
   const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    await deleteNotification(id);
+    const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'super_admin';
+    if (isAdmin) {
+      await deleteNotification(id);
+    } else {
+      // Ordinary users dismiss notification locally without altering authoritative Supabase record
+      const dismissed: string[] = JSON.parse(localStorage.getItem(`s_os_dismissed_notifs_${currentUser?.uid}`) || '[]');
+      if (!dismissed.includes(id)) {
+        dismissed.push(id);
+        localStorage.setItem(`s_os_dismissed_notifs_${currentUser?.uid}`, JSON.stringify(dismissed));
+      }
+    }
     setNotifications((prev) => prev.filter((n) => n.id !== id));
   };
 
