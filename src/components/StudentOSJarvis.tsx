@@ -11,6 +11,12 @@ import { saveSupabaseHomework, getSupabaseHomework, deleteSupabaseHomework } fro
 import { createOrUpdateMeeting, deleteMeeting, fetchAllMeetings } from '../lib/supabaseMeet';
 import { saveAppNotification, getAppNotifications } from '../lib/notifications';
 import { executeOrionCommunicationDispatch } from '../lib/orionCommunication';
+import { 
+  executeOrionActionPipeline, 
+  OrionAction, 
+  OrionUserContext, 
+  OrionActionType 
+} from '../lib/orionActionExecutor';
 import { StudentReport, HouseAnalytics, SectionAnalytics, TeacherCommand, JarvisHistoryItem } from '../types';
 
 interface StudentOSJarvisProps {
@@ -828,6 +834,38 @@ Your response MUST be raw JSON format with NO markdown wrapping:
   };
 
   // Command Parser & Executor (Orion 2.0 Operating Assistant)
+  const mapActionNameToType = (aiAction: string, textLow: string): OrionActionType => {
+    if (aiAction === 'send_broadcast' || textLow.includes('broadcast')) return 'create_broadcast';
+    if (aiAction === 'notify_users' || textLow.includes('notify') || textLow.includes('tell class')) return 'notify_users';
+    if (aiAction === 'create_event' || textLow.includes('schedule event') || textLow.includes('annual function') || textLow.includes('schedule assembly')) return 'create_event';
+    if (aiAction === 'create_competition' || textLow.includes('competition')) return 'create_competition';
+    if (aiAction === 'create_meet' || (textLow.includes('schedule') && textLow.includes('meet'))) return 'create_meeting';
+    if (aiAction === 'create_homework' || textLow.includes('homework') || textLow.includes('assignment')) return 'create_homework';
+    if (aiAction === 'delete_item' || textLow.startsWith('delete') || textLow.startsWith('cancel') || textLow.startsWith('remove')) return 'delete_item';
+    if (aiAction === 'register_competition') return 'register_competition';
+    if (aiAction === 'start_attendance') return 'start_attendance';
+    return (aiAction as OrionActionType) || 'general_chat';
+  };
+
+  const parseMultiStepActions = (rawText: string, primary: OrionAction): OrionAction[] => {
+    const lower = rawText.toLowerCase();
+    const actions: OrionAction[] = [primary];
+
+    if ((lower.includes('competition') || lower.includes('event') || lower.includes('meet') || lower.includes('assignment')) &&
+        (lower.includes(' and notify ') || lower.includes(' and tell ') || lower.includes(' and send notification'))) {
+      const classMatch = lower.match(/class\s+(\d+[a-z]?)/i);
+      actions.push({
+        action: 'notify_users',
+        title: `📢 Alert regarding ${primary.title || 'new update'}`,
+        message: `Update: ${primary.title || rawText}`,
+        audience: classMatch ? `Class ${classMatch[1].toUpperCase()}` : 'all',
+        targetClass: classMatch ? `Class ${classMatch[1].toUpperCase()}` : undefined
+      });
+    }
+
+    return actions;
+  };
+
   const executeVoiceCommand = async (textToParse: string) => {
     if (!textToParse.trim()) return;
     setIsProcessing(true);
@@ -839,34 +877,24 @@ Your response MUST be raw JSON format with NO markdown wrapping:
       const confirmNegatives = ['no', 'cancel', 'dont', "don't", 'abort', 'stop', 'keep it'];
 
       if (confirmAffirmatives.some(k => textLow.includes(k))) {
-        const { action, targetValue, payload } = pendingConfirmation;
-        let confirmFeedback = '';
+        const userCtx: OrionUserContext = {
+          userId: currentUser?.uid,
+          userName: currentUser?.name || 'User',
+          userEmail: currentUser?.email,
+          userRole: effectiveRole || 'student'
+        };
 
-        if (action === 'delete_item' || action === 'delete_competition') {
-          const compTitle = targetValue || payload?.title || 'item';
-          try {
-            await supabase.from('life_competitions').delete().ilike('title', `%${compTitle}%`);
-            await supabase.from('meetings').delete().ilike('title', `%${compTitle}%`);
-            await supabase.from('homework').delete().ilike('title', `%${compTitle}%`);
-            await supabase.from('life_events').delete().ilike('title', `%${compTitle}%`);
-          } catch (e) {
-            console.warn('Delete warning:', e);
-          }
-          confirmFeedback = `🗑️ Confirmed! Successfully deleted '${compTitle}' from the database.`;
-          showNotification(`SYSTEM: Deleted '${compTitle}'.`);
-        } else if (action === 'send_broadcast') {
-          await executeOrionCommunicationDispatch(
-            payload?.prompt || targetValue || textToParse,
-            currentUser?.name || 'Principal',
-            []
-          );
-          confirmFeedback = `📢 Confirmed! Broadcast dispatched school-wide and saved to Notice Board.`;
-          showNotification('SYSTEM: School-Wide Broadcast Dispatched.');
-        }
+        const actionToExec: OrionAction = {
+          action: pendingConfirmation.action as any,
+          title: pendingConfirmation.targetValue,
+          targetValue: pendingConfirmation.targetValue
+        };
 
+        const execRes = await executeOrionActionPipeline([actionToExec], userCtx, textToParse, true);
         setPendingConfirmation(null);
-        setJarvisFeedback(confirmFeedback);
-        speakFeedback(confirmFeedback);
+        setJarvisFeedback(execRes.combinedSummary);
+        speakFeedback(execRes.combinedSummary);
+        showNotification(`SYSTEM: Confirmed execution of ${pendingConfirmation.targetValue}`);
         setIsProcessing(false);
         return;
       } else if (confirmNegatives.some(k => textLow.includes(k))) {
@@ -901,262 +929,87 @@ Your response MUST be raw JSON format with NO markdown wrapping:
       return;
     }
 
-    let resolvedFeedback = '';
-    let actionTriggered = 'unknown';
-
-    // Query Orion AI Operating Engine
+    // Query Orion AI Operating Engine for classification
     const aiVerdict = await queryJarvisAIStream(textToParse);
-    resolvedFeedback = aiVerdict.responseText;
-    actionTriggered = aiVerdict.action;
     const details = aiVerdict.details || {};
     const targetVal = aiVerdict.targetValue || details.title || textToParse;
 
-    // Direct operational execution
-    if (actionTriggered === 'send_broadcast' || textLow.startsWith('create a broadcast') || textLow.startsWith('broadcast saying') || textLow.includes('broadcast to everyone')) {
-      const dispatchRes = await executeOrionCommunicationDispatch(
-        textToParse,
-        currentUser?.name || 'Principal',
-        []
-      );
-      resolvedFeedback = `📢 Multi-channel broadcast dispatched successfully! ${dispatchRes.summaryText}`;
-      showNotification('📢 Orion Broadcast Sent School-Wide');
-      lastEntityRef.current = { type: 'broadcast', title: 'Broadcast Announcement' };
+    // Construct primary action
+    const mappedAction = mapActionNameToType(aiVerdict.action, textLow);
+    const primaryAction: OrionAction = {
+      action: mappedAction,
+      title: details.title || targetVal,
+      message: details.content || textToParse,
+      content: details.content || textToParse,
+      subject: details.subject || 'General Studies',
+      category: details.category || 'General',
+      audience: details.targetAudience || 'all',
+      targetClass: details.targetClass || 'Grade 10',
+      date: details.date,
+      time: details.time,
+      targetValue: targetVal,
+      details
+    };
 
-    } else if (actionTriggered === 'notify_users' || textLow.includes('notify all teachers') || textLow.includes('notify class')) {
-      const classMatch = textLow.match(/class\s+(\d+[a-z]?)/i);
-      const targetAudience = classMatch ? `Class ${classMatch[1].toUpperCase()}` : (textLow.includes('teacher') ? 'teachers' : 'all');
-      
-      await saveAppNotification({
-        id: `notif-orion-${Date.now()}`,
-        title: `📢 Alert from ${currentUser?.name || 'School Operating System'}`,
-        message: textToParse.replace(/notify\s+/i, '').replace(/tell\s+/i, ''),
-        type: 'announcement',
-        createdAt: new Date().toISOString(),
-        isRead: false,
-        targetUserId: targetAudience === 'teachers' ? 'teachers' : 'all',
-        targetClass: targetAudience.startsWith('Class') ? targetAudience : undefined,
-        linkTab: 'notice_viewer'
-      });
+    // Check for multi-step instructions
+    const actionList = parseMultiStepActions(textToParse, primaryAction);
 
-      resolvedFeedback = `🔔 Direct alert sent to ${targetAudience}: "${textToParse}". All matching users notified!`;
-      showNotification(`🔔 Alert Sent to ${targetAudience}`);
+    const userCtx: OrionUserContext = {
+      userId: currentUser?.uid,
+      userName: currentUser?.name || 'User',
+      userEmail: currentUser?.email,
+      userRole: effectiveRole || 'student'
+    };
 
-    } else if (actionTriggered === 'create_competition' || (textLow.includes('create') && textLow.includes('competition'))) {
-      const compTitle = targetVal || 'New School Competition';
-      await createCompetition({
-        title: compTitle,
-        category: details.category || 'Academic',
-        eligibility: 'All Grades',
-        prizePool: 'Trophies, Medals & Certificates',
-        status: 'Upcoming',
-        description: `Organized via Orion Operating Assistant for ${currentUser?.name || 'Students'}.`
-      });
+    // Execute through Centralized Action Executor Pipeline
+    const pipelineRes = await executeOrionActionPipeline(actionList, userCtx, textToParse, false);
 
-      await saveAppNotification({
-        id: `notif-comp-${Date.now()}`,
-        title: `🏆 New Competition: ${compTitle}`,
-        message: `Registration is now open on StudentOS Life!`,
-        type: 'announcement',
-        createdAt: new Date().toISOString(),
-        isRead: false,
-        linkTab: 'life'
-      });
-
-      lastEntityRef.current = { type: 'competition', title: compTitle };
-      resolvedFeedback = `🏆 Competition '${compTitle}' created and published on StudentOS Life! Students can now view & register.`;
-      showNotification(`🏆 Competition '${compTitle}' Published`);
-
-    } else if (actionTriggered === 'create_event' || (textLow.includes('schedule') && (textLow.includes('function') || textLow.includes('event') || textLow.includes('assembly')))) {
-      const eventTitle = targetVal || details.title || 'School Event';
-      const eventDate = details.date || new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0];
-      const eventTime = details.time || '09:00 AM';
-
-      await createSchoolEvent({
-        title: eventTitle,
-        category: details.category || 'Cultural',
-        date: eventDate,
-        time: eventTime,
-        location: 'Main Auditorium / Campus Grounds',
-        description: `Scheduled via Orion Operating Assistant.`
-      });
-
-      await saveAppNotification({
-        id: `notif-event-${Date.now()}`,
-        title: `📅 Event Scheduled: ${eventTitle}`,
-        message: `Scheduled for ${eventDate} at ${eventTime}.`,
-        type: 'announcement',
-        createdAt: new Date().toISOString(),
-        isRead: false,
-        linkTab: 'life'
-      });
-
-      lastEntityRef.current = { type: 'event', title: eventTitle, date: eventDate };
-      resolvedFeedback = `📅 Event '${eventTitle}' scheduled for ${eventDate} at ${eventTime}. Saved to Supabase database & users notified.`;
-      showNotification(`📅 Event '${eventTitle}' Scheduled`);
-
-    } else if (actionTriggered === 'create_meet' || (textLow.includes('schedule') && textLow.includes('meet'))) {
-      const meetTitle = targetVal || 'StudentOS Virtual Classroom';
-      const meetId = `meet-${Date.now().toString().slice(-8)}`;
-      
-      await createOrUpdateMeeting({
-        id: meetId,
-        title: meetTitle,
-        subject: 'General Assembly / Class',
-        className: 'Grade 10 - Astra',
-        type: 'scheduled',
-        startTime: new Date(Date.now() + 3600000).toISOString(),
-        endTime: new Date(Date.now() + 7200000).toISOString(),
-        description: `Scheduled via Orion Assistant.`,
-        password: '123456',
-        hostId: currentUser?.uid || 'host',
-        hostName: currentUser?.name || 'Faculty Host',
-        hostEmail: currentUser?.email || 'admin@school.edu',
-        hostRole: effectiveRole || 'teacher',
-        joinLink: `${window.location.origin}?meet=${meetId}`,
-        status: 'upcoming',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      });
-
-      lastEntityRef.current = { type: 'meeting', title: meetTitle, id: meetId };
-      resolvedFeedback = `📹 StudentOS Meet '${meetTitle}' scheduled successfully! Join link generated and sent to invited users.`;
-      showNotification(`📹 StudentOS Meet '${meetTitle}' Scheduled`);
-
-    } else if (actionTriggered === 'create_homework' || (textLow.includes('create') && (textLow.includes('homework') || textLow.includes('assignment')))) {
-      const hwTitle = targetVal || 'Class Assignment';
-      const hwId = `hw-${Date.now()}`;
-      
-      await saveSupabaseHomework({
-        id: hwId,
-        title: hwTitle,
-        subject: details.subject || 'General Studies',
-        content: details.content || textToParse,
-        dueDate: details.date || new Date(Date.now() + 86400000 * 2).toISOString().split('T')[0],
-        classGrade: 'Grade 10',
-        classSection: 'Astra',
-        givenBy: currentUser?.name || 'Faculty Teacher',
-        createdAt: new Date().toISOString(),
-        completedList: []
-      });
-
-      await saveAppNotification({
-        id: `notif-hw-${Date.now()}`,
-        title: `📝 Homework Assigned: ${hwTitle}`,
-        message: `Due on ${details.date || 'upcoming date'}. Check Homework section.`,
-        type: 'homework',
-        createdAt: new Date().toISOString(),
-        isRead: false,
-        linkTab: 'assignments'
-      });
-
-      lastEntityRef.current = { type: 'homework', title: hwTitle };
-      resolvedFeedback = `📝 Assignment '${hwTitle}' created and assigned to students in Grade 10! Saved in Supabase database.`;
-      showNotification(`📝 Homework '${hwTitle}' Assigned`);
-
-    } else if (actionTriggered === 'delete_item' || textLow.startsWith('delete') || textLow.startsWith('remove') || textLow.startsWith('cancel')) {
-      const itemTitle = targetVal || lastEntityRef.current?.title || 'item';
+    if (pipelineRes.pendingConfirmation) {
       setPendingConfirmation({
-        action: 'delete_item',
-        targetValue: itemTitle,
-        promptText: `⚠️ Are you sure you want me to delete '${itemTitle}'? This will permanently remove it from Supabase.`
+        action: pipelineRes.pendingConfirmation.action,
+        targetValue: pipelineRes.pendingConfirmation.targetTitle,
+        promptText: pipelineRes.pendingConfirmation.promptText
       });
-      resolvedFeedback = `⚠️ Are you sure you want me to delete '${itemTitle}'? Say "Yes, confirm" to proceed or "Cancel" to abort.`;
+    }
 
-    } else if (actionTriggered === 'register_competition' || textLow.includes('register for competition') || textLow.includes('register competition')) {
-      const compName = targetVal || lastEntityRef.current?.title || 'Competition';
-      try {
-        const { data: comp } = await supabase.from('life_competitions').select('*').ilike('title', `%${compName}%`).limit(1);
-        if (comp && comp.length > 0) {
-          const currentCount = comp[0].registered_count || 0;
-          await supabase.from('life_competitions').update({ registered_count: currentCount + 1 }).eq('id', comp[0].id);
-        }
-      } catch (e) {
-        console.warn('Registration update warning:', e);
-      }
-      resolvedFeedback = `🎟️ You have been successfully registered for '${compName}'! Added to your StudentOS Life schedule.`;
-      showNotification(`🎟️ Registered for ${compName}`);
+    let resolvedFeedback = pipelineRes.combinedSummary;
+    let actionTriggered = mappedAction;
 
-    } else if (actionTriggered === 'show_pending_assignments' || textLow.includes('pending assignment') || textLow.includes('show assignment')) {
+    // View / Tab Navigation Helpers
+    if (mappedAction === 'show_pending_assignments' || textLow.includes('pending assignment')) {
       setActiveTab('assignments');
-      const hwList = await getSupabaseHomework();
-      if (hwList.length > 0) {
-        const pending = hwList.slice(0, 5).map((h, i) => `${i + 1}. **${h.title}** (${h.subject}) — Due: ${h.dueDate}`).join('\n');
-        resolvedFeedback = `📝 **Pending Assignments from Database**:\n\n${pending}`;
-      } else {
-        resolvedFeedback = `📝 You have no pending assignments! All caught up.`;
-      }
-
-    } else if (actionTriggered === 'show_timetable' || textLow.includes('timetable') || textLow.includes('schedule')) {
+    } else if (mappedAction === 'show_timetable' || textLow.includes('timetable')) {
       setActiveTab('timetable_viewer');
-      resolvedFeedback = `📅 **Tomorrow's School Timetable**:\n\n- 08:30 AM — Mathematics (Algebra & Vectors)\n- 09:30 AM — Quantum Physics Laboratory\n- 10:30 AM — Morning Assembly & News\n- 11:00 AM — World History & Civics\n- 01:00 PM — Computer Science (Python/React)`;
-
-    } else if (actionTriggered === 'show_attendance' || textLow.includes('show attendance')) {
+    } else if (mappedAction === 'show_attendance' || mappedAction === 'start_attendance' || textLow.includes('attendance')) {
       setActiveTab('attendance_manager');
-      resolvedFeedback = `📋 **Current Class Attendance Summary**:\n\n- Grade 10 - Ruby: 96.4% Present (28/29)\n- Grade 9 - Astra: 98.1% Present (31/31)\n- Overall Campus Attendance: 97.2%`;
-
-    } else if (actionTriggered === 'start_attendance' || textLow.includes('start attendance')) {
-      setActiveTab('attendance_manager');
-      resolvedFeedback = `📋 Attendance session initialized for Grade 10 - Ruby Section. Ready to mark students!`;
-
-    } else if (actionTriggered === 'create_quiz' || textLow.includes('create quiz')) {
-      setActiveTab('quiz');
-      if (setTriggerQuickQuiz) setTriggerQuickQuiz(true);
-      resolvedFeedback = `🎮 Quiz Engine launched! Synthesizing adaptive MCQs for classroom evaluation.`;
-
-    } else if (actionTriggered === 'create_game' || textLow.includes('classroom game') || textLow.includes('fun zone')) {
-      setActiveTab('funzone' as any);
-      resolvedFeedback = `🎡 Teacher Fun Zone opened! Interactive smartboard wheel & team quiz games ready.`;
-
-    } else if (actionTriggered === 'show_announcements' || textLow.includes('announcement') || textLow.includes('notice')) {
+    } else if (mappedAction === 'show_announcements' || textLow.includes('notice')) {
       setActiveTab('notice_viewer');
-      const notifs = await getAppNotifications();
-      if (notifs.length > 0) {
-        const topNotifs = notifs.slice(0, 5).map((n, i) => `${i + 1}. **${n.title}**: ${n.message}`).join('\n');
-        resolvedFeedback = `📢 **Official School Notices**:\n\n${topNotifs}`;
-      } else {
-        resolvedFeedback = `📢 No new notices at this time.`;
-      }
-
     } else if (textLow.includes('studentos life') || textLow.includes('open life')) {
       setActiveTab('life' as any);
-      resolvedFeedback = '🚀 Opening StudentOS Life portal.';
     } else if (textLow.includes('studentos meet') || textLow.includes('open meet')) {
       setActiveTab('meet' as any);
-      resolvedFeedback = '📹 Opening StudentOS Meet video conferencing room.';
-    } else if (actionTriggered === 'navigate_tab' && targetVal) {
+    } else if (mappedAction === 'navigate_tab' && targetVal) {
       const tabVal = targetVal.toLowerCase();
-      const allowedTabs = ['materials', 'whiteboard', 'ai_teacher', 'quiz', 'planner', 'feedback', 'homework', 'chats', 'assignments', 'timetable_viewer', 'worksheet_viewer', 'notice_viewer', 'attendance_manager', 'dashboard', 'life', 'meet', 'funzone', 'notes'];
-      if (allowedTabs.includes(tabVal)) {
-        setActiveTab(tabVal as any);
-      } else if (tabVal.includes('life')) {
-        setActiveTab('life' as any);
-      } else if (tabVal.includes('meet')) {
-        setActiveTab('meet' as any);
-      } else if (tabVal.includes('fun')) {
-        setActiveTab('funzone' as any);
-      } else if (tabVal.includes('assignment')) {
-        setActiveTab('assignments');
-      } else if (tabVal.includes('attendance')) {
-        setActiveTab('attendance_manager');
-      } else if (tabVal.includes('timetable') || tabVal.includes('schedule')) {
-        setActiveTab('timetable_viewer');
-      } else if (tabVal.includes('notice') || tabVal.includes('announcement')) {
-        setActiveTab('notice_viewer');
-      } else {
-        setActiveTab('dashboard');
-      }
-    } else if (actionTriggered === 'search_internet') {
+      if (tabVal.includes('life')) setActiveTab('life' as any);
+      else if (tabVal.includes('meet')) setActiveTab('meet' as any);
+      else if (tabVal.includes('fun')) setActiveTab('funzone' as any);
+      else if (tabVal.includes('assignment')) setActiveTab('assignments');
+      else if (tabVal.includes('attendance')) setActiveTab('attendance_manager');
+      else if (tabVal.includes('timetable') || tabVal.includes('schedule')) setActiveTab('timetable_viewer');
+      else if (tabVal.includes('notice') || tabVal.includes('announcement')) setActiveTab('notice_viewer');
+    } else if (mappedAction === 'search_internet') {
       handleRunInternetSearch(targetVal);
-    } else if (actionTriggered === 'generate_notes') {
+    } else if (mappedAction === 'generate_notes') {
       setActiveTab('notes');
       handleGenerateNotes(targetVal);
-    } else if (actionTriggered === 'generate_lesson_plan') {
+    } else if (mappedAction === 'generate_lesson_plan') {
       setActiveTab('planner');
       handleGenerateLessonPlan(targetVal);
     }
 
     setJarvisFeedback(resolvedFeedback);
     speakFeedback(resolvedFeedback);
+    showNotification(`ORION: ${actionTriggered} processed.`);
 
     // Log command audit
     const newAuditItem: TeacherCommand = {
