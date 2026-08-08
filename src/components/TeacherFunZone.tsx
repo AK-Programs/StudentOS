@@ -105,7 +105,7 @@ export const TeacherFunZone: React.FC<TeacherFunZoneProps> = ({ currentUser }) =
   useEffect(() => {
     const fetchStudentsForClassSection = async () => {
       try {
-        let query = supabase.from('users').select('name, grade, section').eq('role', 'student');
+        let query = supabase.from('user_profiles').select('name, grade, section').eq('role', 'student');
         if (selectedGrade && selectedGrade !== 'All Classes') {
           const num = selectedGrade.replace('Grade ', '').trim();
           query = query.ilike('grade', `%${num}%`);
@@ -113,8 +113,21 @@ export const TeacherFunZone: React.FC<TeacherFunZoneProps> = ({ currentUser }) =
         if (selectedSection && selectedSection !== 'All Sections') {
           query = query.ilike('section', `%${selectedSection}%`);
         }
-        const { data, error } = await query;
-        if (!error && data && data.length > 0) {
+        let { data, error } = await query;
+        if ((error || !data || data.length === 0)) {
+          let fallbackQuery = supabase.from('users').select('name, grade, section').eq('role', 'student');
+          if (selectedGrade && selectedGrade !== 'All Classes') {
+            const num = selectedGrade.replace('Grade ', '').trim();
+            fallbackQuery = fallbackQuery.ilike('grade', `%${num}%`);
+          }
+          if (selectedSection && selectedSection !== 'All Sections') {
+            fallbackQuery = fallbackQuery.ilike('section', `%${selectedSection}%`);
+          }
+          const res = await fallbackQuery;
+          if (res.data && res.data.length > 0) data = res.data;
+        }
+
+        if (data && data.length > 0) {
           setActiveStudents(data.map((s: any) => s.name));
           return;
         }
