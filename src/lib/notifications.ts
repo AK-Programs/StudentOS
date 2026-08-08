@@ -68,6 +68,55 @@ export async function getAppNotifications(userId?: string, userClass?: string): 
 }
 
 /**
+ * Request Browser Push Notification permission
+ */
+export async function requestWebPushPermission(): Promise<boolean> {
+  if (typeof window === 'undefined' || !('Notification' in window)) {
+    return false;
+  }
+  if (Notification.permission === 'granted') {
+    return true;
+  }
+  if (Notification.permission !== 'denied') {
+    try {
+      const permission = await Notification.requestPermission();
+      return permission === 'granted';
+    } catch (_) {
+      return false;
+    }
+  }
+  return false;
+}
+
+/**
+ * Dispatch real browser desktop/mobile push notification
+ */
+export function triggerBrowserPushNotification(title: string, options?: NotificationOptions) {
+  if (typeof window === 'undefined' || !('Notification' in window)) return;
+  
+  if (Notification.permission === 'granted') {
+    try {
+      const n = new Notification(title, {
+        icon: '/favicon.ico',
+        badge: '/favicon.ico',
+        tag: options?.tag || 'studentos-alert',
+        body: options?.body || '',
+        ...options
+      });
+      n.onclick = (e) => {
+        e.preventDefault();
+        window.focus();
+        if (options?.data?.linkTab && typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('studentos-navigate-tab', { detail: { tab: options.data.linkTab } }));
+        }
+      };
+    } catch (e) {
+      console.warn('[WebPush] Push notification trigger warning:', e);
+    }
+  }
+}
+
+/**
  * Save notification to Supabase and broadcast in realtime
  */
 export async function saveAppNotification(notif: AppNotification): Promise<{ success: boolean; error?: string }> {
@@ -75,6 +124,12 @@ export async function saveAppNotification(notif: AppNotification): Promise<{ suc
 
   // Play audio chime locally
   triggerNotificationSound(notif.type);
+
+  // Trigger Web Push Notification
+  triggerBrowserPushNotification(notif.title, {
+    body: notif.message,
+    data: { linkTab: notif.linkTab || 'notice_viewer' }
+  });
 
   const finalId = isValidUUID(notif.id) ? notif.id : generateUUID();
   const targetUser = notif.targetUserId || 'all';
