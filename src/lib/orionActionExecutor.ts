@@ -41,6 +41,7 @@ export type OrionActionType =
   | 'show_attendance'
   | 'show_announcements'
   | 'navigate_tab'
+  | 'web_search'
   | 'general_chat';
 
 export interface OrionAction {
@@ -326,15 +327,27 @@ export async function executeCreateBroadcast(
     const noticePayload = {
       id: `notice-${Date.now()}`,
       title: title.startsWith('📢') ? title : `📢 ${title}`,
-      category: 'notice',
-      content: content,
-      created_by: sender,
-      created_at: new Date().toISOString()
+      subject: 'School Notice',
+      category: 'Notice',
+      type: 'Notice',
+      description: content,
+      uploaded_by: sender,
+      created_at: new Date().toISOString(),
+      created_at_date: new Date().toISOString().split('T')[0],
+      is_public: true,
+      visibility: 'Public'
     };
 
     const { error: insErr } = await supabase.from('materials').insert([noticePayload]);
     if (insErr) {
-      console.warn('[ORION] Supabase notice insert warning:', insErr.message);
+      console.error('[ORION] Supabase notice insert error:', insErr.message);
+      return {
+        success: false,
+        action: 'create_broadcast',
+        message: `Failed to insert notice card in database.`,
+        summaryText: `⚠️ Broadcast creation failed because notice storage produced a database error: ${insErr.message}`,
+        error: insErr.message
+      };
     }
 
     triggerRealtimeUIUpdate('notices', 'INSERT', noticePayload);
@@ -922,6 +935,16 @@ export async function executeOrionActionPipeline(
 
       case 'register_competition':
         res = await executeRegisterCompetition(act, userContext);
+        break;
+
+      case 'web_search':
+      case 'search_internet':
+        res = {
+          success: true,
+          action: 'web_search',
+          message: 'Web Search Coming Soon',
+          summaryText: `🚀 **Web Search — Coming Soon**\n\nOnline web search capabilities and live internet grounding will arrive in a future StudentOS update.`
+        };
         break;
 
       default:
