@@ -840,6 +840,10 @@ Your response MUST be raw JSON format with NO markdown wrapping:
     if (aiAction === 'create_event' || textLow.includes('schedule event') || textLow.includes('annual function') || textLow.includes('schedule assembly')) return 'create_event';
     if (aiAction === 'create_competition' || textLow.includes('competition')) return 'create_competition';
     if (aiAction === 'create_meet' || (textLow.includes('schedule') && textLow.includes('meet'))) return 'create_meeting';
+    if (aiAction === 'add_study_planner' || textLow.includes('study planner') || textLow.includes('study session')) return 'add_study_planner';
+    if (aiAction === 'add_task' || (textLow.includes('task') && (textLow.includes('add') || textLow.includes('create') || textLow.includes('new')))) return 'add_task';
+    if (aiAction === 'complete_task' || (textLow.includes('task') && (textLow.includes('mark') || textLow.includes('complete') || textLow.includes('done')))) return 'complete_task';
+    if (aiAction === 'delete_task' || (textLow.includes('task') && textLow.includes('delete'))) return 'delete_task';
     if (aiAction === 'create_homework' || textLow.includes('homework') || textLow.includes('assignment')) return 'create_homework';
     if (aiAction === 'delete_item' || textLow.startsWith('delete') || textLow.startsWith('cancel') || textLow.startsWith('remove')) return 'delete_item';
     if (aiAction === 'register_competition') return 'register_competition';
@@ -850,6 +854,16 @@ Your response MUST be raw JSON format with NO markdown wrapping:
   const parseMultiStepActions = (rawText: string, primary: OrionAction): OrionAction[] => {
     const lower = rawText.toLowerCase();
     const actions: OrionAction[] = [primary];
+
+    // Compound intent for Study Planner AND Task Manager
+    if (lower.includes('study planner') && (lower.includes('task') || lower.includes('tasks'))) {
+      if (!actions.some(a => a.action === 'add_study_planner')) {
+        actions.push({ action: 'add_study_planner', title: primary.title || primary.targetValue, date: primary.date, time: primary.time });
+      }
+      if (!actions.some(a => a.action === 'add_task')) {
+        actions.push({ action: 'add_task', title: primary.title || primary.targetValue, date: primary.date });
+      }
+    }
 
     if ((lower.includes('competition') || lower.includes('event') || lower.includes('meet') || lower.includes('assignment')) &&
         (lower.includes(' and notify ') || lower.includes(' and tell ') || lower.includes(' and send notification'))) {
