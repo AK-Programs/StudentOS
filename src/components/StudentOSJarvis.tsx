@@ -424,24 +424,29 @@ export const StudentOSJarvis: React.FC<StudentOSJarvisProps> = ({
     });
 
     // Fetch commands from Supabase
-    supabase
-      .from('teacher_commands')
-      .select('*')
-      .eq('user_id', currentUser.uid)
-      .order('recognized_at', { ascending: false })
-      .limit(20)
-      .then(({ data, error }) => {
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('teacher_commands')
+          .select('*')
+          .eq('teacher_id', currentUser.uid)
+          .order('created_at', { ascending: false })
+          .limit(20);
+
         if (data && !error) {
           const mapped: TeacherCommand[] = data.map((item: any) => ({
             id: item.id,
-            commandText: item.command_text,
-            recognizedAt: item.recognized_at,
+            commandText: item.command || item.command_text,
+            recognizedAt: item.created_at || item.recognized_at,
             parsedAction: item.parsed_action,
             status: item.status
           }));
           setCommandAudit(mapped);
         }
-      });
+      } catch (err) {
+        console.warn('Teacher commands fetch notice:', err);
+      }
+    })();
   }, [currentUser]);
 
 
@@ -699,11 +704,43 @@ export const StudentOSJarvis: React.FC<StudentOSJarvisProps> = ({
   // Perform AI parsing fallback with Gemini/OpenRouter using our robust Express server
   const queryJarvisAIStream = async (command: string): Promise<{ responseText: string; action: string; targetValue?: string; details?: any }> => {
     try {
+      const cmdLow = command.toLowerCase().trim();
+
+      // Explicit Web Search intent detection
+      const isSearchQuery = (
+        cmdLow.startsWith('search ') ||
+        cmdLow.startsWith('look up ') ||
+        cmdLow.startsWith('find information about ') ||
+        cmdLow.startsWith('web search ') ||
+        cmdLow.startsWith('search online ') ||
+        cmdLow.includes('search about ') ||
+        cmdLow.includes('search the web for ') ||
+        cmdLow.includes('search online for ') ||
+        cmdLow.includes('look up information about ')
+      );
+
+      if (isSearchQuery) {
+        let queryStr = cmdLow
+          .replace(/^search\s+(about|for|the\s+web\s+for|online\s+for)?\s*/gi, '')
+          .replace(/^look\s+up\s+(information\s+about|info\s+about)?\s*/gi, '')
+          .replace(/^find\s+information\s+about\s*/gi, '')
+          .replace(/^web\s+search\s*/gi, '')
+          .replace(/^search\s+online\s+(for)?\s*/gi, '')
+          .trim();
+
+        return {
+          responseText: "🚀 **Web Search — Coming Soon**\n\nOnline web search capabilities and live internet grounding will arrive in a future StudentOS update.",
+          action: "web_search",
+          targetValue: queryStr || command,
+          details: { query: queryStr || command }
+        };
+      }
+
       let aiText = '';
       
-      // Build RAG Context from StudentOS
-      const { data: materialsData } = await supabase.from('materials').select('title, category, content').limit(5);
-      const ragContext = materialsData ? materialsData.map((m: any) => `[${m.category}] ${m.title}: ${m.content ? m.content.substring(0, 100) : ''}`).join('\n') : 'No local resources found.';
+      // Build RAG Context from StudentOS with correct materials schema
+      const { data: materialsData } = await supabase.from('materials').select('title, category, description').limit(5);
+      const ragContext = materialsData ? materialsData.map((m: any) => `[${m.category}] ${m.title}: ${m.description ? m.description.substring(0, 100) : ''}`).join('\n') : 'No local resources found.';
 
       const systemPrompt = `You are StudentOS Orion, the advanced School Operating Assistant AI Engine.
 The user typed or spoke this command: "${command}".
@@ -717,22 +754,7 @@ Analyze the input and classify into ONE of these operational actions:
 - "create_homework" (create homework, create assignment)
 - "create_notice" (upload notice, create notice)
 - "delete_item" (delete competition, delete event, cancel meeting, delete homework)
-- "register_competition" (register for competition)
-- "show_pending_assignments" (show pending assignments)
-- "show_timetable" (show tomorrow's timetable, show schedule)
-- "show_attendance" (show attendance)
-- "show_announcements" (show announcements, show notices)
-- "show_achievements" (show achievements, badges)
-- "find_lecture_notes" (find lecture notes, show notes)
-- "start_attendance" (start attendance)
-- "create_quiz" (create quiz)
-- "create_game" (create classroom game)
-- "publish_note" (publish lecture note)
-- "search_internet" (find online resources)
-- "generate_notes" (prepare notes)
-- "generate_lesson_plan" (prepare lesson plan)
-- "draw_on_whiteboard" / "write_on_whiteboard"
-- "navigate_tab" (open tab)
+- "web_search" (search online, look up information)
 - "general_chat" (general conversation or question)
 
 Your response MUST be raw JSON format with NO markdown wrapping:
@@ -764,27 +786,41 @@ Your response MUST be raw JSON format with NO markdown wrapping:
           })
         });
 
-        if (!response.ok) throw new Error('API request failed');
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data = await response.json();
         if (data.error) throw new Error(data.error);
         aiText = data.text;
       } catch (apiErr: any) {
-        console.log("Server API failed, falling back to client-side AI for Orion:", apiErr);
+        console.warn("Server API failed for Orion completion:", apiErr.message || apiErr);
         const { clientSideGemini } = await import('../lib/clientAiFallback');
         aiText = await clientSideGemini(systemPrompt);
       }
       
+      const cleanJsonString = (raw: string): string => {
+        let cleaned = raw.trim();
+        if (cleaned.startsWith('```')) {
+          cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+        }
+        return cleaned.trim();
+      };
+
       try {
-        const jsonMatch = aiText.match(/\{[\s\S]*?\}/);
-        if (jsonMatch && jsonMatch[0] !== 'undefined') {
-          return JSON.parse(jsonMatch[0]);
+        const cleanedStr = cleanJsonString(aiText);
+        const parsed = JSON.parse(cleanedStr);
+        if (parsed && typeof parsed === 'object') {
+          return {
+            responseText: parsed.responseText || parsed.response || aiText,
+            action: parsed.action || parsed.intent || 'general_chat',
+            targetValue: parsed.targetValue || parsed.details?.title || parsed.details?.query,
+            details: parsed.details || {}
+          };
         }
       } catch (e) {
-        console.warn('Fallback regex JSON parsing failed:', e);
+        console.warn('Structured JSON parsing notice:', e, 'Raw:', aiText?.slice(0, 100));
       }
 
       return {
-        responseText: aiText.length > 200 ? aiText.substring(0, 200) + "..." : aiText,
+        responseText: aiText && !aiText.includes('{') ? aiText : `I'm ready to assist you. Let me know what you'd like to automate across StudentOS!`,
         action: 'general_chat'
       };
     } catch (err: any) {
@@ -798,6 +834,7 @@ Your response MUST be raw JSON format with NO markdown wrapping:
 
   // Command Parser & Executor (Orion 2.0 Operating Assistant)
   const mapActionNameToType = (aiAction: string, textLow: string): OrionActionType => {
+    if (aiAction === 'web_search' || textLow.includes('search about') || textLow.includes('search the web') || textLow.startsWith('look up')) return 'web_search';
     if (aiAction === 'send_broadcast' || textLow.includes('broadcast')) return 'create_broadcast';
     if (aiAction === 'notify_users' || textLow.includes('notify') || textLow.includes('tell class')) return 'notify_users';
     if (aiAction === 'create_event' || textLow.includes('schedule event') || textLow.includes('annual function') || textLow.includes('schedule assembly')) return 'create_event';
