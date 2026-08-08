@@ -89,25 +89,42 @@ export async function requestWebPushPermission(): Promise<boolean> {
 }
 
 /**
- * Dispatch real browser desktop/mobile push notification
+ * Dispatch real browser desktop/mobile push notification via ServiceWorker or Notification API
  */
-export function triggerBrowserPushNotification(title: string, options?: NotificationOptions) {
+export async function triggerBrowserPushNotification(title: string, options?: NotificationOptions & { linkTab?: string }) {
   if (typeof window === 'undefined' || !('Notification' in window)) return;
   
   if (Notification.permission === 'granted') {
+    const notifOptions = {
+      icon: '/favicon.ico',
+      badge: '/favicon.ico',
+      tag: options?.tag || 'studentos-alert',
+      body: options?.body || '',
+      data: {
+        linkTab: options?.linkTab || options?.data?.linkTab || 'notice_viewer'
+      },
+      ...options
+    };
+
     try {
-      const n = new Notification(title, {
-        icon: '/favicon.ico',
-        badge: '/favicon.ico',
-        tag: options?.tag || 'studentos-alert',
-        body: options?.body || '',
-        ...options
-      });
+      if ('serviceWorker' in navigator) {
+        const registration = await navigator.serviceWorker.ready;
+        if (registration && registration.showNotification) {
+          await registration.showNotification(title, notifOptions);
+          return;
+        }
+      }
+    } catch (swErr) {
+      console.warn('[WebPush] SW notification fallback to standard Notification:', swErr);
+    }
+
+    try {
+      const n = new Notification(title, notifOptions);
       n.onclick = (e) => {
         e.preventDefault();
         window.focus();
-        if (options?.data?.linkTab && typeof window !== 'undefined') {
-          window.dispatchEvent(new CustomEvent('studentos-navigate-tab', { detail: { tab: options.data.linkTab } }));
+        if (notifOptions.data?.linkTab && typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('studentos-navigate-tab', { detail: { tab: notifOptions.data.linkTab } }));
         }
       };
     } catch (e) {
