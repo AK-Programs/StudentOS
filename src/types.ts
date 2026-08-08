@@ -264,6 +264,8 @@ export interface AppNotification {
   isRead: boolean;
   targetUserId?: string; // 'all' or user ID
   targetClass?: string;
+  targetSection?: string;
+  targetRole?: string;
   linkTab?: string;
 }
 
