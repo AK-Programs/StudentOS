@@ -2,10 +2,26 @@ import { supabase } from './supabase';
 import { AppNotification } from '../types';
 import { soundService } from './soundService';
 
+function isValidUUID(str?: string): boolean {
+  if (!str) return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+}
+
+function generateUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 /**
  * Fetch notifications from Supabase
  */
-export async function getAppNotifications(userId?: string): Promise<AppNotification[]> {
+export async function getAppNotifications(userId?: string, userClass?: string): Promise<AppNotification[]> {
   console.log('[SUPABASE-NOTIFS] Fetching notifications from Supabase...');
   const notifMap = new Map<string, AppNotification>();
 
@@ -17,21 +33,31 @@ export async function getAppNotifications(userId?: string): Promise<AppNotificat
 
     if (!error && data) {
       data.forEach(item => {
-        const targetUser = item.target_user_id || item.user_id || 'all';
-        if (targetUser === 'all' || targetUser === userId) {
-          notifMap.set(item.id, {
-            id: item.id,
-            title: item.title || 'StudentOS Alert',
-            message: item.message || item.content || '',
-            type: item.type || 'announcement',
+        const payload = item.payload && typeof item.payload === 'object' ? item.payload : {};
+        const targetUser = payload.targetUserId || item.target_user_id || item.user_id || 'all';
+        const targetClass = payload.targetClass || item.target_class;
+        
+        // Check audience targeting
+        const isForUser = targetUser === 'all' || !userId || targetUser === userId || item.user_id === userId || item.user_id === null;
+        const isForClass = !targetClass || !userClass || targetClass.toLowerCase() === 'all' || userClass.toLowerCase().includes(targetClass.toLowerCase()) || targetClass.toLowerCase().includes(userClass.toLowerCase());
+
+        if (isForUser && isForClass) {
+          const notifId = item.id || payload.id || generateUUID();
+          notifMap.set(notifId, {
+            id: notifId,
+            title: payload.title || item.title || 'StudentOS Alert',
+            message: payload.message || item.message || payload.content || item.content || '',
+            type: item.type || payload.type || 'announcement',
             createdAt: item.created_at ? new Date(item.created_at).toISOString() : new Date().toISOString(),
-            isRead: item.is_read || item.read || false,
+            isRead: item.is_read ?? payload.isRead ?? false,
             targetUserId: targetUser,
-            targetClass: item.target_class,
-            linkTab: item.link_tab || item.link
+            targetClass: targetClass,
+            linkTab: payload.linkTab || 'notice_viewer'
           });
         }
       });
+    } else if (error) {
+      console.warn('[SUPABASE-NOTIFS] Warning fetching notifications:', error.message);
     }
   } catch (err) {
     console.warn('[SUPABASE-NOTIFS] Error fetching notifications:', err);
@@ -44,32 +70,50 @@ export async function getAppNotifications(userId?: string): Promise<AppNotificat
 /**
  * Save notification to Supabase and broadcast in realtime
  */
-export async function saveAppNotification(notif: AppNotification): Promise<void> {
-  console.log('[SUPABASE-NOTIFS] Saving notification:', notif.id);
+export async function saveAppNotification(notif: AppNotification): Promise<{ success: boolean; error?: string }> {
+  console.log('[SUPABASE-NOTIFS] Saving notification:', notif.title);
 
-  // Play audio chime locally or triggers on broadcast
+  // Play audio chime locally
   triggerNotificationSound(notif.type);
 
-  try {
-    const dbRow = {
-      id: notif.id,
+  const finalId = isValidUUID(notif.id) ? notif.id : generateUUID();
+  const targetUser = notif.targetUserId || 'all';
+
+  const dbRow = {
+    id: finalId,
+    type: notif.type || 'announcement',
+    user_id: (targetUser !== 'all' && isValidUUID(targetUser)) ? targetUser : null,
+    is_read: notif.isRead || false,
+    created_at: notif.createdAt ? new Date(notif.createdAt).toISOString() : new Date().toISOString(),
+    payload: {
+      id: finalId,
       title: notif.title,
       message: notif.message,
       type: notif.type,
-      created_at: notif.createdAt ? new Date(notif.createdAt).toISOString() : new Date().toISOString(),
-      is_read: notif.isRead,
-      read: notif.isRead,
-      target_user_id: notif.targetUserId || 'all',
-      target_class: notif.targetClass || null,
-      link_tab: notif.linkTab || null
-    };
+      createdAt: notif.createdAt || new Date().toISOString(),
+      isRead: notif.isRead || false,
+      targetUserId: targetUser,
+      targetClass: notif.targetClass || null,
+      linkTab: notif.linkTab || 'notice_viewer'
+    }
+  };
 
+  let saveSuccess = true;
+  let saveErrorMessage: string | undefined;
+
+  try {
     const { error } = await supabase.from('notifications').upsert(dbRow);
     if (error) {
-      console.warn('[SUPABASE-NOTIFS] Error upserting notification:', error.message);
+      console.error('[SUPABASE-NOTIFS] Error upserting notification:', error.message);
+      saveSuccess = false;
+      saveErrorMessage = error.message;
+    } else {
+      console.log('[SUPABASE-NOTIFS] Successfully saved notification to Supabase:', finalId);
     }
-  } catch (err) {
-    console.warn('[SUPABASE-NOTIFS] Error saving notification:', err);
+  } catch (err: any) {
+    console.error('[SUPABASE-NOTIFS] Exception saving notification:', err);
+    saveSuccess = false;
+    saveErrorMessage = err?.message || 'Database error';
   }
 
   // Broadcast Realtime Event to all connected clients
@@ -78,9 +122,18 @@ export async function saveAppNotification(notif: AppNotification): Promise<void>
     await channel.send({
       type: 'broadcast',
       event: 'new_app_notification',
-      payload: notif
+      payload: { ...notif, id: finalId }
     });
   } catch (_) {}
+
+  // Trigger local window realtime event
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('studentos-db-update', {
+      detail: { table: 'notifications', action: 'INSERT', record: { ...notif, id: finalId }, timestamp: Date.now() }
+    }));
+  }
+
+  return { success: saveSuccess, error: saveErrorMessage };
 }
 
 /**
@@ -88,7 +141,9 @@ export async function saveAppNotification(notif: AppNotification): Promise<void>
  */
 export async function markNotificationAsRead(notifId: string): Promise<void> {
   try {
-    await supabase.from('notifications').update({ is_read: true, read: true }).eq('id', notifId);
+    if (isValidUUID(notifId)) {
+      await supabase.from('notifications').update({ is_read: true }).eq('id', notifId);
+    }
   } catch (err) {
     console.warn('[SUPABASE-NOTIFS] Error marking notification read:', err);
   }
@@ -99,10 +154,10 @@ export async function markNotificationAsRead(notifId: string): Promise<void> {
  */
 export async function markAllNotificationsAsRead(userId?: string): Promise<void> {
   try {
-    if (userId) {
-      await supabase.from('notifications').update({ is_read: true, read: true }).or(`target_user_id.eq.${userId},target_user_id.eq.all`);
+    if (userId && isValidUUID(userId)) {
+      await supabase.from('notifications').update({ is_read: true }).eq('user_id', userId);
     } else {
-      await supabase.from('notifications').update({ is_read: true, read: true }).eq('target_user_id', 'all');
+      await supabase.from('notifications').update({ is_read: true }).is('user_id', null);
     }
   } catch (err) {
     console.warn('[SUPABASE-NOTIFS] Error marking all read:', err);
@@ -114,7 +169,9 @@ export async function markAllNotificationsAsRead(userId?: string): Promise<void>
  */
 export async function deleteNotification(notifId: string): Promise<void> {
   try {
-    await supabase.from('notifications').delete().eq('id', notifId);
+    if (isValidUUID(notifId)) {
+      await supabase.from('notifications').delete().eq('id', notifId);
+    }
   } catch (err) {
     console.warn('[SUPABASE-NOTIFS] Error deleting notification:', err);
   }
@@ -134,3 +191,4 @@ export function triggerNotificationSound(type: string) {
     soundService.playMessageSound();
   }
 }
+
