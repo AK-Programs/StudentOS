@@ -18,7 +18,7 @@ class SoundService {
   }
 
   private getContext(): AudioContext | null {
-    if (this.isMuted) return null;
+    if (this.isMuted || typeof window === 'undefined') return null;
     if (!this.audioCtx) {
       const AudioCtxClass = window.AudioContext || (window as any).webkitAudioContext;
       if (AudioCtxClass) {
