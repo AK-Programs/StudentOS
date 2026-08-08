@@ -1779,7 +1779,7 @@ export default function App() {
     if (!currentUser) return;
 
     // Load notifications & global broadcasts from Supabase immediately on auth/load
-    getAppNotifications(currentUser.uid, currentUser.grade).then(list => setNotifications(list));
+    getAppNotifications(currentUser.uid, currentUser.grade, currentUser.section, effectiveRole).then(list => setNotifications(list));
 
     const handleDbUpdate = (e: any) => {
       const { table } = e.detail || {};
@@ -1789,7 +1789,7 @@ export default function App() {
         });
       }
       if (table === 'notifications' || table === 'notices' || !table) {
-        getAppNotifications(currentUser.uid, currentUser.grade).then(list => setNotifications(list));
+        getAppNotifications(currentUser.uid, currentUser.grade, currentUser.section, effectiveRole).then(list => setNotifications(list));
       }
     };
 
@@ -1801,11 +1801,11 @@ export default function App() {
         getSupabaseHomework().then(list => {
           if (list && list.length > 0) setHomeworkList(list);
         });
-        getAppNotifications(currentUser.uid, currentUser.grade).then(list => setNotifications(list));
+        getAppNotifications(currentUser.uid, currentUser.grade, currentUser.section, effectiveRole).then(list => setNotifications(list));
       })
       .on('broadcast', { event: 'new_app_notification' }, (payload) => {
         console.log('[REALTIME-BROADCAST] Received broadcast notification:', payload);
-        getAppNotifications(currentUser.uid, currentUser.grade).then(list => setNotifications(list));
+        getAppNotifications(currentUser.uid, currentUser.grade, currentUser.section, effectiveRole).then(list => setNotifications(list));
       })
       .subscribe();
 
