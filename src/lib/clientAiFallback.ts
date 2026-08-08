@@ -82,6 +82,16 @@ function hasWord(word: string, text: string): boolean {
 function getMockAiResponse(msg: string, sanitizedHistory: any[] = []): string {
   const p = msg.toLowerCase();
 
+  // If request requires JSON format, return structured JSON
+  if (p.includes('json') || p.includes('operational actions') || p.includes('raw json format')) {
+    return JSON.stringify({
+      responseText: "I am ready to assist you. What would you like to automate across StudentOS?",
+      action: "general_chat",
+      targetValue: "",
+      details: {}
+    });
+  }
+
   // Combine history text + current msg for entity / context extraction
   const allUserTexts = [
     ...sanitizedHistory.filter(m => m.role === 'user').map(m => m.content),
