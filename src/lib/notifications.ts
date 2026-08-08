@@ -19,9 +19,63 @@ function generateUUID(): string {
 }
 
 /**
- * Fetch notifications from Supabase
+ * Helper to check if a user profile is eligible to receive a notification
  */
-export async function getAppNotifications(userId?: string, userClass?: string): Promise<AppNotification[]> {
+export function isUserEligibleForNotification(
+  notif: AppNotification | any,
+  user?: { uid?: string; id?: string; grade?: string; classGrade?: string; section?: string; role?: string }
+): boolean {
+  if (!user) return true;
+  const userId = user.uid || user.id;
+  const userGrade = user.grade || user.classGrade || '';
+  const userSection = user.section || '';
+  const userRole = (user.role || 'student').toLowerCase();
+
+  const targetUser = notif.targetUserId || notif.target_user_id || notif.user_id || 'all';
+  const targetRole = notif.targetRole || notif.target_role || 'all';
+  const targetClass = notif.targetClass || notif.target_class || 'all';
+  const targetSection = notif.targetSection || notif.target_section || 'all';
+
+  // 1. User ID matching
+  if (targetUser !== 'all' && targetUser !== null && userId && targetUser !== userId) {
+    return false;
+  }
+
+  // 2. Role matching
+  if (targetRole && targetRole !== 'all' && targetRole.toLowerCase() !== userRole) {
+    return false;
+  }
+
+  // 3. Class/Grade matching
+  if (targetClass && targetClass !== 'all' && userGrade) {
+    const normTargetC = targetClass.toString().toLowerCase().replace(/class|grade|\s+/g, '');
+    const normUserC = userGrade.toString().toLowerCase().replace(/class|grade|\s+/g, '');
+    if (!normUserC.includes(normTargetC) && !normTargetC.includes(normUserC)) {
+      return false;
+    }
+  }
+
+  // 4. Section matching
+  if (targetSection && targetSection !== 'all' && targetSection !== 'All Sections' && userSection) {
+    const normTargetS = targetSection.toString().toLowerCase().trim();
+    const normUserS = userSection.toString().toLowerCase().trim();
+    if (normUserS !== normTargetS && !normUserS.includes(normTargetS)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Fetch notifications from Supabase with targeting
+ */
+export async function getAppNotifications(
+  userId?: string, 
+  userClass?: string, 
+  userSection?: string, 
+  userRole?: string
+): Promise<AppNotification[]> {
   console.log('[SUPABASE-NOTIFS] Fetching notifications from Supabase...');
   const notifMap = new Map<string, AppNotification>();
 
@@ -34,26 +88,22 @@ export async function getAppNotifications(userId?: string, userClass?: string): 
     if (!error && data) {
       data.forEach(item => {
         const payload = item.payload && typeof item.payload === 'object' ? item.payload : {};
-        const targetUser = payload.targetUserId || item.target_user_id || item.user_id || 'all';
-        const targetClass = payload.targetClass || item.target_class;
-        
-        // Check audience targeting
-        const isForUser = targetUser === 'all' || !userId || targetUser === userId || item.user_id === userId || item.user_id === null;
-        const isForClass = !targetClass || !userClass || targetClass.toLowerCase() === 'all' || userClass.toLowerCase().includes(targetClass.toLowerCase()) || targetClass.toLowerCase().includes(userClass.toLowerCase());
+        const notifObj: AppNotification = {
+          id: item.id || payload.id || generateUUID(),
+          title: payload.title || item.title || 'StudentOS Alert',
+          message: payload.message || item.message || payload.content || item.content || '',
+          type: item.type || payload.type || 'announcement',
+          createdAt: item.created_at ? new Date(item.created_at).toISOString() : new Date().toISOString(),
+          isRead: item.is_read ?? payload.isRead ?? false,
+          targetUserId: payload.targetUserId || item.target_user_id || item.user_id || 'all',
+          targetClass: payload.targetClass || item.target_class || 'all',
+          targetSection: payload.targetSection || item.target_section || 'all',
+          targetRole: payload.targetRole || item.target_role || 'all',
+          linkTab: payload.linkTab || 'notice_viewer'
+        };
 
-        if (isForUser && isForClass) {
-          const notifId = item.id || payload.id || generateUUID();
-          notifMap.set(notifId, {
-            id: notifId,
-            title: payload.title || item.title || 'StudentOS Alert',
-            message: payload.message || item.message || payload.content || item.content || '',
-            type: item.type || payload.type || 'announcement',
-            createdAt: item.created_at ? new Date(item.created_at).toISOString() : new Date().toISOString(),
-            isRead: item.is_read ?? payload.isRead ?? false,
-            targetUserId: targetUser,
-            targetClass: targetClass,
-            linkTab: payload.linkTab || 'notice_viewer'
-          });
+        if (isUserEligibleForNotification(notifObj, { uid: userId, grade: userClass, section: userSection, role: userRole })) {
+          notifMap.set(notifObj.id, notifObj);
         }
       });
     } else if (error) {
