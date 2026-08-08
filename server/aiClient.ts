@@ -95,7 +95,7 @@ export async function generateAICompletion(
       process.env.OPENROUTER_MODEL || 'deepseek/deepseek-v4-flash',
       'deepseek/deepseek-r1',
       'deepseek/deepseek-chat',
-      'google/gemini-2.5-flash'
+      'qwen/qwen-2.5-72b-instruct'
     ];
 
     for (const modelName of candidateModels) {
