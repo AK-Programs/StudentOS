@@ -150,6 +150,156 @@ export function isDestructiveAction(action: OrionActionType): boolean {
 }
 
 /* ========================================================================
+   UTILITY HELPER FUNCTIONS FOR DATE, TIME, TITLE, AND TARGET CLASS
+   ======================================================================== */
+
+/**
+ * Cleanly extracts a professional title from natural language commands
+ */
+export function extractCleanTitle(rawText: string, type: 'meeting' | 'broadcast' | 'competition' | 'homework' | 'event'): string {
+  if (!rawText) {
+    if (type === 'meeting') return 'StudentOS Virtual Classroom';
+    if (type === 'broadcast') return 'School Broadcast';
+    if (type === 'competition') return 'StudentOS Competition';
+    if (type === 'homework') return 'Class Assignment';
+    if (type === 'event') return 'School Event';
+  }
+
+  let cleaned = rawText
+    .replace(/^schedule\s+(a\s+)?(meeting|event|class|session|call|meet)\s+(at|for|on)?\s*/gi, '')
+    .replace(/^create\s+(a\s+)?(broadcast|notice|announcement|competition|homework|assignment)\s+(saying|that|for|on|about)?\s*/gi, '')
+    .replace(/\b(at|on|for)\s+\d{1,2}(?::\d{2})?\s*(am|pm)?\b/gi, '')
+    .replace(/\bcalled\s+/gi, '')
+    .replace(/\btitled\s+/gi, '')
+    .replace(/\bnamed\s+/gi, '')
+    .replace(/\bfor class\s+\d+[a-z]?\s*(solara|astra|elara|vega)?\b/gi, '')
+    .replace(/\bdue\s+(today|tomorrow|friday|monday|tuesday|wednesday|thursday|saturday|sunday)\b/gi, '')
+    .trim();
+
+  cleaned = cleaned.replace(/^["'“”]+|["'“”]+$/g, '').trim();
+
+  if (!cleaned || cleaned.length < 2) {
+    if (type === 'meeting') return 'StudentOS Virtual Classroom';
+    if (type === 'broadcast') return 'School Broadcast';
+    if (type === 'competition') return 'StudentOS Competition';
+    if (type === 'homework') return 'Class Assignment';
+    if (type === 'event') return 'School Event';
+  }
+
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+}
+
+/**
+ * Parses grade and section from target class strings (e.g. "Class 10 Solara" -> { grade: "Grade 10", section: "Solara" })
+ */
+export function parseGradeAndSection(targetStr?: string): { grade: string; section: string } {
+  if (!targetStr || !targetStr.trim()) {
+    return { grade: 'Grade 10', section: 'All Sections' };
+  }
+
+  const str = targetStr.trim();
+
+  // Extract Grade Number
+  let gradeNum = '10';
+  const numMatch = str.match(/\b(\d{1,2})\b/);
+  if (numMatch) {
+    gradeNum = numMatch[1];
+  }
+
+  // Extract Section
+  let section = 'All Sections';
+  const secMatch = str.match(/(solara|astra|elara|vega)/i);
+  if (secMatch) {
+    section = secMatch[1].charAt(0).toUpperCase() + secMatch[1].slice(1).toLowerCase();
+  }
+
+  return {
+    grade: `Grade ${gradeNum}`,
+    section
+  };
+}
+
+/**
+ * Parses start and end time without arbitrary buffers or subtractive offsets
+ */
+export function parseMeetingDateTime(dateInput?: string, timeInput?: string, fullText?: string): { startTime: string; endTime: string } {
+  const now = new Date();
+  let targetYear = now.getFullYear();
+  let targetMonth = now.getMonth();
+  let targetDay = now.getDate();
+
+  const textToSearch = `${dateInput || ''} ${timeInput || ''} ${fullText || ''}`.toLowerCase();
+
+  // 1. Date resolution
+  if (textToSearch.includes('tomorrow')) {
+    const tomorrow = new Date(now.getTime() + 86400000);
+    targetYear = tomorrow.getFullYear();
+    targetMonth = tomorrow.getMonth();
+    targetDay = tomorrow.getDate();
+  } else if (dateInput && /^\d{4}-\d{2}-\d{2}$/.test(dateInput)) {
+    const parts = dateInput.split('-').map(Number);
+    targetYear = parts[0];
+    targetMonth = parts[1] - 1;
+    targetDay = parts[2];
+  } else {
+    // Check day names: monday, tuesday, etc.
+    const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+    for (let i = 0; i < days.length; i++) {
+      if (textToSearch.includes(days[i])) {
+        const currentDay = now.getDay();
+        let daysAhead = i - currentDay;
+        if (daysAhead <= 0) daysAhead += 7;
+        const targetDate = new Date(now.getTime() + daysAhead * 86400000);
+        targetYear = targetDate.getFullYear();
+        targetMonth = targetDate.getMonth();
+        targetDay = targetDate.getDate();
+        break;
+      }
+    }
+  }
+
+  // 2. Time resolution
+  let parsedHour = 15; // Default 3 PM if unspecified
+  let parsedMinute = 0;
+  let timeFound = false;
+
+  const timeMatch = textToSearch.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i);
+  if (timeMatch) {
+    let rawHour = parseInt(timeMatch[1], 10);
+    const rawMin = timeMatch[2] ? parseInt(timeMatch[2], 10) : 0;
+    const meridian = timeMatch[3] ? timeMatch[3].toLowerCase() : null;
+
+    if (rawHour >= 0 && rawHour <= 23) {
+      if (meridian === 'pm' && rawHour < 12) {
+        rawHour += 12;
+      } else if (meridian === 'am' && rawHour === 12) {
+        rawHour = 0;
+      } else if (!meridian && rawHour >= 1 && rawHour <= 7) {
+        rawHour += 12;
+      }
+      parsedHour = rawHour;
+      parsedMinute = rawMin;
+      timeFound = true;
+    }
+  }
+
+  // Construct start Date object
+  const startDate = new Date(targetYear, targetMonth, targetDay, parsedHour, parsedMinute, 0, 0);
+
+  // If time was not found and startDate is in the past, adjust to next hour
+  if (!timeFound && startDate.getTime() <= now.getTime()) {
+    startDate.setTime(now.getTime() + 3600000);
+    startDate.setMinutes(0, 0, 0);
+  }
+
+  const startTimeIso = startDate.toISOString();
+  const endDate = new Date(startDate.getTime() + 3600000); // 1 hour duration
+  const endTimeIso = endDate.toISOString();
+
+  return { startTime: startTimeIso, endTime: endTimeIso };
+}
+
+/* ========================================================================
    CORE ACTION HANDLERS
    ======================================================================== */
 
@@ -160,21 +310,19 @@ export async function executeCreateBroadcast(
   actionObj: OrionAction,
   user: OrionUserContext
 ): Promise<OrionExecutionResult> {
-  const title = actionObj.title || actionObj.targetValue || 'School Broadcast';
+  const title = extractCleanTitle(actionObj.title || actionObj.targetValue || '', 'broadcast');
   const content = actionObj.content || actionObj.message || title;
   const sender = user.userName || 'Principal';
 
   console.log(`[ORION] Executing create_broadcast: "${title}"`);
 
   try {
-    // A. Dispatch via Communication Engine (saves to peer_messages, notice board, calendar)
     const dispatchRes = await executeOrionCommunicationDispatch(
       content,
       sender,
       []
     );
 
-    // B. Save explicitly to materials / notices in Supabase
     const noticePayload = {
       id: `notice-${Date.now()}`,
       title: title.startsWith('📢') ? title : `📢 ${title}`,
@@ -184,8 +332,10 @@ export async function executeCreateBroadcast(
       created_at: new Date().toISOString()
     };
 
-    await supabase.from('materials').insert([noticePayload]);
-    console.log(`[ORION] Supabase INSERT successful for notices/materials`);
+    const { error: insErr } = await supabase.from('materials').insert([noticePayload]);
+    if (insErr) {
+      console.warn('[ORION] Supabase notice insert warning:', insErr.message);
+    }
 
     triggerRealtimeUIUpdate('notices', 'INSERT', noticePayload);
     triggerRealtimeUIUpdate('notifications', 'INSERT', { title, content });
@@ -217,7 +367,7 @@ export async function executeCreateNotification(
   actionObj: OrionAction,
   user: OrionUserContext
 ): Promise<OrionExecutionResult> {
-  const title = actionObj.title || `📢 Alert from ${user.userName || 'School System'}`;
+  const title = extractCleanTitle(actionObj.title || actionObj.targetValue || '', 'broadcast');
   const message = actionObj.message || actionObj.content || actionObj.targetValue || 'Notification alert';
   const targetAudience = actionObj.audience || actionObj.targetClass || 'all';
 
@@ -236,8 +386,10 @@ export async function executeCreateNotification(
       linkTab: 'notice_viewer'
     };
 
-    await saveAppNotification(notif);
-    console.log(`[ORION] Supabase INSERT successful for notifications`);
+    const notifRes = await saveAppNotification(notif);
+    if (!notifRes.success) {
+      throw new Error(notifRes.error || 'Failed to persist notification in database');
+    }
 
     triggerRealtimeUIUpdate('notifications', 'INSERT', notif);
 
@@ -267,7 +419,7 @@ export async function executeCreateEvent(
   actionObj: OrionAction,
   user: OrionUserContext
 ): Promise<OrionExecutionResult> {
-  const eventTitle = actionObj.title || actionObj.targetValue || 'School Event';
+  const eventTitle = extractCleanTitle(actionObj.title || actionObj.targetValue || '', 'event');
   const eventDate = actionObj.date || new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0];
   const eventTime = actionObj.time || '10:00 AM';
   const location = actionObj.location || 'Main Auditorium';
@@ -291,9 +443,6 @@ export async function executeCreateEvent(
     const saved = await createSchoolEvent(eventObj);
     if (!saved) throw new Error('Supabase event insertion failed');
 
-    console.log(`[ORION] Supabase INSERT successful for life_events`);
-
-    // Create event notification
     await saveAppNotification({
       id: `notif-event-${Date.now()}`,
       title: `📅 New Event: ${eventTitle}`,
@@ -332,7 +481,7 @@ export async function executeCreateCompetition(
   actionObj: OrionAction,
   user: OrionUserContext
 ): Promise<OrionExecutionResult> {
-  const compTitle = actionObj.title || actionObj.targetValue || 'Academic Competition';
+  const compTitle = extractCleanTitle(actionObj.title || actionObj.targetValue || '', 'competition');
   const category = actionObj.category || 'Technology';
   const prizePool = actionObj.prizePool || 'Trophies, Certificates & Cash Rewards';
   const eligibility = actionObj.eligibility || actionObj.targetClass || 'All Grades';
@@ -359,9 +508,6 @@ export async function executeCreateCompetition(
     const saved = await createCompetition(compObj);
     if (!saved) throw new Error('Supabase competition insertion failed');
 
-    console.log(`[ORION] Supabase INSERT successful for life_competitions`);
-
-    // Notify students
     await saveAppNotification({
       id: `notif-comp-${Date.now()}`,
       title: `🏆 New Competition: ${compTitle}`,
@@ -400,21 +546,21 @@ export async function executeCreateMeeting(
   actionObj: OrionAction,
   user: OrionUserContext
 ): Promise<OrionExecutionResult> {
-  const meetTitle = actionObj.title || actionObj.targetValue || 'StudentOS Virtual Classroom';
+  const rawTitle = actionObj.title || actionObj.targetValue || actionObj.content || '';
+  const meetTitle = extractCleanTitle(rawTitle, 'meeting');
   const meetId = `meet-${Date.now().toString().slice(-8)}`;
-  const startTime = actionObj.date && actionObj.time
-    ? new Date(`${actionObj.date} ${actionObj.time}`).toISOString()
-    : new Date(Date.now() + 3600000).toISOString();
-  const endTime = new Date(new Date(startTime).getTime() + 3600000 * 2).toISOString();
 
-  console.log(`[ORION] Executing create_meeting: "${meetTitle}"`);
+  const { startTime, endTime } = parseMeetingDateTime(actionObj.date, actionObj.time, `${rawTitle} ${actionObj.message || ''}`);
+  const { grade, section } = parseGradeAndSection(actionObj.targetClass || actionObj.audience);
+
+  console.log(`[ORION] Executing create_meeting: "${meetTitle}" at ${startTime}`);
 
   try {
     const meetingObj: Meeting = {
       id: meetId,
       title: meetTitle,
       subject: actionObj.subject || 'General Studies',
-      className: actionObj.targetClass || 'Grade 10 - Astra',
+      className: `${grade} - ${section}`,
       type: 'scheduled',
       startTime,
       endTime,
@@ -433,11 +579,12 @@ export async function executeCreateMeeting(
     await createOrUpdateMeeting(meetingObj);
     console.log(`[ORION] Supabase INSERT/UPSERT successful for meetings`);
 
-    // Notify invited class
+    const formattedTime = new Date(startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
     await saveAppNotification({
       id: `notif-meet-${Date.now()}`,
       title: `📹 StudentOS Meet Scheduled: ${meetTitle}`,
-      message: `Meeting link generated. Passcode: 123456. Check StudentOS Meet section.`,
+      message: `Meeting at ${formattedTime}. Passcode: 123456. Check StudentOS Meet section.`,
       type: 'announcement',
       createdAt: new Date().toISOString(),
       isRead: false,
@@ -451,7 +598,7 @@ export async function executeCreateMeeting(
       action: 'create_meeting',
       recordId: meetId,
       message: `StudentOS Meet scheduled in Supabase.`,
-      summaryText: `📹 StudentOS Meet '${meetTitle}' scheduled! Join link generated and saved in Supabase database.`
+      summaryText: `📹 StudentOS Meet '${meetTitle}' scheduled for ${formattedTime}! Saved in Supabase database.`
     };
   } catch (err: any) {
     console.error(`[ORION] Action failed for create_meeting:`, err);
@@ -472,14 +619,16 @@ export async function executeCreateHomework(
   actionObj: OrionAction,
   user: OrionUserContext
 ): Promise<OrionExecutionResult> {
-  const hwTitle = actionObj.title || actionObj.targetValue || 'Class Assignment';
+  const rawTitle = actionObj.title || actionObj.targetValue || actionObj.content || '';
+  const hwTitle = extractCleanTitle(rawTitle, 'homework');
   const hwId = `hw-${Date.now()}`;
   const subject = actionObj.subject || 'Mathematics';
   const dueDate = actionObj.date || new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0];
-  const targetClass = actionObj.targetClass || 'Grade 10';
-  const content = actionObj.content || actionObj.message || `Assigned task for ${targetClass}.`;
 
-  console.log(`[ORION] Executing create_homework: "${hwTitle}" due ${dueDate}`);
+  const { grade, section } = parseGradeAndSection(actionObj.targetClass || actionObj.audience || actionObj.content);
+  const content = actionObj.content || actionObj.message || `Assigned homework task for ${grade} (${section}).`;
+
+  console.log(`[ORION] Executing create_homework: "${hwTitle}" for ${grade} ${section} due ${dueDate}`);
 
   try {
     const hwObj: Homework = {
@@ -488,22 +637,22 @@ export async function executeCreateHomework(
       subject,
       content,
       dueDate,
-      classGrade: targetClass,
-      classSection: 'Astra',
+      classGrade: grade,
+      classSection: section as any,
       givenBy: user.userName || 'Faculty Teacher',
-      createdAt: new Date().toISOString(),
+      createdAt: new Date().toISOString().split('T')[0],
       completedList: []
     };
 
     await saveSupabaseHomework(hwObj);
     console.log(`[ORION] Supabase UPSERT successful for homework`);
 
-    // Notify class
     await saveAppNotification({
       id: `notif-hw-${Date.now()}`,
       title: `📝 New Assignment: ${hwTitle}`,
-      message: `Assigned for ${targetClass} (${subject}). Due: ${dueDate}`,
+      message: `Assigned for ${grade} - ${section} (${subject}). Due: ${dueDate}`,
       type: 'homework',
+      targetClass: grade,
       createdAt: new Date().toISOString(),
       isRead: false,
       linkTab: 'assignments'
@@ -516,7 +665,7 @@ export async function executeCreateHomework(
       action: 'create_homework',
       recordId: hwId,
       message: `Homework '${hwTitle}' created in Supabase.`,
-      summaryText: `📝 Assignment '${hwTitle}' (${subject}) assigned to ${targetClass}! Saved in Supabase database.`
+      summaryText: `📝 Assignment '${hwTitle}' (${subject}) assigned to ${grade} (${section})! Saved in Supabase database.`
     };
   } catch (err: any) {
     console.error(`[ORION] Action failed for create_homework:`, err);
