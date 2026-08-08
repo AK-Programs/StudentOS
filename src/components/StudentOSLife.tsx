@@ -255,14 +255,14 @@ export const StudentOSLife: React.FC<StudentOSLifeProps> = ({
         fetchNews()
       ]);
 
-      if (comps.length > 0) setCompetitions(comps);
-      if (evs.length > 0) setEvents(evs);
-      if (clbs.length > 0) setClubs(clbs);
-      if (bdgs.length > 0) setBadges(bdgs);
-      if (gal.length > 0) setGallery(gal);
+      setCompetitions(comps);
+      setEvents(evs);
+      setClubs(clbs);
+      setBadges(bdgs);
+      setGallery(gal);
       if (hses.length > 0) setHouses(hses);
-      if (pls.length > 0) setPolls(pls);
-      if (nws.length > 0) setNewsList(nws);
+      setPolls(pls);
+      setNewsList(nws);
     } catch (err) {
       console.warn("Error fetching Supabase Life data:", err);
     }
