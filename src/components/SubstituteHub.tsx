@@ -59,6 +59,25 @@ export const SubstituteHub = ({ currentUser, effectiveRole, showNotification }: 
   const [activeTab, setActiveTab] = useState<'assignments' | 'emergencies' | 'swaps'>('assignments');
   const [swaps, setSwaps] = useState<any[]>([]);
   const [emergencies, setEmergencies] = useState<any[]>([]);
+
+  // Emergency Leave Swap State
+  const [emergencyModalOpen, setEmergencyModalOpen] = useState(false);
+  const [emDate, setEmDate] = useState(new Date().toISOString().split('T')[0]);
+  const [emClass, setEmClass] = useState(DEFAULT_CLASSES[0]);
+  const [emPeriod, setEmPeriod] = useState(DEFAULT_PERIODS[0]);
+  const [emSubject, setEmSubject] = useState(DEFAULT_SUBJECTS[0]);
+  const [emOrigTeacher, setEmOrigTeacher] = useState(currentUser?.name || DEFAULT_TEACHERS[0]);
+  const [emSubTeacher, setEmSubTeacher] = useState(DEFAULT_TEACHERS[1]);
+  const [emReason, setEmReason] = useState('');
+
+  // Lecture Swap State
+  const [swapModalOpen, setSwapModalOpen] = useState(false);
+  const [swTeacherA, setSwTeacherA] = useState(currentUser?.name || DEFAULT_TEACHERS[0]);
+  const [swTeacherB, setSwTeacherB] = useState(DEFAULT_TEACHERS[1]);
+  const [swClass, setSwClass] = useState(DEFAULT_CLASSES[0]);
+  const [swSubject, setSwSubject] = useState(DEFAULT_SUBJECTS[0]);
+  const [swPeriod, setSwPeriod] = useState(DEFAULT_PERIODS[0]);
+  const [swDate, setSwDate] = useState(new Date().toISOString().split('T')[0]);
   
   useEffect(() => {
     const fetchStorage = async () => {
@@ -76,10 +95,67 @@ export const SubstituteHub = ({ currentUser, effectiveRole, showNotification }: 
   const saveSwaps = async (list: any[]) => { 
     setSwaps(list); 
     await supabase.from('substitute_hub').upsert({ id: 'global_swaps', data: JSON.stringify(list) }); 
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('s_os_notification_created', {
+        detail: { title: '🔄 Lecture Swap Update', message: 'A lecture swap update has been posted to the Substitute Hub.', type: 'substitute' }
+      }));
+    }
   };
   const saveEmergencies = async (list: any[]) => { 
     setEmergencies(list); 
     await supabase.from('substitute_hub').upsert({ id: 'global_emergencies', data: JSON.stringify(list) }); 
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('s_os_notification_created', {
+        detail: { title: '🚨 Emergency Leave Request', message: 'An emergency cover request has been submitted.', type: 'substitute' }
+      }));
+    }
+  };
+
+  const handleCreateEmergencySwap = async () => {
+    if (!emReason.trim()) {
+      showNotification('⚠️ Please enter a reason for the emergency cover request.');
+      return;
+    }
+    const newReq = {
+      id: `emerg_${Date.now()}`,
+      teacher: emOrigTeacher,
+      origTeacher: emOrigTeacher,
+      subTeacher: emSubTeacher,
+      classGrade: emClass,
+      period: emPeriod,
+      subject: emSubject,
+      reason: emReason,
+      date: emDate,
+      status: 'pending'
+    };
+    const updated = [newReq, ...emergencies];
+    await saveEmergencies(updated);
+    setEmergencyModalOpen(false);
+    setEmReason('');
+    showNotification('✓ Emergency cover request submitted!');
+  };
+
+  const handleCreateLectureSwap = async () => {
+    if (swTeacherA === swTeacherB) {
+      showNotification('⚠️ Please select two different teachers to swap lectures.');
+      return;
+    }
+    const newSwap = {
+      id: `swap_${Date.now()}`,
+      teacherA: swTeacherA,
+      teacherB: swTeacherB,
+      requester: swTeacherA,
+      target: swTeacherB,
+      classGrade: swClass,
+      subject: swSubject,
+      period: swPeriod,
+      date: swDate,
+      status: 'pending'
+    };
+    const updated = [newSwap, ...swaps];
+    await saveSwaps(updated);
+    setSwapModalOpen(false);
+    showNotification(`✓ Lecture swap request proposed between ${swTeacherA} and ${swTeacherB}!`);
   };
 
 
@@ -504,36 +580,94 @@ export const SubstituteHub = ({ currentUser, effectiveRole, showNotification }: 
       {activeTab === 'emergencies' && (
         <div className="bg-slate-900/60 rounded-3xl border border-white/5 p-6 md:p-8 relative overflow-hidden space-y-6">
           <div className="flex justify-between items-center border-b border-white/5 pb-4">
-            <h3 className="text-xl font-bold text-white flex items-center gap-2">
-              <ShieldAlert className="w-5 h-5 text-rose-500" />
-              Emergency Requests
-            </h3>
-            {['teacher', 'coordinator'].includes(effectiveRole) && (
+            <div>
+              <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                <ShieldAlert className="w-5 h-5 text-rose-500" />
+                Emergency Swap & Leave Requests
+              </h3>
+              <p className="text-xs text-slate-400 mt-1">Specify date, class, section, period, subject, original teacher, substitute, and reason.</p>
+            </div>
+            {['teacher', 'coordinator', 'admin', 'super_admin'].includes(effectiveRole) && (
               <button 
-                onClick={() => {
-                  const reason = prompt('Enter reason for emergency leave:');
-                  if (reason) {
-                    const newReq = { id: Date.now(), teacher: currentUser?.name || 'Unknown', reason, date: new Date().toISOString().split('T')[0], status: 'pending' };
-                    saveEmergencies([newReq, ...emergencies]);
-                    showNotification('Emergency leave request submitted.');
-                  }
-                }}
-                className="px-4 py-2 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/20 text-xs font-bold hover:bg-rose-500 hover:text-white transition-all"
+                onClick={() => setEmergencyModalOpen(true)}
+                className="px-4 py-2 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/20 text-xs font-bold hover:bg-rose-500 hover:text-white transition-all flex items-center gap-1.5"
               >
-                + Request Emergency Leave
+                <Plus className="w-4 h-4" /> Request Emergency Swap
               </button>
             )}
           </div>
+
+          {/* Emergency Swap Modal */}
+          {emergencyModalOpen && (
+            <div className="bg-slate-950 border-2 border-rose-500/30 p-5 rounded-2xl space-y-4 animate-fadeIn">
+              <div className="flex justify-between items-center border-b border-white/10 pb-2">
+                <h4 className="text-xs font-black uppercase text-rose-400 tracking-wider">New Emergency Cover Request</h4>
+                <button onClick={() => setEmergencyModalOpen(false)} className="text-slate-400 hover:text-white"><X className="w-4 h-4" /></button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">Effective Date</label>
+                  <input type="date" value={emDate} onChange={e => setEmDate(e.target.value)} className="bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white" />
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">Class & Section</label>
+                  <select value={emClass} onChange={e => setEmClass(e.target.value)} className="bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white">
+                    {DEFAULT_CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">Period</label>
+                  <select value={emPeriod} onChange={e => setEmPeriod(e.target.value)} className="bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white">
+                    {DEFAULT_PERIODS.map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">Subject</label>
+                  <select value={emSubject} onChange={e => setEmSubject(e.target.value)} className="bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white">
+                    {DEFAULT_SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">Original Teacher</label>
+                  <select value={emOrigTeacher} onChange={e => setEmOrigTeacher(e.target.value)} className="bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white">
+                    {DEFAULT_TEACHERS.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">Substitute Teacher</label>
+                  <select value={emSubTeacher} onChange={e => setEmSubTeacher(e.target.value)} className="bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white">
+                    {DEFAULT_TEACHERS.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] font-bold text-slate-400 uppercase">Reason for Emergency Swap</label>
+                <input type="text" placeholder="Medical emergency, urgent personal leave, etc." value={emReason} onChange={e => setEmReason(e.target.value)} className="bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white" />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button onClick={() => setEmergencyModalOpen(false)} className="px-3 py-1.5 text-xs text-slate-400">Cancel</button>
+                <button onClick={handleCreateEmergencySwap} className="px-4 py-1.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs uppercase">Submit Request</button>
+              </div>
+            </div>
+          )}
+
           {emergencies.length === 0 ? (
             <p className="text-xs text-slate-500 text-center py-6">No emergency requests active.</p>
           ) : (
             <div className="grid gap-3">
-              {emergencies.map(em => (
+              {emergencies.filter(em => {
+                if (effectiveRole === 'student') return em.classGrade && em.classGrade.toLowerCase().includes((currentUser?.grade || '').toLowerCase());
+                if (effectiveRole === 'teacher') return em.origTeacher === currentUser?.name || em.subTeacher === currentUser?.name || em.teacher === currentUser?.name;
+                return true;
+              }).map(em => (
                 <div key={em.id} className="p-4 rounded-xl bg-slate-950/40 border border-white/5 flex justify-between items-center">
                   <div>
-                    <h4 className="text-sm font-bold text-white">{em.teacher}</h4>
-                    <p className="text-xs text-slate-400">Reason: {em.reason}</p>
-                    <p className="text-[10px] text-slate-500 mt-1 font-mono">{em.date}</p>
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-sm font-bold text-white">{em.origTeacher || em.teacher} → {em.subTeacher || 'Standby'}</h4>
+                      <span className="text-[9px] px-2 py-0.5 rounded bg-rose-500/10 text-rose-300 font-mono">{em.classGrade || 'Grade 10 Solara'}</span>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1">Subject: <strong>{em.subject || 'General'}</strong> | Period: {em.period || 'Period 1'} | Reason: {em.reason}</p>
+                    <p className="text-[10px] text-slate-500 mt-1 font-mono">Date: {em.date}</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className={`text-[10px] px-2 py-1 rounded uppercase font-bold ${em.status === 'pending' ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20' : em.status === 'approved' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'}`}>
@@ -556,41 +690,96 @@ export const SubstituteHub = ({ currentUser, effectiveRole, showNotification }: 
       {activeTab === 'swaps' && (
         <div className="bg-slate-900/60 rounded-3xl border border-white/5 p-6 md:p-8 relative overflow-hidden space-y-6">
           <div className="flex justify-between items-center border-b border-white/5 pb-4">
-            <h3 className="text-xl font-bold text-white flex items-center gap-2">
-              <ArrowRight className="w-5 h-5 text-teal-500" />
-              Lecture Swaps
-            </h3>
-            {['teacher'].includes(effectiveRole) && (
+            <div>
+              <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                <ArrowRight className="w-5 h-5 text-teal-500" />
+                Lecture Swap Board
+              </h3>
+              <p className="text-xs text-slate-400 mt-1">Propose and manage mutual lecture swaps between faculty members.</p>
+            </div>
+            {['teacher', 'coordinator', 'admin', 'super_admin'].includes(effectiveRole) && (
               <button 
-                onClick={() => {
-                  const target = prompt('Enter the name of the teacher you want to swap with:');
-                  if (target) {
-                    const newSwap = { id: Date.now(), requester: currentUser?.name || 'Unknown', target, date: new Date().toISOString().split('T')[0], status: 'pending' };
-                    saveSwaps([newSwap, ...swaps]);
-                    showNotification('Lecture swap request submitted.');
-                  }
-                }}
-                className="px-4 py-2 rounded-xl bg-teal-500/10 text-teal-400 border border-teal-500/20 text-xs font-bold hover:bg-teal-500 hover:text-white transition-all"
+                onClick={() => setSwapModalOpen(true)}
+                className="px-4 py-2 rounded-xl bg-teal-500/10 text-teal-400 border border-teal-500/20 text-xs font-bold hover:bg-teal-500 hover:text-white transition-all flex items-center gap-1.5"
               >
-                + Request Swap
+                <Plus className="w-4 h-4" /> Request Lecture Swap
               </button>
             )}
           </div>
+
+          {/* Lecture Swap Modal */}
+          {swapModalOpen && (
+            <div className="bg-slate-950 border-2 border-teal-500/30 p-5 rounded-2xl space-y-4 animate-fadeIn">
+              <div className="flex justify-between items-center border-b border-white/10 pb-2">
+                <h4 className="text-xs font-black uppercase text-teal-400 tracking-wider">New Lecture Swap Proposal</h4>
+                <button onClick={() => setSwapModalOpen(false)} className="text-slate-400 hover:text-white"><X className="w-4 h-4" /></button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">Teacher A (Requester)</label>
+                  <select value={swTeacherA} onChange={e => setSwTeacherA(e.target.value)} className="bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white">
+                    {DEFAULT_TEACHERS.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">Teacher B (Swap Target)</label>
+                  <select value={swTeacherB} onChange={e => setSwTeacherB(e.target.value)} className="bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white">
+                    {DEFAULT_TEACHERS.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">Class & Section</label>
+                  <select value={swClass} onChange={e => setSwClass(e.target.value)} className="bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white">
+                    {DEFAULT_CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">Subject Stream</label>
+                  <select value={swSubject} onChange={e => setSwSubject(e.target.value)} className="bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white">
+                    {DEFAULT_SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">Period</label>
+                  <select value={swPeriod} onChange={e => setSwPeriod(e.target.value)} className="bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white">
+                    {DEFAULT_PERIODS.map(p => <option key={p} value={p}>{p}</option>)}
+                  </select>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] font-bold text-slate-400 uppercase">Swap Date</label>
+                  <input type="date" value={swDate} onChange={e => setSwDate(e.target.value)} className="bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white" />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button onClick={() => setSwapModalOpen(false)} className="px-3 py-1.5 text-xs text-slate-400">Cancel</button>
+                <button onClick={handleCreateLectureSwap} className="px-4 py-1.5 bg-teal-600 hover:bg-teal-500 text-white font-bold rounded-xl text-xs uppercase">Submit Lecture Swap</button>
+              </div>
+            </div>
+          )}
+
           {swaps.length === 0 ? (
             <p className="text-xs text-slate-500 text-center py-6">No active lecture swaps.</p>
           ) : (
             <div className="grid gap-3">
-              {swaps.map(sw => (
+              {swaps.filter(sw => {
+                if (effectiveRole === 'student') return sw.classGrade && sw.classGrade.toLowerCase().includes((currentUser?.grade || '').toLowerCase());
+                if (effectiveRole === 'teacher') return sw.teacherA === currentUser?.name || sw.teacherB === currentUser?.name || sw.requester === currentUser?.name || sw.target === currentUser?.name;
+                return true;
+              }).map(sw => (
                 <div key={sw.id} className="p-4 rounded-xl bg-slate-950/40 border border-white/5 flex justify-between items-center">
                   <div>
-                    <h4 className="text-sm font-bold text-white">{sw.requester} ↔ {sw.target}</h4>
-                    <p className="text-[10px] text-slate-500 mt-1 font-mono">{sw.date}</p>
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-sm font-bold text-white">{sw.teacherA || sw.requester} ↔ {sw.teacherB || sw.target}</h4>
+                      <span className="text-[9px] px-2 py-0.5 rounded bg-teal-500/10 text-teal-300 font-mono">{sw.classGrade || 'Grade 10 Solara'}</span>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1">Subject: <strong>{sw.subject || 'General'}</strong> | Period: {sw.period || 'Period 1'}</p>
+                    <p className="text-[10px] text-slate-500 mt-1 font-mono">Date: {sw.date}</p>
                   </div>
                   <div className="flex items-center gap-2">
                     <span className={`text-[10px] px-2 py-1 rounded uppercase font-bold ${sw.status === 'pending' ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20' : sw.status === 'approved' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'}`}>
                       {sw.status}
                     </span>
-                    {(canManage || currentUser?.name === sw.target) && sw.status === 'pending' && (
+                    {(canManage || currentUser?.name === (sw.teacherB || sw.target)) && sw.status === 'pending' && (
                       <div className="flex gap-2 ml-4">
                         <button onClick={() => { const u = swaps.map(x => x.id === sw.id ? {...x, status: 'approved'} : x); saveSwaps(u); showNotification('Approved lecture swap'); }} className="text-emerald-400 hover:text-emerald-300"><Check className="w-4 h-4" /></button>
                         <button onClick={() => { const u = swaps.map(x => x.id === sw.id ? {...x, status: 'denied'} : x); saveSwaps(u); showNotification('Denied lecture swap'); }} className="text-rose-400 hover:text-rose-300"><X className="w-4 h-4" /></button>
