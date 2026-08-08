@@ -24,6 +24,7 @@ import { supabase } from './lib/supabase';
 import { getVaultNotes, saveVaultNoteToSupabase, deleteVaultNoteFromSupabase } from './lib/supabaseNotes';
 import { getSupabaseUserProfile, saveSupabaseUserProfile } from './lib/supabaseUsers';
 import { getSupabaseHomework, saveSupabaseHomework, deleteSupabaseHomework } from './lib/supabaseHomework';
+import { getAppNotifications } from './lib/notifications';
 import { 
   getAiBuddyChats, saveAiBuddyChat, deleteAiBuddyChat, renameAiBuddyChat,
   getPeerMessages, savePeerMessage, deletePeerMessage,
@@ -1711,6 +1712,39 @@ export default function App() {
       }
       isHomeworkLoaded.current = true;
     });
+  }, [currentUser]);
+
+  // Realtime Supabase & Local Custom Event Sync for Orion Automations
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const handleDbUpdate = (e: any) => {
+      const { table } = e.detail || {};
+      if (table === 'homework' || !table) {
+        getSupabaseHomework().then(list => {
+          if (list && list.length > 0) setHomeworkList(list);
+        });
+      }
+      if (table === 'notifications' || !table) {
+        getAppNotifications(currentUser.uid, currentUser.grade).then(list => setNotifications(list));
+      }
+    };
+
+    window.addEventListener('studentos-db-update', handleDbUpdate);
+
+    const channel = supabase.channel('student-os-live-sync')
+      .on('postgres_changes', { event: '*', schema: 'public' }, () => {
+        getSupabaseHomework().then(list => {
+          if (list && list.length > 0) setHomeworkList(list);
+        });
+        getAppNotifications(currentUser.uid, currentUser.grade).then(list => setNotifications(list));
+      })
+      .subscribe();
+
+    return () => {
+      window.removeEventListener('studentos-db-update', handleDbUpdate);
+      supabase.removeChannel(channel);
+    };
   }, [currentUser]);
 
   // We don't save the entire list to localStorage anymore in an effect, 
@@ -8807,7 +8841,15 @@ ${activeNote.content}`);
                         {homeworkList.filter(hw => {
                           let roleAllowed = true;
                           if (effectiveRole === 'student') {
-                            roleAllowed = (hw.classGrade === currentUser?.grade) && (hw.classSection === 'All Sections' || hw.classSection === currentUser?.section);
+                            const normG = (g?: string) => g ? g.toLowerCase().replace(/grade|class/g, '').trim() : '';
+                            const normS = (s?: string) => s ? s.toLowerCase().trim() : '';
+                            const sg = normG(currentUser?.grade);
+                            const hg = normG(hw.classGrade);
+                            const ss = normS(currentUser?.section);
+                            const hs = normS(hw.classSection);
+                            const gradeMatches = !sg || !hg || sg === hg || hw.classGrade === 'All Grades';
+                            const secMatches = hw.classSection === 'All Sections' || !ss || !hs || ss === hs;
+                            roleAllowed = gradeMatches && secMatches;
                           } else if (effectiveRole === 'teacher') {
                             const gradeMatch = !currentUser?.assignedGrades || currentUser.assignedGrades.length === 0 || currentUser.assignedGrades.includes(hw.classGrade);
                             const secMatch = hw.classSection === 'All Sections' || !currentUser?.assignedSections || currentUser.assignedSections.length === 0 || currentUser.assignedSections.includes(hw.classSection);
@@ -8836,7 +8878,15 @@ ${activeNote.content}`);
                       const filtered = homeworkList.filter(hw => {
                         let roleAllowed = true;
                         if (effectiveRole === 'student') {
-                          roleAllowed = (hw.classGrade === currentUser?.grade) && (hw.classSection === 'All Sections' || hw.classSection === currentUser?.section);
+                          const normG = (g?: string) => g ? g.toLowerCase().replace(/grade|class/g, '').trim() : '';
+                          const normS = (s?: string) => s ? s.toLowerCase().trim() : '';
+                          const sg = normG(currentUser?.grade);
+                          const hg = normG(hw.classGrade);
+                          const ss = normS(currentUser?.section);
+                          const hs = normS(hw.classSection);
+                          const gradeMatches = !sg || !hg || sg === hg || hw.classGrade === 'All Grades';
+                          const secMatches = hw.classSection === 'All Sections' || !ss || !hs || ss === hs;
+                          roleAllowed = gradeMatches && secMatches;
                         } else if (effectiveRole === 'teacher') {
                           const gradeMatch = !currentUser?.assignedGrades || currentUser.assignedGrades.length === 0 || currentUser.assignedGrades.includes(hw.classGrade);
                           const secMatch = hw.classSection === 'All Sections' || !currentUser?.assignedSections || currentUser.assignedSections.length === 0 || currentUser.assignedSections.includes(hw.classSection);
