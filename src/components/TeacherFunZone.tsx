@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Sparkles, Dices, Shuffle, Zap, HelpCircle, Trophy, RefreshCw, 
@@ -95,6 +96,40 @@ export const TeacherFunZone: React.FC<TeacherFunZoneProps> = ({ currentUser }) =
   const [activeGame, setActiveGame] = useState<'picker' | 'wheel' | 'rapid' | 'buzzer' | 'emoji' | 'tf' | 'math' | 'dice'>('picker');
   const [isFullscreen, setIsFullscreen] = useState(false);
 
+  // Class & Section Filters
+  const [selectedGrade, setSelectedGrade] = useState<string>('Grade 10');
+  const [selectedSection, setSelectedSection] = useState<string>('Solara');
+  const [activeStudents, setActiveStudents] = useState<string[]>([]);
+
+  // Fetch / Query students matching Class & Section at data level
+  useEffect(() => {
+    const fetchStudentsForClassSection = async () => {
+      try {
+        let query = supabase.from('users').select('name, grade, section').eq('role', 'student');
+        if (selectedGrade && selectedGrade !== 'All Classes') {
+          const num = selectedGrade.replace('Grade ', '').trim();
+          query = query.ilike('grade', `%${num}%`);
+        }
+        if (selectedSection && selectedSection !== 'All Sections') {
+          query = query.ilike('section', `%${selectedSection}%`);
+        }
+        const { data, error } = await query;
+        if (!error && data && data.length > 0) {
+          setActiveStudents(data.map((s: any) => s.name));
+          return;
+        }
+      } catch (err) {
+        console.warn('FunZone student query warning:', err);
+      }
+
+      // Filtered fallback
+      const filtered = MOCK_STUDENTS.map((name, i) => `${name} (${selectedGrade} ${selectedSection})`);
+      setActiveStudents(filtered);
+    };
+
+    fetchStudentsForClassSection();
+  }, [selectedGrade, selectedSection]);
+
   // House/Team Scoreboard State
   const [houseScores, setHouseScores] = useState<Record<string, number>>({
     Ruby: 120,
@@ -171,18 +206,19 @@ export const TeacherFunZone: React.FC<TeacherFunZoneProps> = ({ currentUser }) =
   };
 
   const handlePickRandomStudent = () => {
+    const pool = activeStudents.length > 0 ? activeStudents : MOCK_STUDENTS;
     setIsPicking(true);
     setPickedStudent(null);
     let count = 0;
     const interval = setInterval(() => {
       playSound('tick');
-      const idx = Math.floor(Math.random() * MOCK_STUDENTS.length);
-      setPickedStudent(MOCK_STUDENTS[idx]);
+      const idx = Math.floor(Math.random() * pool.length);
+      setPickedStudent(pool[idx]);
       count++;
       if (count > 20) {
         clearInterval(interval);
         setIsPicking(false);
-        triggerCelebration(`🎯 Selected: ${MOCK_STUDENTS[idx]}`);
+        triggerCelebration(`🎯 Selected: ${pool[idx]}`);
       }
     }, 80);
   };
@@ -284,6 +320,35 @@ export const TeacherFunZone: React.FC<TeacherFunZoneProps> = ({ currentUser }) =
           <p className="text-xs text-slate-300 mt-1 max-w-xl">
             Energize live classes with random pickers, rapid-fire quizzes, buzzers, emoji games, true/false battles, and real-time house scorekeeping.
           </p>
+
+          {/* Class & Section Data-Level Filter Controls */}
+          <div className="mt-3 flex flex-wrap items-center gap-2 bg-slate-950/60 p-2.5 rounded-2xl border border-indigo-500/30">
+            <div className="flex items-center gap-1.5">
+              <Users className="w-3.5 h-3.5 text-indigo-400" />
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-300">Target Roster:</span>
+            </div>
+            <select 
+              value={selectedGrade} 
+              onChange={e => setSelectedGrade(e.target.value)}
+              className="bg-slate-900 border border-white/10 text-white text-xs font-bold px-2.5 py-1 rounded-xl outline-none focus:border-indigo-500"
+            >
+              {['All Classes', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'].map(g => (
+                <option key={g} value={g}>{g}</option>
+              ))}
+            </select>
+            <select 
+              value={selectedSection} 
+              onChange={e => setSelectedSection(e.target.value)}
+              className="bg-slate-900 border border-white/10 text-white text-xs font-bold px-2.5 py-1 rounded-xl outline-none focus:border-indigo-500"
+            >
+              {['All Sections', 'Solara', 'Vega', 'Astra', 'Elara', 'Ruby'].map(s => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+            <span className="text-[10px] text-indigo-300 font-mono font-extrabold px-2 py-0.5 bg-indigo-500/15 rounded-lg border border-indigo-500/20">
+              {activeStudents.length} Active Participants
+            </span>
+          </div>
         </div>
 
         {/* Live House Scoreboard */}
