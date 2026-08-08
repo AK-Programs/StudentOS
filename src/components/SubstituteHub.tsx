@@ -59,6 +59,23 @@ export const SubstituteHub = ({ currentUser, effectiveRole, showNotification }: 
   const [activeTab, setActiveTab] = useState<'assignments' | 'emergencies' | 'swaps'>('assignments');
   const [swaps, setSwaps] = useState<any[]>([]);
   const [emergencies, setEmergencies] = useState<any[]>([]);
+  const [dynamicTeachers, setDynamicTeachers] = useState<string[]>(DEFAULT_TEACHERS);
+
+  useEffect(() => {
+    const fetchTeachers = async () => {
+      try {
+        const { data } = await supabase
+          .from('user_profiles')
+          .select('name')
+          .in('role', ['teacher', 'coordinator', 'admin', 'super_admin']);
+        if (data && data.length > 0) {
+          const names = Array.from(new Set(data.map((d: any) => d.name).filter(Boolean)));
+          if (names.length > 0) setDynamicTeachers(names);
+        }
+      } catch (e) {}
+    };
+    fetchTeachers();
+  }, []);
 
   // Emergency Leave Swap State
   const [emergencyModalOpen, setEmergencyModalOpen] = useState(false);
@@ -630,13 +647,13 @@ export const SubstituteHub = ({ currentUser, effectiveRole, showNotification }: 
                 <div className="flex flex-col gap-1">
                   <label className="text-[10px] font-bold text-slate-400 uppercase">Original Teacher</label>
                   <select value={emOrigTeacher} onChange={e => setEmOrigTeacher(e.target.value)} className="bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white">
-                    {DEFAULT_TEACHERS.map(t => <option key={t} value={t}>{t}</option>)}
+                    {dynamicTeachers.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-[10px] font-bold text-slate-400 uppercase">Substitute Teacher</label>
                   <select value={emSubTeacher} onChange={e => setEmSubTeacher(e.target.value)} className="bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white">
-                    {DEFAULT_TEACHERS.map(t => <option key={t} value={t}>{t}</option>)}
+                    {dynamicTeachers.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
                 </div>
               </div>
@@ -718,13 +735,13 @@ export const SubstituteHub = ({ currentUser, effectiveRole, showNotification }: 
                 <div className="flex flex-col gap-1">
                   <label className="text-[10px] font-bold text-slate-400 uppercase">Teacher A (Requester)</label>
                   <select value={swTeacherA} onChange={e => setSwTeacherA(e.target.value)} className="bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white">
-                    {DEFAULT_TEACHERS.map(t => <option key={t} value={t}>{t}</option>)}
+                    {dynamicTeachers.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-[10px] font-bold text-slate-400 uppercase">Teacher B (Swap Target)</label>
                   <select value={swTeacherB} onChange={e => setSwTeacherB(e.target.value)} className="bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white">
-                    {DEFAULT_TEACHERS.map(t => <option key={t} value={t}>{t}</option>)}
+                    {dynamicTeachers.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
                 </div>
                 <div className="flex flex-col gap-1">
