@@ -173,7 +173,7 @@ export async function generateAICompletion(
   // 3. Fallback to Native Gemini SDK
   const ai = getAIClient();
   if (ai) {
-    const candidateGeminiModels = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'];
+    const candidateGeminiModels = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
 
     for (const modelName of candidateGeminiModels) {
       try {
