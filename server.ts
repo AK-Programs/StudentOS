@@ -111,17 +111,30 @@ app.post('/api/ai/chat', async (req, res) => {
 
   try {
     console.log(`[SERVER AI /api/ai/chat] Request received for persona "${persona || 'default'}". Prompt length: ${prompt.length}`);
+    const isJsonRequested = persona === 'orion' || prompt.includes('raw JSON format') || prompt.includes('MUST be raw JSON format') || prompt.includes('operational actions');
     const text = await generateAICompletion({
       systemInstruction,
       prompt,
       history: sanitizeHistory(history || []),
       temperature: 0.7,
+      jsonMode: isJsonRequested,
       endpointName: 'AIChat'
     });
     console.log(`[SERVER AI /api/ai/chat] Completion generated successfully. Output length: ${text?.length || 0}`);
     return res.json({ text });
   } catch (apiErr: any) {
     console.error(`[SERVER AI /api/ai/chat ERROR] Provider completion failed: ${apiErr.message || apiErr}`);
+    const isJsonRequested = persona === 'orion' || prompt.includes('raw JSON format') || prompt.includes('MUST be raw JSON format') || prompt.includes('operational actions');
+    if (isJsonRequested) {
+      return res.json({
+        text: JSON.stringify({
+          responseText: "I am ready to assist you. What would you like to automate across StudentOS?",
+          action: "general_chat",
+          targetValue: "",
+          details: {}
+        })
+      });
+    }
     const openRouterKey = process.env.OPENROUTER_API_KEY || process.env.VITE_OPENROUTER_API_KEY;
     const geminiKey = process.env.GEMINI_API_KEY;
     console.log(`[SERVER AI DIAGNOSTICS] Keys present: OpenRouter=${Boolean(openRouterKey)}, Gemini=${Boolean(geminiKey)}`);
