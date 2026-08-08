@@ -42,7 +42,11 @@ export type OrionActionType =
   | 'show_announcements'
   | 'navigate_tab'
   | 'web_search'
-  | 'general_chat';
+  | 'general_chat'
+  | 'add_study_planner'
+  | 'add_task'
+  | 'complete_task'
+  | 'delete_task';
 
 export interface OrionAction {
   action: OrionActionType;
@@ -116,7 +120,11 @@ export function validateActionPermission(
     'show_announcements',
     'navigate_tab',
     'search_users',
-    'general_chat'
+    'general_chat',
+    'add_study_planner',
+    'add_task',
+    'complete_task',
+    'delete_task'
   ];
 
   if (!isTeacher) {
@@ -819,6 +827,101 @@ export async function executeRegisterCompetition(
   }
 }
 
+/**
+ * 9. Study Planner Action Handler
+ */
+export async function executeAddStudyPlanner(
+  actionObj: OrionAction,
+  user: OrionUserContext
+): Promise<OrionExecutionResult> {
+  const subject = extractCleanTitle(actionObj.title || actionObj.subject || actionObj.targetValue || '', 'homework') || 'General Study';
+  const date = actionObj.date || 'Tomorrow';
+  const time = actionObj.time || '4:00 PM - 5:00 PM';
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('s_os_add_schedule', {
+      detail: { title: subject, subject, date, time }
+    }));
+  }
+
+  return {
+    success: true,
+    action: 'add_study_planner',
+    message: `Study slot for ${subject} added.`,
+    summaryText: `📅 Scheduled **${subject}** study session for **${date}** at **${time}** in your Study Planner.`
+  };
+}
+
+/**
+ * 10. Task Manager Add Handler
+ */
+export async function executeAddTask(
+  actionObj: OrionAction,
+  user: OrionUserContext
+): Promise<OrionExecutionResult> {
+  const title = extractCleanTitle(actionObj.title || actionObj.message || actionObj.content || '', 'homework') || 'New Task';
+  const dueDate = actionObj.date || 'Tomorrow';
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('s_os_add_task', {
+      detail: { title, dueDate, subject: 'General' }
+    }));
+  }
+
+  return {
+    success: true,
+    action: 'add_task',
+    message: `Task "${title}" created.`,
+    summaryText: `✅ Task **"${title}"** added to your Task Manager (Due: **${dueDate}**).`
+  };
+}
+
+/**
+ * 11. Task Manager Complete Handler
+ */
+export async function executeCompleteTask(
+  actionObj: OrionAction,
+  user: OrionUserContext
+): Promise<OrionExecutionResult> {
+  const title = actionObj.title || actionObj.targetValue || '';
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('s_os_complete_task', {
+      detail: { title }
+    }));
+  }
+
+  return {
+    success: true,
+    action: 'complete_task',
+    message: `Task completed.`,
+    summaryText: `🎉 Marked task **"${title || 'Homework Task'}"** as completed in your Task Manager!`
+  };
+}
+
+/**
+ * 12. Task Manager Delete Handler
+ */
+export async function executeDeleteTask(
+  actionObj: OrionAction,
+  user: OrionUserContext
+): Promise<OrionExecutionResult> {
+  const title = actionObj.title || actionObj.targetValue || '';
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('s_os_delete_task', {
+      detail: { title }
+    }));
+  }
+
+  return {
+    success: true,
+    action: 'delete_task',
+    message: `Task deleted.`,
+    summaryText: `🗑️ Removed task **"${title || 'Homework Task'}"** from your Task Manager.`
+  };
+}
+
 /* ========================================================================
    CENTRALIZED ORION ACTION DISPATCH PIPELINE
    ======================================================================== */
@@ -935,6 +1038,22 @@ export async function executeOrionActionPipeline(
 
       case 'register_competition':
         res = await executeRegisterCompetition(act, userContext);
+        break;
+
+      case 'add_study_planner':
+        res = await executeAddStudyPlanner(act, userContext);
+        break;
+
+      case 'add_task':
+        res = await executeAddTask(act, userContext);
+        break;
+
+      case 'complete_task':
+        res = await executeCompleteTask(act, userContext);
+        break;
+
+      case 'delete_task':
+        res = await executeDeleteTask(act, userContext);
         break;
 
       case 'web_search':
