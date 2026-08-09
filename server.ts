@@ -111,7 +111,7 @@ app.post('/api/ai/chat', async (req, res) => {
 
   try {
     console.log(`[SERVER AI /api/ai/chat] Request received for persona "${persona || 'default'}". Prompt length: ${prompt.length}`);
-    const isJsonRequested = persona === 'orion' || prompt.includes('raw JSON format') || prompt.includes('MUST be raw JSON format') || prompt.includes('operational actions');
+    const isJsonRequested = prompt.includes('raw JSON format') || prompt.includes('MUST be raw JSON format') || prompt.includes('operational actions');
     const text = await generateAICompletion({
       systemInstruction,
       prompt,
@@ -124,7 +124,7 @@ app.post('/api/ai/chat', async (req, res) => {
     return res.json({ text });
   } catch (apiErr: any) {
     console.error(`[SERVER AI /api/ai/chat ERROR] Provider completion failed: ${apiErr.message || apiErr}`);
-    const isJsonRequested = persona === 'orion' || prompt.includes('raw JSON format') || prompt.includes('MUST be raw JSON format') || prompt.includes('operational actions');
+    const isJsonRequested = prompt.includes('raw JSON format') || prompt.includes('MUST be raw JSON format') || prompt.includes('operational actions');
     if (isJsonRequested) {
       return res.json({
         text: JSON.stringify({
