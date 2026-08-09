@@ -72,7 +72,7 @@ app.post('/api/push/subscribe', (req, res) => {
 
 app.post('/api/push/send', async (req, res) => {
   const { title, body, linkTab, targetUserId } = req.body || {};
-  console.log(`[SERVER PUSH] Disptaching push notification: "${title}" to user "${targetUserId || 'all'}"`);
+  console.log(`[SERVER PUSH] Preparing dispatch: "${title}" | Target User: "${targetUserId || 'all'}"`);
 
   const payload = JSON.stringify({
     title: title || '📢 StudentOS Alert',
@@ -81,21 +81,83 @@ app.post('/api/push/send', async (req, res) => {
     url: '/'
   });
 
-  let sentCount = 0;
+  const subscriptionsToTry: Array<{ endpoint: string; keys: any; userId?: string }> = [];
 
-  for (const item of memoryPushSubscriptions) {
-    if (targetUserId && targetUserId !== 'all' && item.userId && item.userId !== targetUserId) {
+  // 1. Gather from memory push subscriptions
+  memoryPushSubscriptions.forEach(item => {
+    if (item.subscription && item.subscription.endpoint) {
+      subscriptionsToTry.push({
+        endpoint: item.subscription.endpoint,
+        keys: item.subscription.keys,
+        userId: item.userId
+      });
+    }
+  });
+
+  // 2. Query push_subscriptions table from Supabase REST API to guarantee persistence across restarts
+  try {
+    const supabaseUrl = process.env.VITE_SUPABASE_URL || 'https://zwpoutanhsujezglbson.supabase.co';
+    const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp3cG91dGFuaHN1amV6Z2xic29uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE2OTA2MDEsImV4cCI6MjA5NzI2NjYwMX0.Y48u9duD3WohxzDD6czXevPaG1mFRFS0rdRuu4840pQ';
+    
+    const dbRes = await fetch(`${supabaseUrl}/rest/v1/push_subscriptions?select=*`, {
+      headers: {
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${supabaseKey}`
+      }
+    });
+
+    if (dbRes.ok) {
+      const dbSubs = await dbRes.json();
+      if (Array.isArray(dbSubs)) {
+        dbSubs.forEach((row: any) => {
+          if (row.endpoint) {
+            const keys = row.keys || (row.p256dh && row.auth ? { p256dh: row.p256dh, auth: row.auth } : undefined);
+            if (keys && !subscriptionsToTry.some(s => s.endpoint === row.endpoint)) {
+              subscriptionsToTry.push({
+                endpoint: row.endpoint,
+                keys: keys,
+                userId: row.user_id
+              });
+            }
+          }
+        });
+      }
+    }
+  } catch (dbErr: any) {
+    console.warn('[SERVER PUSH] Notice fetching DB push subscriptions:', dbErr?.message);
+  }
+
+  console.log(`[SERVER PUSH] Active push subscriptions candidates count: ${subscriptionsToTry.length}`);
+
+  let sentCount = 0;
+  let failCount = 0;
+
+  for (const sub of subscriptionsToTry) {
+    if (targetUserId && targetUserId !== 'all' && sub.userId && sub.userId !== targetUserId) {
       continue;
     }
+
+    console.log(`[SERVER PUSH] Sending to sub endpoint: ${sub.endpoint.substring(0, 40)}... (user: ${sub.userId || 'anonymous'})`);
+
     try {
-      await webpush.sendNotification(item.subscription, payload);
+      await webpush.sendNotification({
+        endpoint: sub.endpoint,
+        keys: sub.keys
+      }, payload);
       sentCount++;
+      console.log(`[SERVER PUSH] Successfully delivered push to ${sub.endpoint.substring(0, 30)}...`);
     } catch (pushErr: any) {
-      console.warn('[SERVER PUSH] Send notice:', pushErr?.message);
+      failCount++;
+      console.warn('[SERVER PUSH] Push delivery result notice for endpoint:', pushErr?.message || pushErr);
+      // Remove invalid/expired subscription from memory array if 410 Gone or 404
+      if (pushErr?.statusCode === 410 || pushErr?.statusCode === 404) {
+        const idx = memoryPushSubscriptions.findIndex(m => m.subscription.endpoint === sub.endpoint);
+        if (idx >= 0) memoryPushSubscriptions.splice(idx, 1);
+      }
     }
   }
 
-  return res.json({ status: 'ok', sentCount });
+  return res.json({ status: 'ok', sentCount, failCount, totalCandidates: subscriptionsToTry.length });
 });
 
 // Removed shared setup, moved to aiClient.ts
