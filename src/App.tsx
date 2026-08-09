@@ -11237,6 +11237,7 @@ Could you please guide me step-by-step on how to solve this, explaining the theo
                 <StudentOSLife currentUser={currentUser || {
                   uid: 'guest',
                   name: 'Guest Student',
+                  email: 'guest@studentos.internal',
                   role: 'student',
                   house: 'Emerald',
                   section: 'Solara',
@@ -11252,9 +11253,10 @@ Could you please guide me step-by-step on how to solve this, explaining the theo
                 <TeacherFunZone currentUser={currentUser || {
                   uid: 'guest',
                   name: 'Guest Teacher',
+                  email: 'teacher@studentos.internal',
                   role: 'teacher',
                   house: 'Ruby',
-                  section: 'Ruby',
+                  section: 'Astra',
                   grade: 'Grade 12',
                   streakDays: 10,
                   quizzesTaken: 12,
