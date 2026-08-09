@@ -118,19 +118,69 @@ export async function getAppNotifications(
 }
 
 /**
+ * Register push subscription and save to Supabase
+ */
+export async function registerPushSubscription(userId?: string): Promise<boolean> {
+  if (typeof window === 'undefined' || !('Notification' in window) || !('serviceWorker' in navigator)) {
+    return false;
+  }
+  try {
+    let registration = await navigator.serviceWorker.getRegistration('/sw.js');
+    if (!registration) {
+      registration = await navigator.serviceWorker.register('/sw.js');
+    }
+    await navigator.serviceWorker.ready;
+
+    let subscription = await registration.pushManager.getSubscription();
+    if (!subscription) {
+      try {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true
+        });
+      } catch (subErr) {
+        console.warn('[WebPush] PushManager subscribe notice:', subErr);
+      }
+    }
+
+    if (subscription) {
+      const subJson = subscription.toJSON();
+      try {
+        await supabase.from('push_subscriptions').upsert({
+          user_id: userId || null,
+          endpoint: subJson.endpoint,
+          keys: subJson.keys,
+          updated_at: new Date().toISOString()
+        }, { onConflict: 'endpoint' });
+      } catch (dbErr) {
+        console.warn('[WebPush] Saving subscription to database notice:', dbErr);
+      }
+    }
+    return true;
+  } catch (err) {
+    console.warn('[WebPush] Subscription error:', err);
+    return false;
+  }
+}
+
+/**
  * Request Browser Push Notification permission
  */
-export async function requestWebPushPermission(): Promise<boolean> {
+export async function requestWebPushPermission(userId?: string): Promise<boolean> {
   if (typeof window === 'undefined' || !('Notification' in window)) {
     return false;
   }
   if (Notification.permission === 'granted') {
+    await registerPushSubscription(userId);
     return true;
   }
   if (Notification.permission !== 'denied') {
     try {
       const permission = await Notification.requestPermission();
-      return permission === 'granted';
+      if (permission === 'granted') {
+        await registerPushSubscription(userId);
+        return true;
+      }
+      return false;
     } catch (_) {
       return false;
     }
@@ -259,9 +309,13 @@ export async function saveAppNotification(notif: AppNotification): Promise<{ suc
 }
 
 /**
- * Mark notification as read
+ * Mark notification as read (Only allowed for admins on authoritative global records, or individual target user)
  */
-export async function markNotificationAsRead(notifId: string): Promise<void> {
+export async function markNotificationAsRead(notifId: string, isAdmin: boolean = false): Promise<void> {
+  if (!isAdmin) {
+    console.log('[SUPABASE-NOTIFS] Non-admin recipient cannot alter authoritative notification record in Supabase database.');
+    return;
+  }
   try {
     if (isValidUUID(notifId)) {
       await supabase.from('notifications').update({ is_read: true }).eq('id', notifId);
@@ -274,7 +328,11 @@ export async function markNotificationAsRead(notifId: string): Promise<void> {
 /**
  * Mark all notifications as read for user
  */
-export async function markAllNotificationsAsRead(userId?: string): Promise<void> {
+export async function markAllNotificationsAsRead(userId?: string, isAdmin: boolean = false): Promise<void> {
+  if (!isAdmin) {
+    console.log('[SUPABASE-NOTIFS] Non-admin recipient cannot alter authoritative notification records in Supabase database.');
+    return;
+  }
   try {
     if (userId && isValidUUID(userId)) {
       await supabase.from('notifications').update({ is_read: true }).eq('user_id', userId);
@@ -287,9 +345,13 @@ export async function markAllNotificationsAsRead(userId?: string): Promise<void>
 }
 
 /**
- * Delete a notification
+ * Delete a notification (Only admins can delete authoritative records)
  */
-export async function deleteNotification(notifId: string): Promise<void> {
+export async function deleteNotification(notifId: string, isAdmin: boolean = false): Promise<void> {
+  if (!isAdmin) {
+    console.log('[SUPABASE-NOTIFS] Non-admin recipient cannot delete authoritative notification from Supabase database.');
+    return;
+  }
   try {
     if (isValidUUID(notifId)) {
       await supabase.from('notifications').delete().eq('id', notifId);
