@@ -14,7 +14,11 @@ interface LiveBroadcastPayload {
   createdAt: string;
 }
 
-export const LiveBroadcastBanner: React.FC = () => {
+interface LiveBroadcastBannerProps {
+  currentUser?: any;
+}
+
+export const LiveBroadcastBanner: React.FC<LiveBroadcastBannerProps> = () => {
   const [activePopup, setActivePopup] = useState<LiveBroadcastPayload | null>(null);
   const [stickyBanner, setStickyBanner] = useState<LiveBroadcastPayload | null>(null);
 
