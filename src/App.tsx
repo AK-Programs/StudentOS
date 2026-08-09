@@ -24,7 +24,7 @@ import { supabase } from './lib/supabase';
 import { getVaultNotes, saveVaultNoteToSupabase, deleteVaultNoteFromSupabase } from './lib/supabaseNotes';
 import { getSupabaseUserProfile, saveSupabaseUserProfile } from './lib/supabaseUsers';
 import { getSupabaseHomework, saveSupabaseHomework, deleteSupabaseHomework } from './lib/supabaseHomework';
-import { getAppNotifications, saveAppNotification, markNotificationAsRead, markAllNotificationsAsRead, deleteNotification, generateUUID } from './lib/notifications';
+import { getAppNotifications, saveAppNotification, markNotificationAsRead, markAllNotificationsAsRead, deleteNotification, generateUUID, registerPushSubscription, getDeviceId } from './lib/notifications';
 import { 
   getAiBuddyChats, saveAiBuddyChat, deleteAiBuddyChat, renameAiBuddyChat,
   getPeerMessages, savePeerMessage, deletePeerMessage,
@@ -252,6 +252,27 @@ export default function App() {
   const [dataLoading, setDataLoading] = useState<boolean>(true);
   const [firebaseOnboardingUser, setFirebaseOnboardingUser] = useState<any>(null);
   const [authError, setAuthError] = useState<{ code: string; message: string; hostname: string } | null>(null);
+
+  // Sync device push subscription with active StudentOS user account whenever user changes
+  useEffect(() => {
+    if (currentUser?.uid && typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'granted') {
+      registerPushSubscription(currentUser.uid);
+    }
+  }, [currentUser?.uid]);
+
+  // Listen for navigation messages from Service Worker (e.g. when clicking a browser push notification)
+  useEffect(() => {
+    const handleNavigateEvent = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail?.linkTab) {
+        setActiveTab(customEvent.detail.linkTab);
+      }
+    };
+    window.addEventListener('studentos-navigate-tab', handleNavigateEvent);
+    return () => {
+      window.removeEventListener('studentos-navigate-tab', handleNavigateEvent);
+    };
+  }, []);
 
   const DEV_MODE = false; // Production release
   const [simulatedRole, setSimulatedRole] = useState<UserRole | null>(null);
