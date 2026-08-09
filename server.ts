@@ -5,6 +5,7 @@
 
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import { getAIClient, generateAICompletion } from './server/aiClient';
@@ -20,24 +21,41 @@ const PORT = 3000;
 
 app.use(express.json({ limit: '10mb' }));
 
-// VAPID keys for Web Push
+// VAPID keys for Web Push with file system persistence across server restarts
 const DEFAULT_VAPID_PUBLIC_KEY = 'BJrzpoU4JY2uj2YmpzKKMoNsa5aHr_iL6rmLvG55NsGqInuYW1BzI1_6vYjz20GTx8qid6znkPbsVdMdppQ1uf4';
+const VAPID_KEY_FILE = path.join(process.cwd(), '.vapid-keys.json');
 
-let vapidKeys = {
-  publicKey: process.env.VAPID_PUBLIC_KEY || DEFAULT_VAPID_PUBLIC_KEY,
-  privateKey: process.env.VAPID_PRIVATE_KEY || ''
-};
+function getOrGenerateVapidKeys() {
+  let keys = {
+    publicKey: process.env.VAPID_PUBLIC_KEY || DEFAULT_VAPID_PUBLIC_KEY,
+    privateKey: process.env.VAPID_PRIVATE_KEY || ''
+  };
 
-if (!vapidKeys.privateKey) {
-  try {
-    const generated = webpush.generateVAPIDKeys();
-    // Keep user's configured/provided public key if present, otherwise use generated
-    vapidKeys.publicKey = process.env.VAPID_PUBLIC_KEY || DEFAULT_VAPID_PUBLIC_KEY;
-    vapidKeys.privateKey = generated.privateKey;
-  } catch (e) {
-    console.warn('[Push] VAPID generation notice:', e);
+  if (!keys.privateKey) {
+    if (fs.existsSync(VAPID_KEY_FILE)) {
+      try {
+        const saved = JSON.parse(fs.readFileSync(VAPID_KEY_FILE, 'utf-8'));
+        if (saved.publicKey && saved.privateKey) {
+          return saved;
+        }
+      } catch (e) {}
+    }
+    try {
+      const generated = webpush.generateVAPIDKeys();
+      keys = {
+        publicKey: keys.publicKey || generated.publicKey,
+        privateKey: generated.privateKey
+      };
+      fs.writeFileSync(VAPID_KEY_FILE, JSON.stringify(keys, null, 2));
+      console.log('[Push] Persisted new VAPID keys to .vapid-keys.json');
+    } catch (e) {
+      console.warn('[Push] Error writing VAPID keys file:', e);
+    }
   }
+  return keys;
 }
+
+const vapidKeys = getOrGenerateVapidKeys();
 
 if (vapidKeys.publicKey && vapidKeys.privateKey) {
   try {
@@ -51,21 +69,42 @@ if (vapidKeys.publicKey && vapidKeys.privateKey) {
   }
 }
 
-const memoryPushSubscriptions: Array<{ userId?: string; subscription: any }> = [];
+interface DevicePushItem {
+  deviceId: string;
+  userId: string | null;
+  subscription: any;
+  userAgent?: string;
+  updatedAt: number;
+}
+
+const memoryPushSubscriptions: DevicePushItem[] = [];
 
 app.get('/api/push/vapid-public-key', (req, res) => {
   res.json({ publicKey: vapidKeys.publicKey });
 });
 
 app.post('/api/push/subscribe', (req, res) => {
-  const { subscription, userId } = req.body || {};
+  const { subscription, userId, deviceId, userAgent } = req.body || {};
   if (subscription && subscription.endpoint) {
-    const existingIndex = memoryPushSubscriptions.findIndex(s => s.subscription.endpoint === subscription.endpoint);
+    const devId = deviceId || 'dev_' + Math.random().toString(36).substring(2, 10);
+    const existingIndex = memoryPushSubscriptions.findIndex(
+      s => s.subscription.endpoint === subscription.endpoint || (s.deviceId && s.deviceId === devId)
+    );
+
+    const newItem: DevicePushItem = {
+      deviceId: devId,
+      userId: userId || null,
+      subscription,
+      userAgent: userAgent || '',
+      updatedAt: Date.now()
+    };
+
     if (existingIndex >= 0) {
-      memoryPushSubscriptions[existingIndex] = { userId, subscription };
+      memoryPushSubscriptions[existingIndex] = newItem;
     } else {
-      memoryPushSubscriptions.push({ userId, subscription });
+      memoryPushSubscriptions.push(newItem);
     }
+    console.log(`[SERVER PUSH] Registered device push sub: deviceId=${devId}, userId=${userId || 'anonymous'}, endpoint=${subscription.endpoint.substring(0, 30)}...`);
   }
   return res.json({ status: 'ok' });
 });
@@ -81,7 +120,7 @@ app.post('/api/push/send', async (req, res) => {
     url: '/'
   });
 
-  const subscriptionsToTry: Array<{ endpoint: string; keys: any; userId?: string }> = [];
+  const subscriptionsToTry: Array<{ endpoint: string; keys: any; userId?: string; deviceId?: string }> = [];
 
   // 1. Gather from memory push subscriptions
   memoryPushSubscriptions.forEach(item => {
@@ -89,12 +128,13 @@ app.post('/api/push/send', async (req, res) => {
       subscriptionsToTry.push({
         endpoint: item.subscription.endpoint,
         keys: item.subscription.keys,
-        userId: item.userId
+        userId: item.userId || undefined,
+        deviceId: item.deviceId
       });
     }
   });
 
-  // 2. Query push_subscriptions table from Supabase REST API to guarantee persistence across restarts
+  // 2. Query push_subscriptions table from Supabase REST API for persistent subscriptions across restarts
   try {
     const supabaseUrl = process.env.VITE_SUPABASE_URL || 'https://zwpoutanhsujezglbson.supabase.co';
     const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp3cG91dGFuaHN1amV6Z2xic29uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE2OTA2MDEsImV4cCI6MjA5NzI2NjYwMX0.Y48u9duD3WohxzDD6czXevPaG1mFRFS0rdRuu4840pQ';
@@ -116,7 +156,8 @@ app.post('/api/push/send', async (req, res) => {
               subscriptionsToTry.push({
                 endpoint: row.endpoint,
                 keys: keys,
-                userId: row.user_id
+                userId: row.user_id || undefined,
+                deviceId: row.device_id || undefined
               });
             }
           }
@@ -127,17 +168,19 @@ app.post('/api/push/send', async (req, res) => {
     console.warn('[SERVER PUSH] Notice fetching DB push subscriptions:', dbErr?.message);
   }
 
-  console.log(`[SERVER PUSH] Active push subscriptions candidates count: ${subscriptionsToTry.length}`);
+  console.log(`[SERVER PUSH] Active push candidate subscriptions count: ${subscriptionsToTry.length}`);
 
   let sentCount = 0;
   let failCount = 0;
 
   for (const sub of subscriptionsToTry) {
+    // If targetUserId is set and not 'all', check if subscription's mapped userId matches
     if (targetUserId && targetUserId !== 'all' && sub.userId && sub.userId !== targetUserId) {
+      console.log(`[SERVER PUSH] Skipping subscription for device ${sub.deviceId || 'unknown'}: active user on device is ${sub.userId}, target is ${targetUserId}`);
       continue;
     }
 
-    console.log(`[SERVER PUSH] Sending to sub endpoint: ${sub.endpoint.substring(0, 40)}... (user: ${sub.userId || 'anonymous'})`);
+    console.log(`[SERVER PUSH] Delivering push to endpoint: ${sub.endpoint.substring(0, 30)}... (device: ${sub.deviceId || 'unknown'}, user: ${sub.userId || 'anonymous'})`);
 
     try {
       await webpush.sendNotification({
@@ -145,11 +188,10 @@ app.post('/api/push/send', async (req, res) => {
         keys: sub.keys
       }, payload);
       sentCount++;
-      console.log(`[SERVER PUSH] Successfully delivered push to ${sub.endpoint.substring(0, 30)}...`);
+      console.log(`[SERVER PUSH] Successfully delivered push to device ${sub.deviceId || 'unknown'}`);
     } catch (pushErr: any) {
       failCount++;
-      console.warn('[SERVER PUSH] Push delivery result notice for endpoint:', pushErr?.message || pushErr);
-      // Remove invalid/expired subscription from memory array if 410 Gone or 404
+      console.warn('[SERVER PUSH] Delivery notice:', pushErr?.message || pushErr);
       if (pushErr?.statusCode === 410 || pushErr?.statusCode === 404) {
         const idx = memoryPushSubscriptions.findIndex(m => m.subscription.endpoint === sub.endpoint);
         if (idx >= 0) memoryPushSubscriptions.splice(idx, 1);
