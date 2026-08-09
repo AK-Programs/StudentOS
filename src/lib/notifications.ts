@@ -7,7 +7,7 @@ function isValidUUID(str?: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 }
 
-function generateUUID(): string {
+export function generateUUID(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
   }
@@ -154,7 +154,7 @@ export async function getAppNotifications(
           message: payload.message || item.message || payload.content || item.content || '',
           type: item.type || payload.type || 'announcement',
           createdAt: item.created_at ? new Date(item.created_at).toISOString() : new Date().toISOString(),
-          isRead: uState ? uState.isRead : (item.is_read ?? payload.isRead ?? false),
+          isRead: uState ? uState.isRead : false,
           targetUserId: payload.targetUserId || item.target_user_id || item.user_id || 'all',
           targetClass: payload.targetClass || item.target_class || 'all',
           targetSection: payload.targetSection || item.target_section || 'all',
