@@ -1083,7 +1083,7 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
 
   const isBroadcastChannel = activeRoomInfo.type === 'channel';
   const isModerator = (activeRoomInfo.moderators || []).includes(currentUser?.uid || '') || activeRoomInfo.creatorId === currentUser?.uid;
-  const canPostInChannel = !isBroadcastChannel || effectiveRole === 'teacher' || effectiveRole === 'principal' || isModerator;
+  const canPostInChannel = !isBroadcastChannel || effectiveRole === 'teacher' || effectiveRole === 'admin' || effectiveRole === 'super_admin' || effectiveRole === 'coordinator' || isModerator;
 
   // Filter messages for current room & search query
   const roomMessages = chats.filter(c => {
