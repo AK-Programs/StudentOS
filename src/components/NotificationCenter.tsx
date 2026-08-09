@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Bell, 
+  BellRing,
+  ShieldAlert,
   CheckCheck, 
   Trash2, 
   Volume2, 
@@ -22,7 +24,8 @@ import {
   markAllNotificationsAsRead, 
   deleteNotification,
   triggerNotificationSound,
-  isUserEligibleForNotification
+  isUserEligibleForNotification,
+  requestWebPushPermission
 } from '../lib/notifications';
 import { soundService } from '../lib/soundService';
 import { supabase } from '../lib/supabase';
@@ -43,6 +46,18 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [filter, setFilter] = useState<'all' | 'unread' | 'broadcast' | 'mention' | 'academic'>('all');
   const [isMuted, setIsMuted] = useState<boolean>(soundService.getMuted());
+  const [permissionState, setPermissionState] = useState<string>(
+    typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'granted'
+  );
+
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'super_admin';
+
+  const handleEnablePushPermissions = async () => {
+    await requestWebPushPermission(currentUser?.uid);
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      setPermissionState(Notification.permission);
+    }
+  };
 
   // Load notifications from Supabase
   const loadNotifications = async () => {
@@ -82,36 +97,32 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
 
   const handleMarkAsRead = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    await markNotificationAsRead(id);
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
-    );
+    if (isAdmin) {
+      await markNotificationAsRead(id, true);
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
+      );
+    }
   };
 
   const handleMarkAllRead = async () => {
-    await markAllNotificationsAsRead(currentUser?.uid);
-    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    if (isAdmin) {
+      await markAllNotificationsAsRead(currentUser?.uid, true);
+      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    }
   };
 
   const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    const isAdmin = currentUser?.role === 'admin' || currentUser?.role === 'super_admin';
     if (isAdmin) {
-      await deleteNotification(id);
-    } else {
-      // Ordinary users dismiss notification locally without altering authoritative Supabase record
-      const dismissed: string[] = JSON.parse(localStorage.getItem(`s_os_dismissed_notifs_${currentUser?.uid}`) || '[]');
-      if (!dismissed.includes(id)) {
-        dismissed.push(id);
-        localStorage.setItem(`s_os_dismissed_notifs_${currentUser?.uid}`, JSON.stringify(dismissed));
-      }
+      await deleteNotification(id, true);
+      setNotifications((prev) => prev.filter((n) => n.id !== id));
     }
-    setNotifications((prev) => prev.filter((n) => n.id !== id));
   };
 
   const handleNotificationClick = (notif: AppNotification) => {
-    if (!notif.isRead) {
-      markNotificationAsRead(notif.id);
+    if (isAdmin && !notif.isRead) {
+      markNotificationAsRead(notif.id, true);
       setNotifications((prev) =>
         prev.map((n) => (n.id === notif.id ? { ...n, isRead: true } : n))
       );
@@ -193,7 +204,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
               {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
             </button>
 
-            {unreadCount > 0 && (
+            {unreadCount > 0 && isAdmin && (
               <button
                 onClick={handleMarkAllRead}
                 title="Mark all as read"
@@ -211,6 +222,37 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
             </button>
           </div>
         </div>
+
+        {/* Push Notification Permission Prompt Banner */}
+        {permissionState === 'default' && (
+          <div className="p-3.5 bg-indigo-950/80 border-b border-indigo-500/30 flex flex-col gap-2.5">
+            <div className="flex items-start gap-2.5">
+              <div className="p-2 bg-indigo-500/20 text-indigo-400 rounded-xl shrink-0 mt-0.5">
+                <BellRing className="w-4 h-4" />
+              </div>
+              <div className="flex-1 text-xs">
+                <p className="font-bold text-white text-xs">Enable Push Notifications</p>
+                <p className="text-slate-300 mt-0.5 leading-snug">
+                  Allow notifications to receive school announcements, meetings, homework, calls and other important StudentOS updates.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={handleEnablePushPermissions}
+              className="w-full py-2 px-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-950/40"
+            >
+              <Bell className="w-3.5 h-3.5" />
+              Enable Notifications
+            </button>
+          </div>
+        )}
+
+        {permissionState === 'denied' && (
+          <div className="p-3 bg-amber-950/40 border-b border-amber-500/20 text-xs text-amber-300 flex items-center gap-2">
+            <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0" />
+            <span>Browser push notifications are blocked in your browser settings.</span>
+          </div>
+        )}
 
         {/* Filter Bar */}
         <div className="p-3 border-b border-white/10 bg-slate-900/50 flex items-center gap-1.5 overflow-x-auto scrollbar-none text-xs">
@@ -281,25 +323,27 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
                   </div>
                 </div>
 
-                {/* Actions on Hover */}
-                <div className="absolute bottom-3 right-3 flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
-                  {!notif.isRead && (
+                {/* Actions on Hover (Admin Only) */}
+                {isAdmin && (
+                  <div className="absolute bottom-3 right-3 flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
+                    {!notif.isRead && (
+                      <button
+                        onClick={(e) => handleMarkAsRead(notif.id, e)}
+                        title="Mark as read"
+                        className="p-1.5 rounded-lg bg-slate-800 hover:bg-emerald-500/20 text-slate-400 hover:text-emerald-400 border border-white/10"
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                     <button
-                      onClick={(e) => handleMarkAsRead(notif.id, e)}
-                      title="Mark as read"
-                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-emerald-500/20 text-slate-400 hover:text-emerald-400 border border-white/10"
+                      onClick={(e) => handleDelete(notif.id, e)}
+                      title="Delete notification"
+                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 border border-white/10"
                     >
-                      <Check className="w-3.5 h-3.5" />
+                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
-                  )}
-                  <button
-                    onClick={(e) => handleDelete(notif.id, e)}
-                    title="Delete notification"
-                    className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 border border-white/10"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+                  </div>
+                )}
               </div>
             ))
           )}
