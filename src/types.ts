@@ -223,6 +223,7 @@ export interface ChatMessage {
   createdAt: string;
   targetId?: string;
   sharedMaterialId?: string;
+  senderId?: string;
   ownerUid?: string;
   replyToId?: string;
   replyToText?: string;
@@ -259,7 +260,7 @@ export interface AppNotification {
   id: string;
   title: string;
   message: string;
-  type: 'assignment' | 'homework' | 'attendance' | 'exam' | 'marks' | 'feedback' | 'announcement' | 'chat' | 'mention' | 'ai_task' | 'substitute' | 'timetable' | 'resource' | 'blog';
+  type: 'assignment' | 'homework' | 'attendance' | 'exam' | 'marks' | 'feedback' | 'announcement' | 'chat' | 'mention' | 'ai_task' | 'substitute' | 'timetable' | 'resource' | 'blog' | 'reminder' | 'notice';
   createdAt: string;
   isRead: boolean;
   targetUserId?: string; // 'all' or user ID
