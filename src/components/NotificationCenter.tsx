@@ -168,36 +168,48 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
     }
   };
 
+  // Prevent background scrolling on mobile/desktop when notification drawer is open
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-sm animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/70 backdrop-blur-sm animate-fadeIn overflow-hidden">
       {/* Backdrop Click */}
-      <div className="flex-1" onClick={onClose} />
+      <div className="flex-1 cursor-pointer" onClick={onClose} aria-label="Close notification overlay" />
 
-      {/* Drawer Container */}
-      <div className="w-full max-w-md bg-slate-900 border-l border-white/10 h-full flex flex-col shadow-2xl z-10 animate-slideLeft">
+      {/* Drawer Container - Responsive across mobile, tablet, laptop & desktop */}
+      <div className="w-full sm:w-[420px] sm:max-w-md bg-slate-900 sm:border-l border-white/10 h-full flex flex-col shadow-2xl z-10 animate-slideLeft overflow-hidden">
         
         {/* Header */}
-        <div className="p-4 border-b border-white/10 flex items-center justify-between bg-slate-950/80">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400">
+        <div className="p-3.5 sm:p-4 border-b border-white/10 flex items-center justify-between bg-slate-950/90 shrink-0">
+          <div className="flex items-center gap-2.5 min-w-0 pr-2">
+            <div className="p-2 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 shrink-0">
               <Bell className="w-5 h-5" />
             </div>
-            <div>
-              <h2 className="font-bold text-white text-base flex items-center gap-2">
+            <div className="min-w-0">
+              <h2 className="font-bold text-white text-sm sm:text-base flex items-center gap-2 truncate">
                 Notifications
                 {unreadCount > 0 && (
-                  <span className="px-2 py-0.5 text-xs font-extrabold bg-indigo-600 text-white rounded-full animate-pulse">
+                  <span className="px-2 py-0.5 text-[10px] sm:text-xs font-extrabold bg-indigo-600 text-white rounded-full animate-pulse shrink-0">
                     {unreadCount} new
                   </span>
                 )}
               </h2>
-              <p className="text-xs text-slate-400">Realtime activity & updates</p>
+              <p className="text-[11px] sm:text-xs text-slate-400 truncate">Realtime activity & updates</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1.5 shrink-0">
             <button
               onClick={toggleSound}
               title={isMuted ? 'Unmute notification sounds' : 'Mute notification sounds'}
@@ -222,46 +234,50 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
 
             <button
               onClick={onClose}
-              className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white border border-white/10"
+              aria-label="Close notification panel"
+              className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-white/10 transition-colors"
             >
-              <X className="w-4 h-4" />
+              <X className="w-4.5 h-4.5" />
             </button>
           </div>
         </div>
 
-        {/* Push Notification Permission Prompt Banner */}
+        {/* Push Notification Permission Banner */}
         {permissionState === 'default' && (
-          <div className="p-3.5 bg-indigo-950/80 border-b border-indigo-500/30 flex flex-col gap-2.5">
+          <div className="p-3.5 bg-indigo-950/90 border-b border-indigo-500/30 flex flex-col gap-2.5 shrink-0">
             <div className="flex items-start gap-2.5">
               <div className="p-2 bg-indigo-500/20 text-indigo-400 rounded-xl shrink-0 mt-0.5">
                 <BellRing className="w-4 h-4" />
               </div>
-              <div className="flex-1 text-xs">
+              <div className="flex-1 text-xs min-w-0">
                 <p className="font-bold text-white text-xs">Enable Push Notifications</p>
                 <p className="text-slate-300 mt-0.5 leading-snug">
-                  Allow notifications to receive school announcements, meetings, homework, calls and other important StudentOS updates.
+                  Allow background notifications to receive school announcements, homework alerts, and messaging updates.
                 </p>
               </div>
             </div>
             <button
               onClick={handleEnablePushPermissions}
-              className="w-full py-2 px-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-950/40"
+              className="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-950/40"
             >
               <Bell className="w-3.5 h-3.5" />
-              Enable Notifications
+              Enable Push Notifications
             </button>
           </div>
         )}
 
         {permissionState === 'denied' && (
-          <div className="p-3 bg-amber-950/40 border-b border-amber-500/20 text-xs text-amber-300 flex items-center gap-2">
-            <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0" />
-            <span>Browser push notifications are blocked in your browser settings.</span>
+          <div className="p-3 bg-amber-950/40 border-b border-amber-500/20 text-xs text-amber-300 flex items-center gap-2 shrink-0">
+            <ShieldAlert className="w-4.5 h-4.5 text-amber-400 shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold text-amber-200">Push notifications blocked</p>
+              <p className="text-[11px] text-amber-300/80 mt-0.5">Enable notifications in your browser's site settings to receive alerts.</p>
+            </div>
           </div>
         )}
 
         {/* Filter Bar */}
-        <div className="p-3 border-b border-white/10 bg-slate-900/50 flex items-center gap-1.5 overflow-x-auto scrollbar-none text-xs">
+        <div className="p-2.5 border-b border-white/10 bg-slate-900/60 flex items-center gap-1.5 overflow-x-auto scrollbar-none text-xs shrink-0">
           <Filter className="w-3.5 h-3.5 text-slate-400 shrink-0 ml-1" />
           {[
             { id: 'all', label: 'All' },
@@ -273,7 +289,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
             <button
               key={item.id}
               onClick={() => setFilter(item.id as any)}
-              className={`px-3 py-1.5 rounded-lg whitespace-nowrap transition-all font-medium ${
+              className={`px-3 py-1.5 rounded-xl whitespace-nowrap transition-all font-medium text-xs ${
                 filter === item.id
                   ? 'bg-indigo-600 text-white font-semibold shadow-md'
                   : 'bg-slate-800/80 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
@@ -285,9 +301,9 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
         </div>
 
         {/* Notification List */}
-        <div className="flex-1 overflow-y-auto p-3 space-y-2.5 scrollbar-thin">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden p-3 sm:p-3.5 space-y-2.5 scrollbar-thin">
           {filteredNotifications.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-slate-500 space-y-3 p-8 text-center">
+            <div className="h-full min-h-[220px] flex flex-col items-center justify-center text-slate-500 space-y-3 p-6 text-center">
               <div className="p-4 rounded-full bg-slate-800/50 border border-white/5">
                 <Bell className="w-8 h-8 text-slate-600" />
               </div>
@@ -299,7 +315,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
               <div
                 key={notif.id}
                 onClick={() => handleNotificationClick(notif)}
-                className={`group relative p-3.5 rounded-2xl border transition-all cursor-pointer ${
+                className={`group relative p-3 sm:p-3.5 rounded-2xl border transition-all cursor-pointer ${
                   !notif.isRead
                     ? 'bg-slate-800/90 border-indigo-500/40 shadow-lg shadow-indigo-950/20'
                     : 'bg-slate-900/60 border-white/5 hover:border-white/20 hover:bg-slate-800/50'
@@ -309,19 +325,19 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
                   <span className="absolute top-3.5 right-3.5 w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />
                 )}
 
-                <div className="flex gap-3 items-start">
+                <div className="flex gap-2.5 sm:gap-3 items-start pr-4">
                   <div className="p-2 rounded-xl bg-slate-950 border border-white/10 shrink-0">
                     {getTypeIcon(notif.type)}
                   </div>
 
-                  <div className="flex-1 min-w-0 pr-6">
-                    <h4 className="font-bold text-sm text-white group-hover:text-indigo-300 transition-colors truncate">
+                  <div className="flex-1 min-w-0">
+                    <h4 className="font-bold text-xs sm:text-sm text-white group-hover:text-indigo-300 transition-colors break-words">
                       {notif.title}
                     </h4>
-                    <p className="text-xs text-slate-300 mt-1 line-clamp-2 leading-relaxed">
+                    <p className="text-xs text-slate-300 mt-1 leading-relaxed break-words line-clamp-3">
                       {notif.message}
                     </p>
-                    <div className="flex items-center gap-2 mt-2 text-[10px] text-slate-400">
+                    <div className="flex items-center gap-2 mt-2 text-[10px] text-slate-400 flex-wrap">
                       <span>{new Date(notif.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                       <span>•</span>
                       <span className="capitalize">{notif.type}</span>
@@ -329,23 +345,25 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
                   </div>
                 </div>
 
-                {/* Actions on Hover */}
-                <div className="absolute bottom-3 right-3 flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
+                {/* Touch/Mobile & Desktop Action Buttons */}
+                <div className="mt-2.5 pt-2 border-t border-white/5 flex items-center justify-end gap-1.5 sm:border-t-0 sm:pt-0 sm:mt-0 sm:absolute sm:bottom-3 sm:right-3 sm:opacity-80 sm:group-hover:opacity-100 transition-opacity">
                   {!notif.isRead && (
                     <button
                       onClick={(e) => handleMarkAsRead(notif.id, e)}
                       title="Mark as read"
-                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-emerald-500/20 text-slate-400 hover:text-emerald-400 border border-white/10"
+                      className="px-2.5 py-1 sm:p-1.5 rounded-lg bg-slate-800 hover:bg-emerald-500/20 text-slate-300 hover:text-emerald-400 border border-white/10 text-[11px] sm:text-xs flex items-center gap-1 transition-colors"
                     >
-                      <Check className="w-3.5 h-3.5" />
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      <span className="sm:hidden font-medium">Read</span>
                     </button>
                   )}
                   <button
                     onClick={(e) => handleDelete(notif.id, e)}
                     title="Dismiss/Delete notification"
-                    className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 border border-white/10"
+                    className="px-2.5 py-1 sm:p-1.5 rounded-lg bg-slate-800 hover:bg-rose-500/20 text-slate-300 hover:text-rose-400 border border-white/10 text-[11px] sm:text-xs flex items-center gap-1 transition-colors"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
+                    <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                    <span className="sm:hidden font-medium">Delete</span>
                   </button>
                 </div>
               </div>
@@ -354,7 +372,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="p-3 border-t border-white/10 bg-slate-950 text-center text-[11px] text-slate-500">
+        <div className="p-3 border-t border-white/10 bg-slate-950 text-center text-[11px] text-slate-500 shrink-0">
           StudentOS Realtime Notification Engine
         </div>
       </div>
