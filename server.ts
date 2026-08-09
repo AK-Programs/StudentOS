@@ -22,7 +22,7 @@ const PORT = 3000;
 app.use(express.json({ limit: '10mb' }));
 
 // VAPID keys for Web Push with file system persistence across server restarts
-const DEFAULT_VAPID_PUBLIC_KEY = 'BJrzpoU4JY2uj2YmpzKKMoNsa5aHr_iL6rmLvG55NsGqInuYW1BzI1_6vYjz20GTx8qid6znkPbsVdMdppQ1uf4';
+const DEFAULT_VAPID_PUBLIC_KEY = 'BPO8bIMHJfOSpN1NkgxPhI_XZ9KkFr0q_6NpMjqw7oZcMI1tqz04PPQg2m-4IIiPHFrTbpMpZHhn8AM3S-SPw1I';
 const VAPID_KEY_FILE = path.join(process.cwd(), '.vapid-keys.json');
 
 function getOrGenerateVapidKeys() {
