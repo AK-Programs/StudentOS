@@ -93,8 +93,9 @@ export async function generateAICompletion(
   if (openRouterKey) {
     const candidateModels = modelOverride ? [modelOverride] : [
       process.env.OPENROUTER_MODEL || 'deepseek/deepseek-v4-flash',
-      'deepseek/deepseek-r1',
       'deepseek/deepseek-chat',
+      'deepseek/deepseek-r1',
+      'google/gemini-2.5-flash',
       'qwen/qwen-2.5-72b-instruct'
     ];
 
@@ -154,8 +155,9 @@ export async function generateAICompletion(
 
         if (response.ok) {
           const data = await response.json();
-          const text = data.choices?.[0]?.message?.content;
-          if (text && typeof text === 'string' && text.trim().length > 0) {
+          const choiceMsg = data.choices?.[0]?.message;
+          const text = (choiceMsg?.content || choiceMsg?.reasoning || '').trim();
+          if (text && typeof text === 'string' && text.length > 0) {
             console.log(`[${endpointName}] Successfully received ${text.length} characters from OpenRouter (${modelName}).`);
             return text;
           }
