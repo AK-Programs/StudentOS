@@ -59,34 +59,37 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
     }
   };
 
-  // Load notifications from Supabase
+  // Load notifications from Supabase with per-user state
   const loadNotifications = async () => {
     if (!currentUser) return;
     const data = await getAppNotifications(currentUser.uid, currentUser.grade, currentUser.section, currentUser.role);
-    const dismissed: string[] = JSON.parse(localStorage.getItem(`s_os_dismissed_notifs_${currentUser.uid}`) || '[]');
-    setNotifications(data.filter(n => !dismissed.includes(n.id)));
+    setNotifications(data);
   };
 
   useEffect(() => {
     loadNotifications();
 
-    // Subscribe to realtime notifications
+    // Subscribe to realtime broadcast notifications
     const channel = supabase.channel('student-os-public');
     channel.on('broadcast', { event: 'new_app_notification' }, (payload) => {
       if (payload && payload.payload) {
         const notif = payload.payload as AppNotification;
         if (isUserEligibleForNotification(notif, currentUser || {})) {
-          const dismissed: string[] = JSON.parse(localStorage.getItem(`s_os_dismissed_notifs_${currentUser?.uid}`) || '[]');
-          if (!dismissed.includes(notif.id)) {
-            setNotifications((prev) => [notif, ...prev.filter((n) => n.id !== notif.id)]);
-            triggerNotificationSound(notif.type);
-          }
+          setNotifications((prev) => [notif, ...prev.filter((n) => n.id !== notif.id)]);
+          triggerNotificationSound(notif.type);
         }
       }
     });
 
+    // Listen to local per-user state changes across tabs
+    const handleStateChange = () => {
+      loadNotifications();
+    };
+    window.addEventListener('studentos-notif-state-change', handleStateChange);
+
     return () => {
       supabase.removeChannel(channel);
+      window.removeEventListener('studentos-notif-state-change', handleStateChange);
     };
   }, [currentUser?.uid, currentUser?.grade, currentUser?.section, currentUser?.role]);
 
@@ -97,32 +100,26 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
 
   const handleMarkAsRead = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (isAdmin) {
-      await markNotificationAsRead(id, true);
-      setNotifications((prev) =>
-        prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
-      );
-    }
+    await markNotificationAsRead(id, currentUser?.uid);
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
+    );
   };
 
   const handleMarkAllRead = async () => {
-    if (isAdmin) {
-      await markAllNotificationsAsRead(currentUser?.uid, true);
-      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
-    }
+    await markAllNotificationsAsRead(notifications, currentUser?.uid);
+    setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
   };
 
   const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (isAdmin) {
-      await deleteNotification(id, true);
-      setNotifications((prev) => prev.filter((n) => n.id !== id));
-    }
+    await deleteNotification(id, currentUser?.uid);
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
   };
 
   const handleNotificationClick = (notif: AppNotification) => {
-    if (isAdmin && !notif.isRead) {
-      markNotificationAsRead(notif.id, true);
+    if (!notif.isRead) {
+      markNotificationAsRead(notif.id, currentUser?.uid);
       setNotifications((prev) =>
         prev.map((n) => (n.id === notif.id ? { ...n, isRead: true } : n))
       );
@@ -204,7 +201,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
               {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
             </button>
 
-            {unreadCount > 0 && isAdmin && (
+            {unreadCount > 0 && (
               <button
                 onClick={handleMarkAllRead}
                 title="Mark all as read"
@@ -323,27 +320,25 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
                   </div>
                 </div>
 
-                {/* Actions on Hover (Admin Only) */}
-                {isAdmin && (
-                  <div className="absolute bottom-3 right-3 flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
-                    {!notif.isRead && (
-                      <button
-                        onClick={(e) => handleMarkAsRead(notif.id, e)}
-                        title="Mark as read"
-                        className="p-1.5 rounded-lg bg-slate-800 hover:bg-emerald-500/20 text-slate-400 hover:text-emerald-400 border border-white/10"
-                      >
-                        <Check className="w-3.5 h-3.5" />
-                      </button>
-                    )}
+                {/* Actions on Hover */}
+                <div className="absolute bottom-3 right-3 flex items-center gap-1 opacity-80 group-hover:opacity-100 transition-opacity">
+                  {!notif.isRead && (
                     <button
-                      onClick={(e) => handleDelete(notif.id, e)}
-                      title="Delete notification"
-                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 border border-white/10"
+                      onClick={(e) => handleMarkAsRead(notif.id, e)}
+                      title="Mark as read"
+                      className="p-1.5 rounded-lg bg-slate-800 hover:bg-emerald-500/20 text-slate-400 hover:text-emerald-400 border border-white/10"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      <Check className="w-3.5 h-3.5" />
                     </button>
-                  </div>
-                )}
+                  )}
+                  <button
+                    onClick={(e) => handleDelete(notif.id, e)}
+                    title="Dismiss/Delete notification"
+                    className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 border border-white/10"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
               </div>
             ))
           )}
