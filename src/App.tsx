@@ -1793,7 +1793,12 @@ export default function App() {
       }
     };
 
+    const handleNotifStateChange = () => {
+      getAppNotifications(currentUser.uid, currentUser.grade, currentUser.section, effectiveRole).then(list => setNotifications(list));
+    };
+
     window.addEventListener('studentos-db-update', handleDbUpdate);
+    window.addEventListener('studentos-notif-state-change', handleNotifStateChange);
 
     // Subscribe to both Postgres changes and Realtime Broadcast channel
     const channel = supabase.channel('student-os-live-sync')
@@ -1811,6 +1816,7 @@ export default function App() {
 
     return () => {
       window.removeEventListener('studentos-db-update', handleDbUpdate);
+      window.removeEventListener('studentos-notif-state-change', handleNotifStateChange);
       supabase.removeChannel(channel);
     };
   }, [currentUser]);
