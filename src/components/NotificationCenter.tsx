@@ -62,8 +62,17 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
   // Load notifications from Supabase with per-user state
   const loadNotifications = async () => {
     if (!currentUser) return;
-    const data = await getAppNotifications(currentUser.uid, currentUser.grade, currentUser.section, currentUser.role);
-    setNotifications(data);
+    try {
+      const data = await getAppNotifications(currentUser.uid, currentUser.grade, currentUser.section, currentUser.role);
+      if (data) {
+        setNotifications(prev => {
+          if (data.length === 0 && prev.length > 0) return prev;
+          return data;
+        });
+      }
+    } catch (e) {
+      console.warn('[NOTIF-CENTER] Error loading notifications:', e);
+    }
   };
 
   useEffect(() => {
