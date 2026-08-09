@@ -820,7 +820,7 @@ Your response MUST be raw JSON format with NO markdown wrapping:
       }
 
       return {
-        responseText: aiText && !aiText.includes('{') ? aiText : `I'm ready to assist you. Let me know what you'd like to automate across StudentOS!`,
+        responseText: (aiText && aiText.trim().length > 0) ? aiText : `I'm ready to assist you. Let me know what you'd like to automate across StudentOS!`,
         action: 'general_chat'
       };
     } catch (err: any) {
