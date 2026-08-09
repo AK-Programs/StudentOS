@@ -51,7 +51,7 @@ export const BroadcastModal: React.FC<BroadcastModalProps> = ({
         id: notifId,
         title: title.trim(),
         message: message.trim(),
-        type: category,
+        type: category === 'notice' ? 'announcement' : category,
         createdAt: new Date().toISOString(),
         isRead: false,
         targetUserId: 'all',
