@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   Bell, 
   BellRing,
@@ -181,14 +182,15 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
   }, [isOpen]);
 
   if (!isOpen) return null;
+  if (typeof document === 'undefined') return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/70 backdrop-blur-sm animate-fadeIn overflow-hidden">
+  return createPortal(
+    <div className="fixed inset-0 z-[99999] flex justify-end bg-black/75 backdrop-blur-md animate-fadeIn overflow-hidden pointer-events-auto">
       {/* Backdrop Click */}
       <div className="flex-1 cursor-pointer" onClick={onClose} aria-label="Close notification overlay" />
 
       {/* Drawer Container - Responsive across mobile, tablet, laptop & desktop */}
-      <div className="w-full sm:w-[420px] sm:max-w-md bg-slate-900 sm:border-l border-white/10 h-full flex flex-col shadow-2xl z-10 animate-slideLeft overflow-hidden">
+      <div className="w-full sm:w-[420px] sm:max-w-md bg-slate-900 border-l border-white/10 h-full flex flex-col shadow-2xl z-10 animate-slideLeft overflow-hidden">
         
         {/* Header */}
         <div className="p-3.5 sm:p-4 border-b border-white/10 flex items-center justify-between bg-slate-950/90 shrink-0">
@@ -376,6 +378,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({
           StudentOS Realtime Notification Engine
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
