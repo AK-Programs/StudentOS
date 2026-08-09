@@ -11,6 +11,7 @@ import { getAIClient, generateAICompletion } from './server/aiClient';
 import dotenv from 'dotenv';
 import { WebSocketServer, WebSocket as WSWebSocket } from 'ws';
 import { generateMermaidDiagram, generateSvgDiagram, generateCanvasElements } from './server/diagramEngine.js';
+import webpush from 'web-push';
 
 dotenv.config();
 
@@ -18,6 +19,84 @@ export const app = express();
 const PORT = 3000;
 
 app.use(express.json({ limit: '10mb' }));
+
+// VAPID keys for Web Push
+const DEFAULT_VAPID_PUBLIC_KEY = 'BJrzpoU4JY2uj2YmpzKKMoNsa5aHr_iL6rmLvG55NsGqInuYW1BzI1_6vYjz20GTx8qid6znkPbsVdMdppQ1uf4';
+
+let vapidKeys = {
+  publicKey: process.env.VAPID_PUBLIC_KEY || DEFAULT_VAPID_PUBLIC_KEY,
+  privateKey: process.env.VAPID_PRIVATE_KEY || ''
+};
+
+if (!vapidKeys.privateKey) {
+  try {
+    const generated = webpush.generateVAPIDKeys();
+    // Keep user's configured/provided public key if present, otherwise use generated
+    vapidKeys.publicKey = process.env.VAPID_PUBLIC_KEY || DEFAULT_VAPID_PUBLIC_KEY;
+    vapidKeys.privateKey = generated.privateKey;
+  } catch (e) {
+    console.warn('[Push] VAPID generation notice:', e);
+  }
+}
+
+if (vapidKeys.publicKey && vapidKeys.privateKey) {
+  try {
+    webpush.setVapidDetails(
+      'mailto:notifications@studentos.internal',
+      vapidKeys.publicKey,
+      vapidKeys.privateKey
+    );
+  } catch (e) {
+    console.warn('[Push] setVapidDetails notice:', e);
+  }
+}
+
+const memoryPushSubscriptions: Array<{ userId?: string; subscription: any }> = [];
+
+app.get('/api/push/vapid-public-key', (req, res) => {
+  res.json({ publicKey: vapidKeys.publicKey });
+});
+
+app.post('/api/push/subscribe', (req, res) => {
+  const { subscription, userId } = req.body || {};
+  if (subscription && subscription.endpoint) {
+    const existingIndex = memoryPushSubscriptions.findIndex(s => s.subscription.endpoint === subscription.endpoint);
+    if (existingIndex >= 0) {
+      memoryPushSubscriptions[existingIndex] = { userId, subscription };
+    } else {
+      memoryPushSubscriptions.push({ userId, subscription });
+    }
+  }
+  return res.json({ status: 'ok' });
+});
+
+app.post('/api/push/send', async (req, res) => {
+  const { title, body, linkTab, targetUserId } = req.body || {};
+  console.log(`[SERVER PUSH] Disptaching push notification: "${title}" to user "${targetUserId || 'all'}"`);
+
+  const payload = JSON.stringify({
+    title: title || '📢 StudentOS Alert',
+    body: body || '',
+    linkTab: linkTab || 'notice_viewer',
+    url: '/'
+  });
+
+  let sentCount = 0;
+
+  for (const item of memoryPushSubscriptions) {
+    if (targetUserId && targetUserId !== 'all' && item.userId && item.userId !== targetUserId) {
+      continue;
+    }
+    try {
+      await webpush.sendNotification(item.subscription, payload);
+      sentCount++;
+    } catch (pushErr: any) {
+      console.warn('[SERVER PUSH] Send notice:', pushErr?.message);
+    }
+  }
+
+  return res.json({ status: 'ok', sentCount });
+});
 
 // Removed shared setup, moved to aiClient.ts
 
