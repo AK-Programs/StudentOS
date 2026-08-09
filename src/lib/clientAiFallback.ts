@@ -122,6 +122,22 @@ function getMockAiResponse(msg: string, sanitizedHistory: any[] = []): string {
     return `You haven't mentioned your favorite subject yet! Is it Physics, Math, Chemistry, or Computer Science?`;
   }
 
+  if (p.includes('photosynthesis') || p.includes('plant')) {
+    return `### 🍃 Photosynthesis Explained\n\n**Photosynthesis** is the biological process by which green plants, algae, and cyanobacteria convert light energy into chemical energy stored in glucose.\n\n$$\\text{Chemical Equation: } 6\\text{CO}_2 + 6\\text{H}_2\\text{O} + \\text{light energy} \\rightarrow \\text{C}_6\\text{H}_{12}\\text{O}_6 + 6\\text{O}_2$$\n\n* **Light-Dependent Reactions**: Take place in the thylakoid membranes of chloroplasts where chlorophyll absorbs sunlight to split water molecules ($2\\text{H}_2\\text{O} \\rightarrow 4\\text{H}^+ + 4e^- + \\text{O}_2$), generating ATP and NADPH.\n* **Calvin Cycle (Light-Independent)**: Occurs in the stroma where ATP and NADPH are consumed to fix atmospheric carbon dioxide into 3-carbon sugars (G3P) that form glucose.\n\nWould you like a diagram or a quiz on the chloroplast structure?`;
+  }
+
+  if (p.includes('newton') || p.includes('second law')) {
+    return `### 🍎 Newton's Second Law of Motion\n\n**Newton's Second Law** states that the acceleration of an object is directly proportional to the net external force acting on it and inversely proportional to its mass.\n\n$$\\vec{F}_{net} = m \\vec{a}$$\n\n* **Force ($F$)**: Measured in Newtons (N) or $\\text{kg}\\cdot\\text{m/s}^2$.\n* **Mass ($m$)**: The inertia or amount of matter in the object (kg).\n* **Acceleration ($a$)**: The rate of change of velocity ($\\text{m/s}^2$).\n\n**Key Takeaway**: If you push two objects with equal force, the heavier one accelerates slower. If you push an object twice as hard, it accelerates twice as fast.`;
+  }
+
+  if (p.includes('speed') && p.includes('velocity')) {
+    return `### ⚡ Speed vs. Velocity\n\nHere is the core distinction in Physics:\n\n1. **Speed** is a **scalar quantity** — it measures only how fast an object moves regardless of direction (e.g., $60\\text{ km/h}$).\n2. **Velocity** is a **vector quantity** — it measures both rate of motion **and direction** (e.g., $60\\text{ km/h due North}$).\n\n$$\\text{Speed} = \\frac{\\text{Total Distance}}{\\text{Time}} \\quad | \\quad \\vec{v} = \\frac{\\Delta \\vec{x}}{\\Delta t} \\text{ (Displacement / Time)}$$\n\n*An object moving in a circle at a constant speed has a changing velocity because its direction is continuously changing!*`;
+  }
+
+  if (p.includes('what can you help') || p.includes('what can you do') || p.includes('help me with')) {
+    return `### 🚀 What I Can Help You With\n\nI am your **StudentOS AI Assistant**! Here is what I can do for you across StudentOS:\n\n1. 🧠 **Academic Explanations**: Ask me anything in Science, Math, Literature, History, or Coding.\n2. 📅 **Study Planning**: Schedule study sessions, create tasks, and manage homework.\n3. 📢 **Automations**: Broadcast school announcements, schedule meetings, and create competitions.\n4. 📝 **Note Summaries & Quizzes**: Summarize lecture materials and practice active recall.\n\nWhat would you like to explore or automate today?`;
+  }
+
   if (
     hasWord('physics', p) || hasWord('centripetal', p) || hasWord('mechanics', p) ||
     hasWord('velocity', p) || hasWord('acceleration', p) ||
