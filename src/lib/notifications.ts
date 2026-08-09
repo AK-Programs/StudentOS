@@ -68,7 +68,21 @@ export function isUserEligibleForNotification(
 }
 
 /**
- * Fetch notifications from Supabase with targeting
+ * Helper to convert urlBase64 to Uint8Array for VAPID applicationServerKey
+ */
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
+/**
+ * Fetch notifications from Supabase with targeting and per-user state
  */
 export async function getAppNotifications(
   userId?: string, 
@@ -79,6 +93,44 @@ export async function getAppNotifications(
   console.log('[SUPABASE-NOTIFS] Fetching notifications from Supabase...');
   const notifMap = new Map<string, AppNotification>();
 
+  // 1. Build map of user-specific read/dismiss states
+  const userStateMap = new Map<string, { isRead: boolean; isDismissed: boolean }>();
+
+  // Local storage cache for zero-latency UI update
+  if (typeof window !== 'undefined' && userId) {
+    try {
+      const local = JSON.parse(localStorage.getItem(`s_os_notif_states_${userId}`) || '{}');
+      Object.keys(local).forEach(id => {
+        userStateMap.set(id, {
+          isRead: Boolean(local[id].isRead),
+          isDismissed: Boolean(local[id].isDismissed)
+        });
+      });
+    } catch (_) {}
+  }
+
+  // Fetch per-user notification state from Supabase notification_user_state
+  if (userId) {
+    try {
+      const { data: userStates } = await supabase
+        .from('notification_user_state')
+        .select('notification_id, read_at, dismissed_at')
+        .eq('user_id', userId);
+
+      if (userStates && userStates.length > 0) {
+        userStates.forEach(us => {
+          const existing = userStateMap.get(us.notification_id) || { isRead: false, isDismissed: false };
+          userStateMap.set(us.notification_id, {
+            isRead: existing.isRead || Boolean(us.read_at),
+            isDismissed: existing.isDismissed || Boolean(us.dismissed_at)
+          });
+        });
+      }
+    } catch (e) {
+      console.warn('[SUPABASE-NOTIFS] Notice fetching user notification states:', e);
+    }
+  }
+
   try {
     const { data, error } = await supabase
       .from('notifications')
@@ -88,13 +140,21 @@ export async function getAppNotifications(
     if (!error && data) {
       data.forEach(item => {
         const payload = item.payload && typeof item.payload === 'object' ? item.payload : {};
+        const id = item.id || payload.id || generateUUID();
+        const uState = userStateMap.get(id);
+
+        // If user has dismissed this notification from their own box, skip it
+        if (uState?.isDismissed) {
+          return;
+        }
+
         const notifObj: AppNotification = {
-          id: item.id || payload.id || generateUUID(),
+          id,
           title: payload.title || item.title || 'StudentOS Alert',
           message: payload.message || item.message || payload.content || item.content || '',
           type: item.type || payload.type || 'announcement',
           createdAt: item.created_at ? new Date(item.created_at).toISOString() : new Date().toISOString(),
-          isRead: item.is_read ?? payload.isRead ?? false,
+          isRead: uState ? uState.isRead : (item.is_read ?? payload.isRead ?? false),
           targetUserId: payload.targetUserId || item.target_user_id || item.user_id || 'all',
           targetClass: payload.targetClass || item.target_class || 'all',
           targetSection: payload.targetSection || item.target_section || 'all',
@@ -131,12 +191,25 @@ export async function registerPushSubscription(userId?: string): Promise<boolean
     }
     await navigator.serviceWorker.ready;
 
+    let applicationServerKey: Uint8Array | undefined;
+    try {
+      const vRes = await fetch('/api/push/vapid-public-key');
+      if (vRes.ok) {
+        const vData = await vRes.json();
+        if (vData.publicKey) {
+          applicationServerKey = urlBase64ToUint8Array(vData.publicKey);
+        }
+      }
+    } catch (_) {}
+
     let subscription = await registration.pushManager.getSubscription();
     if (!subscription) {
       try {
-        subscription = await registration.pushManager.subscribe({
-          userVisibleOnly: true
-        });
+        const subOptions: PushSubscriptionOptionsInit = { userVisibleOnly: true };
+        if (applicationServerKey) {
+          subOptions.applicationServerKey = applicationServerKey;
+        }
+        subscription = await registration.pushManager.subscribe(subOptions);
       } catch (subErr) {
         console.warn('[WebPush] PushManager subscribe notice:', subErr);
       }
@@ -144,11 +217,24 @@ export async function registerPushSubscription(userId?: string): Promise<boolean
 
     if (subscription) {
       const subJson = subscription.toJSON();
+      
+      // Save subscription to backend memory store
+      try {
+        await fetch('/api/push/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ subscription: subJson, userId })
+        });
+      } catch (_) {}
+
+      // Save subscription to Supabase push_subscriptions table
       try {
         await supabase.from('push_subscriptions').upsert({
           user_id: userId || null,
           endpoint: subJson.endpoint,
           keys: subJson.keys,
+          p256dh: subJson.keys?.p256dh,
+          auth: subJson.keys?.auth,
           updated_at: new Date().toISOString()
         }, { onConflict: 'endpoint' });
       } catch (dbErr) {
@@ -248,6 +334,20 @@ export async function saveAppNotification(notif: AppNotification): Promise<{ suc
     data: { linkTab: notif.linkTab || 'notice_viewer' }
   });
 
+  // Call server push endpoint
+  try {
+    fetch('/api/push/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: notif.title,
+        body: notif.message,
+        linkTab: notif.linkTab || 'notice_viewer',
+        targetUserId: notif.targetUserId || 'all'
+      })
+    }).catch(() => {});
+  } catch (_) {}
+
   const finalId = isValidUUID(notif.id) ? notif.id : generateUUID();
   const targetUser = notif.targetUserId || 'all';
 
@@ -309,56 +409,144 @@ export async function saveAppNotification(notif: AppNotification): Promise<{ suc
 }
 
 /**
- * Mark notification as read (Only allowed for admins on authoritative global records, or individual target user)
+ * Mark notification as read per-user without modifying authoritative global notification row
  */
-export async function markNotificationAsRead(notifId: string, isAdmin: boolean = false): Promise<void> {
-  if (!isAdmin) {
-    console.log('[SUPABASE-NOTIFS] Non-admin recipient cannot alter authoritative notification record in Supabase database.');
-    return;
+export async function markNotificationAsRead(notifId: string, userId?: string): Promise<void> {
+  if (!userId && typeof window !== 'undefined') {
+    try {
+      const u = JSON.parse(localStorage.getItem('s_os_user') || '{}');
+      userId = u.uid || u.id;
+    } catch (_) {}
   }
-  try {
-    if (isValidUUID(notifId)) {
-      await supabase.from('notifications').update({ is_read: true }).eq('id', notifId);
+
+  const now = new Date().toISOString();
+
+  // 1. Update local cache
+  if (userId) {
+    try {
+      const cacheKey = `s_os_notif_states_${userId}`;
+      const local = JSON.parse(localStorage.getItem(cacheKey) || '{}');
+      local[notifId] = { ...local[notifId], isRead: true, readAt: now };
+      localStorage.setItem(cacheKey, JSON.stringify(local));
+    } catch (_) {}
+  }
+
+  // 2. Persist to Supabase notification_user_state table
+  if (userId && isValidUUID(userId) && isValidUUID(notifId)) {
+    try {
+      await supabase.from('notification_user_state').upsert({
+        notification_id: notifId,
+        user_id: userId,
+        read_at: now,
+        updated_at: now
+      }, { onConflict: 'notification_id,user_id' });
+    } catch (err) {
+      console.warn('[SUPABASE-NOTIFS] Error marking read in notification_user_state:', err);
     }
-  } catch (err) {
-    console.warn('[SUPABASE-NOTIFS] Error marking notification read:', err);
+  }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('studentos-notif-state-change', { detail: { notifId, action: 'read', userId } }));
   }
 }
 
 /**
- * Mark all notifications as read for user
+ * Mark all notifications as read for current user
  */
-export async function markAllNotificationsAsRead(userId?: string, isAdmin: boolean = false): Promise<void> {
-  if (!isAdmin) {
-    console.log('[SUPABASE-NOTIFS] Non-admin recipient cannot alter authoritative notification records in Supabase database.');
-    return;
+export async function markAllNotificationsAsRead(notificationsList?: AppNotification[], userId?: string): Promise<void> {
+  if (!userId && typeof window !== 'undefined') {
+    try {
+      const u = JSON.parse(localStorage.getItem('s_os_user') || '{}');
+      userId = u.uid || u.id;
+    } catch (_) {}
   }
-  try {
-    if (userId && isValidUUID(userId)) {
-      await supabase.from('notifications').update({ is_read: true }).eq('user_id', userId);
-    } else {
-      await supabase.from('notifications').update({ is_read: true }).is('user_id', null);
+
+  const now = new Date().toISOString();
+
+  if (userId) {
+    try {
+      const cacheKey = `s_os_notif_states_${userId}`;
+      const local = JSON.parse(localStorage.getItem(cacheKey) || '{}');
+      if (notificationsList && notificationsList.length > 0) {
+        notificationsList.forEach(n => {
+          local[n.id] = { ...local[n.id], isRead: true, readAt: now };
+        });
+      }
+      localStorage.setItem(cacheKey, JSON.stringify(local));
+    } catch (_) {}
+  }
+
+  if (userId && notificationsList && notificationsList.length > 0) {
+    const upserts = notificationsList
+      .filter(n => isValidUUID(n.id) && isValidUUID(userId!))
+      .map(n => ({
+        notification_id: n.id,
+        user_id: userId,
+        read_at: now,
+        updated_at: now
+      }));
+
+    if (upserts.length > 0) {
+      try {
+        await supabase.from('notification_user_state').upsert(upserts, { onConflict: 'notification_id,user_id' });
+      } catch (err) {
+        console.warn('[SUPABASE-NOTIFS] Error marking all read in database:', err);
+      }
     }
-  } catch (err) {
-    console.warn('[SUPABASE-NOTIFS] Error marking all read:', err);
+  }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('studentos-notif-state-change', { detail: { action: 'read_all', userId } }));
   }
 }
 
 /**
- * Delete a notification (Only admins can delete authoritative records)
+ * Dismiss/delete notification from user's own box without deleting authoritative notification row
  */
-export async function deleteNotification(notifId: string, isAdmin: boolean = false): Promise<void> {
-  if (!isAdmin) {
-    console.log('[SUPABASE-NOTIFS] Non-admin recipient cannot delete authoritative notification from Supabase database.');
-    return;
+export async function dismissNotification(notifId: string, userId?: string): Promise<void> {
+  if (!userId && typeof window !== 'undefined') {
+    try {
+      const u = JSON.parse(localStorage.getItem('s_os_user') || '{}');
+      userId = u.uid || u.id;
+    } catch (_) {}
   }
-  try {
-    if (isValidUUID(notifId)) {
-      await supabase.from('notifications').delete().eq('id', notifId);
+
+  const now = new Date().toISOString();
+
+  // 1. Update local cache
+  if (userId) {
+    try {
+      const cacheKey = `s_os_notif_states_${userId}`;
+      const local = JSON.parse(localStorage.getItem(cacheKey) || '{}');
+      local[notifId] = { ...local[notifId], isDismissed: true, dismissedAt: now };
+      localStorage.setItem(cacheKey, JSON.stringify(local));
+    } catch (_) {}
+  }
+
+  // 2. Persist to Supabase notification_user_state table
+  if (userId && isValidUUID(userId) && isValidUUID(notifId)) {
+    try {
+      await supabase.from('notification_user_state').upsert({
+        notification_id: notifId,
+        user_id: userId,
+        dismissed_at: now,
+        updated_at: now
+      }, { onConflict: 'notification_id,user_id' });
+    } catch (err) {
+      console.warn('[SUPABASE-NOTIFS] Error saving dismiss state to notification_user_state:', err);
     }
-  } catch (err) {
-    console.warn('[SUPABASE-NOTIFS] Error deleting notification:', err);
   }
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('studentos-notif-state-change', { detail: { notifId, action: 'dismiss', userId } }));
+  }
+}
+
+/**
+ * Delete a notification (Per-user dismissal)
+ */
+export async function deleteNotification(notifId: string, userId?: string): Promise<void> {
+  await dismissNotification(notifId, userId);
 }
 
 /**
