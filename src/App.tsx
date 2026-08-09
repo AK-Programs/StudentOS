@@ -24,7 +24,7 @@ import { supabase } from './lib/supabase';
 import { getVaultNotes, saveVaultNoteToSupabase, deleteVaultNoteFromSupabase } from './lib/supabaseNotes';
 import { getSupabaseUserProfile, saveSupabaseUserProfile } from './lib/supabaseUsers';
 import { getSupabaseHomework, saveSupabaseHomework, deleteSupabaseHomework } from './lib/supabaseHomework';
-import { getAppNotifications } from './lib/notifications';
+import { getAppNotifications, saveAppNotification, markNotificationAsRead, markAllNotificationsAsRead, deleteNotification, generateUUID } from './lib/notifications';
 import { 
   getAiBuddyChats, saveAiBuddyChat, deleteAiBuddyChat, renameAiBuddyChat,
   getPeerMessages, savePeerMessage, deletePeerMessage,
@@ -935,71 +935,36 @@ export default function App() {
     }
   };
 
-  // Real-time Notification listener with index-safe client-side sorting
-  useEffect(() => {
-    if (!currentUser) {
-      setNotifications([]);
-      return;
-    }
-
-    try {
-      const rd = currentUser.raw_data || {};
-      if (rd.notifications) {
-        setNotifications(rd.notifications);
-      } else {
-        setNotifications([]);
-      }
-    } catch (err) {
-      console.error('[Sync] Failed to parse local notifications:', err);
-      setNotifications([]);
-    }
-  }, [currentUser]);
-
   // Handle custom system notification creation events
   useEffect(() => {
     const handleNotificationCreated = (e: Event) => {
       const data = (e as CustomEvent).detail;
-      if (!data || !currentUser) return;
+      if (!data) return;
 
-      // Verify targeted user criteria (grade, section, house)
-      if (data.targetGrades && data.targetGrades.length > 0) {
-        if (!data.targetGrades.includes(currentUser.grade)) return;
-      }
-      if (data.targetSections && data.targetSections.length > 0) {
-        if (!data.targetSections.includes(currentUser.section)) return;
-      }
-      if (data.targetHouses && data.targetHouses.length > 0) {
-        if (!data.targetHouses.includes(currentUser.house)) return;
-      }
+      const title = data.title || 'New System Notice';
+      const message = data.message || data.content || '';
+      const type = data.type || 'notice';
 
-      const newNotif = {
-        id: Math.random().toString(36).substring(7),
-        title: data.title || 'New System Notice',
-        message: data.message || data.content || '',
-        type: data.type || 'notice',
-        read: false,
-        createdAt: Date.now(),
-        date: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-      };
-
-      setNotifications(prev => {
-        const updated = [newNotif, ...prev];
-        if (currentUser) {
-          const updatedUser = { ...currentUser, raw_data: { ...(currentUser.raw_data || {}), notifications: updated } };
-          setCurrentUser(updatedUser);
-          saveSupabaseUserProfile(updatedUser).catch(e => {});
-        }
-        return updated;
+      saveAppNotification({
+        id: generateUUID(),
+        title,
+        message,
+        type,
+        createdAt: new Date().toISOString(),
+        isRead: false,
+        targetClass: data.targetGrades && data.targetGrades.length > 0 ? data.targetGrades[0] : 'all',
+        targetSection: data.targetSections && data.targetSections.length > 0 ? data.targetSections[0] : 'all',
+        linkTab: data.linkTab || 'notice_viewer'
+      }).then(() => {
+        showNotification(`🔔 ${title}`);
       });
-
-      showNotification(`🔔 ${newNotif.title}`);
     };
 
     window.addEventListener('s_os_notification_created', handleNotificationCreated);
     return () => {
       window.removeEventListener('s_os_notification_created', handleNotificationCreated);
     };
-  }, [currentUser]);
+  }, []);
 
   // Persist ttsEnabled state to localStorage on modification
   useEffect(() => {
@@ -1008,13 +973,8 @@ export default function App() {
 
   const handleMarkAsRead = async (notifId: string) => {
     try {
-      const updated = notifications.map(n => n.id === notifId ? { ...n, read: true } : n);
-      setNotifications(updated);
-      if (currentUser) {
-        const updatedUser = { ...currentUser, raw_data: { ...(currentUser.raw_data || {}), notifications: updated } };
-        setCurrentUser(updatedUser);
-        saveSupabaseUserProfile(updatedUser).catch(e => {});
-      }
+      await markNotificationAsRead(notifId, currentUser?.uid);
+      setNotifications(prev => prev.map(n => n.id === notifId ? { ...n, isRead: true } : n));
     } catch (err) {
       console.error('Error marking notification as read:', err);
     }
@@ -1022,13 +982,8 @@ export default function App() {
 
   const handleMarkAllAsRead = async () => {
     try {
-      const updated = notifications.map(n => ({ ...n, read: true }));
-      setNotifications(updated);
-      if (currentUser) {
-        const updatedUser = { ...currentUser, raw_data: { ...(currentUser.raw_data || {}), notifications: updated } };
-        setCurrentUser(updatedUser);
-        saveSupabaseUserProfile(updatedUser).catch(e => {});
-      }
+      await markAllNotificationsAsRead(notifications, currentUser?.uid);
+      setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
       showNotification('✓ All notifications marked read.');
     } catch (err) {
       console.error('Error marking all notifications as read:', err);
@@ -1037,13 +992,8 @@ export default function App() {
 
   const handleDeleteNotif = async (notifId: string) => {
     try {
-      const updated = notifications.filter(n => n.id !== notifId);
-      setNotifications(updated);
-      if (currentUser) {
-        const updatedUser = { ...currentUser, raw_data: { ...(currentUser.raw_data || {}), notifications: updated } };
-        setCurrentUser(updatedUser);
-        saveSupabaseUserProfile(updatedUser).catch(e => {});
-      }
+      await deleteNotification(notifId, currentUser?.uid);
+      setNotifications(prev => prev.filter(n => n.id !== notifId));
       showNotification('Notification removed.');
     } catch (err) {
       console.error('Error deleting notification:', err);
@@ -1778,8 +1728,21 @@ export default function App() {
   useEffect(() => {
     if (!currentUser) return;
 
-    // Load notifications & global broadcasts from Supabase immediately on auth/load
-    getAppNotifications(currentUser.uid, currentUser.grade, currentUser.section, effectiveRole).then(list => setNotifications(list));
+    const refreshNotifications = async () => {
+      try {
+        const list = await getAppNotifications(currentUser.uid, currentUser.grade, currentUser.section, effectiveRole);
+        if (list) {
+          setNotifications(prev => {
+            if (list.length === 0 && prev.length > 0) return prev;
+            return list;
+          });
+        }
+      } catch (e) {
+        console.warn('[App] Error refreshing notifications:', e);
+      }
+    };
+
+    refreshNotifications();
 
     const handleDbUpdate = (e: any) => {
       const { table } = e.detail || {};
@@ -1789,12 +1752,12 @@ export default function App() {
         });
       }
       if (table === 'notifications' || table === 'notices' || !table) {
-        getAppNotifications(currentUser.uid, currentUser.grade, currentUser.section, effectiveRole).then(list => setNotifications(list));
+        refreshNotifications();
       }
     };
 
     const handleNotifStateChange = () => {
-      getAppNotifications(currentUser.uid, currentUser.grade, currentUser.section, effectiveRole).then(list => setNotifications(list));
+      refreshNotifications();
     };
 
     window.addEventListener('studentos-db-update', handleDbUpdate);
@@ -1802,15 +1765,12 @@ export default function App() {
 
     // Subscribe to both Postgres changes and Realtime Broadcast channel
     const channel = supabase.channel('student-os-live-sync')
-      .on('postgres_changes', { event: '*', schema: 'public' }, () => {
-        getSupabaseHomework().then(list => {
-          if (list && list.length > 0) setHomeworkList(list);
-        });
-        getAppNotifications(currentUser.uid, currentUser.grade, currentUser.section, effectiveRole).then(list => setNotifications(list));
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => {
+        refreshNotifications();
       })
       .on('broadcast', { event: 'new_app_notification' }, (payload) => {
         console.log('[REALTIME-BROADCAST] Received broadcast notification:', payload);
-        getAppNotifications(currentUser.uid, currentUser.grade, currentUser.section, effectiveRole).then(list => setNotifications(list));
+        refreshNotifications();
       })
       .subscribe();
 
@@ -1819,7 +1779,7 @@ export default function App() {
       window.removeEventListener('studentos-notif-state-change', handleNotifStateChange);
       supabase.removeChannel(channel);
     };
-  }, [currentUser]);
+  }, [currentUser?.uid, currentUser?.grade, currentUser?.section, effectiveRole]);
 
   // We don't save the entire list to localStorage anymore in an effect, 
   // because each action (add, complete, delete) will call saveSupabaseHomework individually.
@@ -6621,91 +6581,19 @@ ${roleLabel}: ${userQuery}`;
                     title="Academic Notification Hub"
                   >
                     <Bell className="w-4 h-4" />
-                    {notifications.filter(n => !n.read).length > 0 && (
+                    {notifications.filter(n => !n.isRead).length > 0 && (
                       <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-indigo-500 text-[9px] font-bold text-white leading-none scale-100 animate-pulse">
-                        {notifications.filter(n => !n.read).length}
+                        {notifications.filter(n => !n.isRead).length}
                       </span>
                     )}
                   </button>
 
-                  {showNotifCenter && (
-                    <div className="absolute right-0 mt-3 w-80 sm:w-96 rounded-2xl border border-white/10 bg-slate-950 p-4 shadow-2xl z-50 space-y-3.5 animate-fadeIn">
-                      <div className="flex items-center justify-between pb-2 border-b border-white/5">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-sm font-bold text-white font-display">Notification Center</span>
-                          {notifications.filter(n => !n.read).length > 0 && (
-                            <span className="text-[10px] bg-indigo-500/15 text-indigo-400 font-bold px-2 py-0.5 rounded-full">
-                              {notifications.filter(n => !n.read).length} new
-                            </span>
-                          )}
-                        </div>
-                        {notifications.filter(n => !n.read).length > 0 && (
-                          <button
-                            onClick={handleMarkAllAsRead}
-                            className="text-[10px] font-bold uppercase tracking-wider text-indigo-400 hover:text-indigo-300 transition-colors"
-                          >
-                            Mark all read
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="max-h-64 overflow-y-auto space-y-2.5 pr-1 scrollbar-thin">
-                        {notifications.length === 0 ? (
-                          <div className="py-8 text-center space-y-1.5">
-                            <p className="text-xl">📭</p>
-                            <p className="text-xs text-slate-400 font-medium">All clear! No notifications found.</p>
-                          </div>
-                        ) : (
-                          notifications.map((notif) => (
-                            <div
-                              key={notif.id}
-                              className={`p-3 rounded-xl border transition-all flex items-start gap-2.5 relative group ${
-                                notif.read 
-                                  ? 'bg-slate-950/20 border-white/5 opacity-60 hover:opacity-100' 
-                                  : 'bg-indigo-600/5 border-indigo-500/20 hover:border-indigo-500/40 shadow-sm'
-                              }`}
-                            >
-                              <div className="text-lg shrink-0 mt-0.5">
-                                {getNotificationEmoji(notif.type)}
-                              </div>
-                              <div className="flex-1 min-w-0 space-y-0.5">
-                                <div className="flex items-center justify-between gap-2">
-                                  <span className={`text-xs font-bold truncate leading-tight ${notif.read ? 'text-slate-300' : 'text-white'}`}>
-                                    {notif.title}
-                                  </span>
-                                  <span className="text-[9px] text-slate-500 shrink-0 font-mono">
-                                    {new Date(notif.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                  </span>
-                                </div>
-                                <p className="text-[10.5px] text-slate-400 leading-relaxed break-words pr-4">
-                                  {notif.message}
-                                </p>
-                              </div>
-
-                              <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-slate-950 rounded-lg p-0.5 border border-white/5">
-                                {!notif.read && (
-                                  <button
-                                    onClick={() => handleMarkAsRead(notif.id)}
-                                    className="p-1 hover:bg-white/10 text-indigo-400 rounded-md transition-colors"
-                                    title="Mark as Read"
-                                  >
-                                    <Check className="w-3.5 h-3.5" />
-                                  </button>
-                                )}
-                                <button
-                                  onClick={() => handleDeleteNotif(notif.id)}
-                                  className="p-1 hover:bg-red-500/20 text-red-400 rounded-md transition-colors"
-                                  title="Delete"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            </div>
-                          ))
-                        )}
-                      </div>
-                    </div>
-                  )}
+                  <NotificationCenter
+                    currentUser={currentUser}
+                    isOpen={showNotifCenter}
+                    onClose={() => setShowNotifCenter(false)}
+                    onNavigateTab={(tab) => setActiveTab(tab)}
+                  />
                 </div>
 
                 {effectiveRole === 'student' && currentUser.house && (
