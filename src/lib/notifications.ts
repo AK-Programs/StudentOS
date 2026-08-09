@@ -178,13 +178,27 @@ export async function getAppNotifications(
 }
 
 /**
- * Register push subscription and save to Supabase
+ * Get or create a persistent device identifier stored in localStorage
+ */
+export function getDeviceId(): string {
+  if (typeof window === 'undefined') return 'device_server';
+  let devId = localStorage.getItem('s_os_device_id');
+  if (!devId) {
+    devId = 'dev_' + Math.random().toString(36).substring(2, 10) + '_' + Date.now().toString(36);
+    localStorage.setItem('s_os_device_id', devId);
+  }
+  return devId;
+}
+
+/**
+ * Register push subscription and associate with current device & StudentOS account
  */
 export async function registerPushSubscription(userId?: string): Promise<boolean> {
   if (typeof window === 'undefined' || !('Notification' in window) || !('serviceWorker' in navigator)) {
     return false;
   }
   try {
+    const deviceId = getDeviceId();
     let registration = await navigator.serviceWorker.getRegistration('/sw.js');
     if (!registration) {
       registration = await navigator.serviceWorker.register('/sw.js');
@@ -203,12 +217,12 @@ export async function registerPushSubscription(userId?: string): Promise<boolean
     } catch (_) {}
 
     let subscription = await registration.pushManager.getSubscription();
-    if (!subscription) {
+    if (!subscription && applicationServerKey) {
       try {
-        const subOptions: PushSubscriptionOptionsInit = { userVisibleOnly: true };
-        if (applicationServerKey) {
-          subOptions.applicationServerKey = applicationServerKey;
-        }
+        const subOptions: PushSubscriptionOptionsInit = {
+          userVisibleOnly: true,
+          applicationServerKey
+        };
         subscription = await registration.pushManager.subscribe(subOptions);
       } catch (subErr) {
         console.warn('[WebPush] PushManager subscribe notice:', subErr);
@@ -217,24 +231,32 @@ export async function registerPushSubscription(userId?: string): Promise<boolean
 
     if (subscription) {
       const subJson = subscription.toJSON();
-      
-      // Save subscription to backend memory store
+      const userAgent = typeof navigator !== 'undefined' ? navigator.userAgent : 'Unknown';
+
+      // 1. Register with backend memory store for device-level targeting
       try {
         await fetch('/api/push/subscribe', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ subscription: subJson, userId })
+          body: JSON.stringify({
+            subscription: subJson,
+            userId: userId || null,
+            deviceId,
+            userAgent
+          })
         });
       } catch (_) {}
 
-      // Save subscription to Supabase push_subscriptions table
+      // 2. Upsert subscription and device-user association to Supabase push_subscriptions table
       try {
         await supabase.from('push_subscriptions').upsert({
+          device_id: deviceId,
           user_id: userId || null,
           endpoint: subJson.endpoint,
           keys: subJson.keys,
           p256dh: subJson.keys?.p256dh,
           auth: subJson.keys?.auth,
+          user_agent: userAgent,
           updated_at: new Date().toISOString()
         }, { onConflict: 'endpoint' });
       } catch (dbErr) {
