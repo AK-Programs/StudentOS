@@ -351,16 +351,25 @@ export async function saveAppNotification(notif: AppNotification): Promise<{ suc
   const finalId = isValidUUID(notif.id) ? notif.id : generateUUID();
   const targetUser = notif.targetUserId || 'all';
 
-  const dbRow = {
+  const title = notif.title || 'StudentOS Alert';
+  const message = notif.message || '';
+
+  const dbRow: any = {
     id: finalId,
+    title: title,
+    message: message,
+    content: message,
     type: notif.type || 'announcement',
     user_id: (targetUser !== 'all' && isValidUUID(targetUser)) ? targetUser : null,
+    target_user_id: targetUser,
+    target_class: notif.targetClass || 'all',
+    target_section: notif.targetSection || 'all',
     is_read: notif.isRead || false,
     created_at: notif.createdAt ? new Date(notif.createdAt).toISOString() : new Date().toISOString(),
     payload: {
       id: finalId,
-      title: notif.title,
-      message: notif.message,
+      title: title,
+      message: message,
       type: notif.type,
       createdAt: notif.createdAt || new Date().toISOString(),
       isRead: notif.isRead || false,
