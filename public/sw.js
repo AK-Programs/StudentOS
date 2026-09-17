@@ -19,11 +19,16 @@ self.addEventListener('push', (event) => {
     }
   }
 
+  const tag = data.tag || `studentos-notif-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
   const options = {
     body: data.body || '',
-    icon: '/favicon.ico',
-    badge: '/favicon.ico',
-    vibrate: [100, 50, 100],
+    icon: data.icon || '/icon.svg',
+    badge: data.badge || '/icon.svg',
+    tag: tag,
+    renotify: true,
+    requireInteraction: false,
+    timestamp: data.timestamp || Date.now(),
+    vibrate: [150, 50, 150],
     data: {
       linkTab: data.linkTab || 'notice_viewer',
       url: data.url || '/'
@@ -60,4 +65,9 @@ self.addEventListener('notificationclick', (event) => {
       }
     })
   );
+});
+
+// Pass-through fetch handler to satisfy PWA installability requirements
+self.addEventListener('fetch', (event) => {
+  event.respondWith(fetch(event.request).catch(() => new Response('Offline')));
 });
