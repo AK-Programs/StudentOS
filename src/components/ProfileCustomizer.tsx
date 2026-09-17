@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { UserProfile, ProfileFrameStyle } from '../types';
 import { supabase } from '../lib/supabase';
+import { saveSupabaseUserProfile } from '../lib/supabaseUsers';
 import { uploadFileToStorage } from '../lib/storageHelper';
 import { 
   Camera, Image, Sparkles, Check, X, Shield, Palette, 
@@ -65,6 +66,17 @@ export function ProfileCustomizer({ currentUser, onUpdateUser, onProfileUpdated,
   const [uploadingBanner, setUploadingBanner] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    setPhotoURL(currentUser.photoURL || currentUser.avatar || '');
+    setBannerUrl(currentUser.bannerUrl || '');
+    setBannerPreset(currentUser.bannerPreset || BANNER_PRESETS[0].gradient);
+    setBio(currentUser.bio || '');
+    setPronouns(currentUser.pronouns || '');
+    setCustomStatus(currentUser.customStatus || '');
+    setAvatarFrame((currentUser.avatarFrame as ProfileFrameStyle) || 'none');
+    setAccentColor(currentUser.accentColor || 'indigo');
+  }, [currentUser]);
 
   // Character limit for bio
   const BIO_LIMIT = 300;
@@ -151,38 +163,60 @@ export function ProfileCustomizer({ currentUser, onUpdateUser, onProfileUpdated,
     };
 
     try {
-      // Persist to Supabase user_profiles
-      if (currentUser.uid) {
-        const { error } = await supabase
-          .from('user_profiles')
-          .update({
-            photo_url: updatedProfile.photoURL,
-            raw_data: {
-              ...(currentUser.raw_data || {}),
-              bannerUrl: updatedProfile.bannerUrl,
-              bannerPreset: updatedProfile.bannerPreset,
-              bio: updatedProfile.bio,
-              pronouns: updatedProfile.pronouns,
-              customStatus: updatedProfile.customStatus,
-              avatarFrame: updatedProfile.avatarFrame,
-              accentColor: updatedProfile.accentColor
-            },
-            updated_at: new Date().toISOString()
-          })
-          .eq('uid', currentUser.uid);
+      // 1. Try standard save via supabaseUsers helper
+      let persistedProfile = updatedProfile;
+      try {
+        persistedProfile = await saveSupabaseUserProfile(updatedProfile);
+      } catch (saveErr) {
+        console.warn('saveSupabaseUserProfile warning, trying direct table update:', saveErr);
+      }
 
-        if (error && error.code !== '42703' && error.code !== 'PGRST100') {
-          console.warn('Supabase update warning:', error);
+      // 2. Direct table update fallback to ensure raw_data and dedicated columns are synced
+      if (currentUser.uid) {
+        try {
+          await supabase
+            .from('user_profiles')
+            .update({
+              photo_url: updatedProfile.photoURL,
+              bio: updatedProfile.bio,
+              raw_data: {
+                ...(currentUser.raw_data || {}),
+                bannerUrl: updatedProfile.bannerUrl,
+                bannerPreset: updatedProfile.bannerPreset,
+                bio: updatedProfile.bio,
+                pronouns: updatedProfile.pronouns,
+                customStatus: updatedProfile.customStatus,
+                avatarFrame: updatedProfile.avatarFrame,
+                accentColor: updatedProfile.accentColor
+              },
+              updated_at: Date.now()
+            })
+            .eq('uid', currentUser.uid);
+        } catch (tblErr) {
+          console.warn('Direct user_profiles table update notice:', tblErr);
         }
       }
 
-      // Update local storage and parent state
+      // 3. Update local storage cache and recent accounts
       try {
-        localStorage.setItem('s_os_user', JSON.stringify(updatedProfile));
+        localStorage.setItem('s_os_user', JSON.stringify(persistedProfile));
+        const recentRaw = localStorage.getItem('s_os_recent_accounts');
+        if (recentRaw) {
+          const recents = JSON.parse(recentRaw);
+          if (Array.isArray(recents)) {
+            const idx = recents.findIndex((a: any) => a.uid === persistedProfile.uid || a.email === persistedProfile.email);
+            if (idx >= 0) {
+              recents[idx] = { ...recents[idx], ...persistedProfile };
+            } else {
+              recents.unshift(persistedProfile);
+            }
+            localStorage.setItem('s_os_recent_accounts', JSON.stringify(recents));
+          }
+        }
       } catch (_) {}
 
-      onUpdateUser?.(updatedProfile);
-      onProfileUpdated?.(updatedProfile);
+      onUpdateUser?.(persistedProfile);
+      onProfileUpdated?.(persistedProfile);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 2500);
     } catch (err: any) {
