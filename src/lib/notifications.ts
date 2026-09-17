@@ -304,9 +304,10 @@ export async function triggerBrowserPushNotification(title: string, options?: No
   
   if (Notification.permission === 'granted') {
     const notifOptions = {
-      icon: '/favicon.ico',
-      badge: '/favicon.ico',
-      tag: options?.tag || 'studentos-alert',
+      icon: '/icon.svg',
+      badge: '/icon.svg',
+      tag: options?.tag || `studentos-alert-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      renotify: true,
       body: options?.body || '',
       data: {
         linkTab: options?.linkTab || options?.data?.linkTab || 'notice_viewer'
