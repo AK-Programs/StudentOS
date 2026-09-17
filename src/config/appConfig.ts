@@ -167,6 +167,45 @@ export const STUDENTOS_RELEASE_INFO: AppReleaseInfo = {
   ]
 };
 
+export const APK_INSTALLED_STORAGE_KEY = 'studentos_apk_installed';
+
+/**
+ * Checks if the user has installed the StudentOS APK
+ */
+export function isApkInstalledOnDevice(): boolean {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      return window.localStorage.getItem(APK_INSTALLED_STORAGE_KEY) === 'true';
+    }
+  } catch (_) {}
+  return false;
+}
+
+/**
+ * Updates the persistent installed state for the APK
+ */
+export function markApkInstalledOnDevice(installed: boolean = true): void {
+  try {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      if (installed) {
+        window.localStorage.setItem(APK_INSTALLED_STORAGE_KEY, 'true');
+      } else {
+        window.localStorage.removeItem(APK_INSTALLED_STORAGE_KEY);
+      }
+      window.dispatchEvent(new CustomEvent('studentos_apk_installed_changed', {
+        detail: { installed }
+      }));
+    }
+  } catch (_) {}
+}
+
+/**
+ * Resets the APK installed status so download CTAs reappear
+ */
+export function resetApkInstalledOnDevice(): void {
+  markApkInstalledOnDevice(false);
+}
+
 /**
  * Utility helper to detect Android user agent
  */
@@ -182,6 +221,9 @@ export function triggerApkDownload(): void {
   if (typeof window === 'undefined') return;
   const currentUrl = getApkDownloadUrl();
   const currentFileName = getApkFileName();
+
+  // Mark APK as installed/downloaded
+  markApkInstalledOnDevice(true);
 
   const link = document.createElement('a');
   link.href = currentUrl;
