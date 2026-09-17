@@ -3,8 +3,9 @@ import { UserProfile } from '../types';
 import TeacherStudentList from './TeacherStudentList';
 import TeacherStudentReports from './TeacherStudentReports';
 import StudentMarksCenter from './StudentMarksCenter';
+import ProfileCustomizer from './ProfileCustomizer';
 
-export default function TeacherProfile({ currentUser, handleSaveProfile, profileNameInput, setProfileNameInput, profileAvatar, setProfileAvatar, profileTab, setProfileTab }: any) {
+export default function TeacherProfile({ currentUser, handleSaveProfile, profileNameInput, setProfileNameInput, profileAvatar, setProfileAvatar, profileTab, setProfileTab, onProfileUpdated }: any) {
   return (
     <div className="space-y-8 animate-fadeIn">
       {/* Teacher Information */}
@@ -33,7 +34,7 @@ export default function TeacherProfile({ currentUser, handleSaveProfile, profile
 
       {/* Navigation for specific modules */}
       <div className="flex bg-slate-950 p-1.5 rounded-2xl border border-white/5 gap-1 mb-6 flex-wrap">
-         {['my_students', 'reports', 'marks_center'].map((pt) => (
+         {['my_students', 'customizer', 'reports', 'marks_center'].map((pt) => (
            <button
              key={pt}
              onClick={() => setProfileTab(pt)}
@@ -42,6 +43,7 @@ export default function TeacherProfile({ currentUser, handleSaveProfile, profile
              }`}
            >
               {pt === 'my_students' && 'My Students'}
+              {pt === 'customizer' && '✨ Custom Card'}
               {pt === 'reports' && 'Reports'}
               {pt === 'marks_center' && 'Marks Centre'}
            </button>
@@ -51,6 +53,12 @@ export default function TeacherProfile({ currentUser, handleSaveProfile, profile
       <div className="w-full">
          {profileTab === 'my_students' && (
            <TeacherStudentList currentUser={currentUser} />
+         )}
+         {profileTab === 'customizer' && (
+           <ProfileCustomizer 
+             currentUser={currentUser} 
+             onProfileUpdated={onProfileUpdated} 
+           />
          )}
          {profileTab === 'reports' && (
            <TeacherStudentReports currentUser={currentUser} />
