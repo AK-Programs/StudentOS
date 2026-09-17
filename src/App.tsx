@@ -62,6 +62,7 @@ import DigitalReportCards from './components/DigitalReportCards';
 import ProfileCustomizer from './components/ProfileCustomizer';
 import AIQuotaManagerModal from './components/AIQuotaManagerModal';
 import { InstallAppModal, AppInstallSection } from './components/InstallAppModal';
+import { isApkInstalledOnDevice } from './config/appConfig';
 import { 
   AIUsageState, 
   getLocalUsageState, 
@@ -311,6 +312,15 @@ export default function App() {
 
 
   const [isInstallAppModalOpen, setIsInstallAppModalOpen] = useState<boolean>(false);
+  const [isApkInstalled, setIsApkInstalled] = useState<boolean>(() => isApkInstalledOnDevice());
+
+  useEffect(() => {
+    const handleInstallChanged = (e: any) => {
+      setIsApkInstalled(Boolean(e.detail?.installed));
+    };
+    window.addEventListener('studentos_apk_installed_changed', handleInstallChanged);
+    return () => window.removeEventListener('studentos_apk_installed_changed', handleInstallChanged);
+  }, []);
   const [activeTab, setActiveTab] = useState<string>(() => {
     try {
       return localStorage.getItem('s_os_active_tab') || 'dashboard';
@@ -6746,11 +6756,19 @@ ${roleLabel}: ${userQuery}`;
                 <button
                   type="button"
                   onClick={() => setIsInstallAppModalOpen(true)}
-                  className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600/90 to-teal-600/90 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-emerald-500/20 border border-emerald-500/30 transition-all active:scale-95 cursor-pointer"
-                  title="Download & Install StudentOS Android App (APK)"
+                  className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-md border transition-all active:scale-95 cursor-pointer ${
+                    isApkInstalled
+                      ? 'bg-emerald-950/70 hover:bg-emerald-900/80 text-emerald-300 border-emerald-500/40 shadow-emerald-500/10'
+                      : 'bg-gradient-to-r from-emerald-600/90 to-teal-600/90 hover:from-emerald-500 hover:to-teal-500 text-white border-emerald-500/30 shadow-emerald-500/20'
+                  }`}
+                  title={isApkInstalled ? 'StudentOS Android App (APK) Installed - Click to Manage' : 'Download & Install StudentOS Android App (APK)'}
                 >
-                  <Smartphone className="w-3.5 h-3.5 text-emerald-100" />
-                  <span className="hidden sm:inline">Install App</span>
+                  {isApkInstalled ? (
+                    <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
+                  ) : (
+                    <Smartphone className="w-3.5 h-3.5 text-emerald-100" />
+                  )}
+                  <span className="hidden sm:inline">{isApkInstalled ? 'Installed' : 'Install App'}</span>
                   <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-black/30 text-emerald-200 font-extrabold">APK</span>
                 </button>
 
