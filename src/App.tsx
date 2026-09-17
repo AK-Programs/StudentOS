@@ -12,7 +12,7 @@ import {
   ZoomOut, Eye, Settings, MessageSquare, BarChart2, User, Calendar, 
   Flame, Upload, FileText, CheckCircle, Download, ChevronLeft, 
   PenTool, Eraser, Share2, LogOut, AlertTriangle, Activity, RefreshCw,
-  Heart, Bookmark, X, Bell
+  Heart, Bookmark, X, Bell, Zap, Gift, Smartphone
 } from 'lucide-react';
 import { 
   UserRole, HouseType, SectionType, UserProfile, HouseStats, 
@@ -56,6 +56,19 @@ import { LiveBroadcastBanner } from './components/LiveBroadcastBanner';
 import { CollaborativeLectureNotes } from './components/CollaborativeLectureNotes';
 import { StudentOSLife } from './components/StudentOSLife';
 import { TeacherFunZone } from './components/TeacherFunZone';
+import AcademicCalendar from './components/AcademicCalendar';
+import DigitalGradebook from './components/DigitalGradebook';
+import DigitalReportCards from './components/DigitalReportCards';
+import ProfileCustomizer from './components/ProfileCustomizer';
+import AIQuotaManagerModal from './components/AIQuotaManagerModal';
+import { InstallAppModal, AppInstallSection } from './components/InstallAppModal';
+import { 
+  AIUsageState, 
+  getLocalUsageState, 
+  recordLocalMessage, 
+  fetchAIUsageStatus, 
+  BASE_ROLE_LIMITS 
+} from './lib/aiUsageManager';
 import { MOCK_QUIZZES, AI_PERSONAS, INITIAL_ANNOUNCEMENTS, INITIAL_FEEDBACK, INITIAL_MATERIALS, MOCK_SCHEDULES } from './mockData';
 
 // Stub Integrations
@@ -297,6 +310,7 @@ export default function App() {
 
 
 
+  const [isInstallAppModalOpen, setIsInstallAppModalOpen] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<string>(() => {
     try {
       return localStorage.getItem('s_os_active_tab') || 'dashboard';
@@ -763,6 +777,23 @@ export default function App() {
 
   const [attachedFiles, setAttachedFiles] = useState<{ name: string; content: string; size: number; type: string }[]>([]);
   const [speakingMsgIdx, setSpeakingMsgIdx] = useState<string | null>(null);
+
+  // AI Quota & Limits State
+  const [aiUsageState, setAiUsageState] = useState<AIUsageState>(() => 
+    getLocalUsageState(currentUser?.uid || 'guest', effectiveRole || 'student')
+  );
+  const [showQuotaModal, setShowQuotaModal] = useState<boolean>(false);
+
+  // Sync AI Usage status dynamically
+  useEffect(() => {
+    fetchAIUsageStatus(currentUser?.uid || 'guest', effectiveRole || 'student').then(setAiUsageState);
+
+    const handleQuotaEvent = (e: any) => {
+      if (e.detail) setAiUsageState(e.detail);
+    };
+    window.addEventListener('s_os_ai_quota_updated', handleQuotaEvent);
+    return () => window.removeEventListener('s_os_ai_quota_updated', handleQuotaEvent);
+  }, [currentUser?.uid, effectiveRole, activeTab]);
 
   // User Activity Tracker for Auto-Lock
   useEffect(() => {
@@ -4724,6 +4755,17 @@ ${pageText}
   // Secure AI Teacher dialog queries proxying via our server endpoints
   const handleAskAIModel = async () => {
     if (!aiInput.trim()) return;
+
+    const userRoleKey = (effectiveRole || currentUser?.role || 'student').toLowerCase();
+    const userIdKey = currentUser?.uid || currentUser?.email || 'guest';
+
+    // 1. Quota Pre-Check
+    const currentUsage = getLocalUsageState(userIdKey, userRoleKey);
+    if (currentUsage.remaining <= 0) {
+      showNotification(`Daily AI Buddy limit reached (${currentUsage.limit}/${currentUsage.limit}). Upgrade quota or redeem a voucher.`);
+      setShowQuotaModal(true);
+      return;
+    }
     
     const userQuery = aiInput.trim();
     const currentAttachedFiles = [...attachedFiles];
@@ -4813,9 +4855,19 @@ ${roleLabel}: ${userQuery}`;
             persona: selectedPersona,
             level: currentUser?.grade,
             subject: currentUser?.specialtySubject || 'Science',
-            mode: aiMode
+            mode: aiMode,
+            userId: userIdKey,
+            userRole: userRoleKey
           })
         });
+
+        if (res.status === 429) {
+          const limitData = await res.json();
+          const limitErr: any = new Error(limitData.message || 'Daily AI message limit reached.');
+          limitErr.isLimitReached = true;
+          limitErr.limitData = limitData;
+          throw limitErr;
+        }
 
         const contentType = res.headers.get('content-type');
         if (contentType && contentType.includes('text/html')) {
@@ -4824,12 +4876,43 @@ ${roleLabel}: ${userQuery}`;
         
         if (!res.ok) {
            throw new Error('API not available (static deployment)');
-         }
+        }
 
         const parsedRes = await res.json();
+        if (parsedRes.error === 'AI_LIMIT_REACHED') {
+          const limitErr: any = new Error(parsedRes.message || 'Daily AI message limit reached.');
+          limitErr.isLimitReached = true;
+          limitErr.limitData = parsedRes;
+          throw limitErr;
+        }
         if (parsedRes.error) throw new Error(parsedRes.error);
         answer = parsedRes.text || 'I encountered an issue processing your lesson topic.';
+
+        // Update quota
+        if (parsedRes.usage) {
+          setAiUsageState(prev => ({
+            ...prev,
+            used: parsedRes.usage.used,
+            limit: parsedRes.usage.limit,
+            remaining: parsedRes.usage.remaining,
+            nextAvailableInMinutes: parsedRes.usage.nextAvailableInMinutes,
+            lastUpdated: Date.now()
+          }));
+        } else {
+          const updated = recordLocalMessage(userIdKey, userRoleKey);
+          setAiUsageState(updated);
+        }
       } catch (apiErr: any) {
+        if (apiErr?.isLimitReached || apiErr?.message?.includes('Daily AI message limit') || apiErr?.message?.includes('AI_LIMIT_REACHED')) {
+          setAiUsageState(prev => ({
+            ...prev,
+            remaining: 0,
+            used: prev.limit,
+            nextAvailableInMinutes: apiErr?.limitData?.nextAvailableInMinutes || 60
+          }));
+          setShowQuotaModal(true);
+          throw apiErr;
+        }
         console.log("Server API failed, falling back to client-side AI:", apiErr);
         const { clientSideGemini } = await import('./lib/clientAiFallback');
         const historyPayload = (currentThread?.messages || []).map(m => ({
@@ -4837,6 +4920,8 @@ ${roleLabel}: ${userQuery}`;
           content: m.content
         }));
         answer = await clientSideGemini(promptWithContext, historyPayload);
+        const updated = recordLocalMessage(userIdKey, userRoleKey);
+        setAiUsageState(updated);
       }
       
       setAiThreads(prev => prev.map(t => {
@@ -4864,11 +4949,16 @@ ${roleLabel}: ${userQuery}`;
         speakText(answer);
       }
     } catch (err: any) {
+      const isQuotaErr = err?.isLimitReached || err?.message?.includes('Daily AI message limit') || err?.message?.includes('AI_LIMIT_REACHED');
+      const errorContent = isQuotaErr
+        ? `⚠️ **Daily AI Buddy Limit Reached**\n\nYou have used your daily query allocation for your tier (${aiUsageState.limit} queries/day). \n\n* **Replenishment**: Queries reset on a rolling 24-hour cycle.\n* **Instant Boost**: Click **"Upgrade Quota"** above to enter an academic study voucher (e.g. \`STUDENTOS-PRO\` or \`EXAM-PREP\`) or request an extra quota grant from your instructors.`
+        : `[Connection Delay] Unable to proxy query to Gemini server layer: ${err.message}. Ensure your local dev server is powered on.`;
+
       setAiThreads(prev => prev.map(t => {
         if (t.id === targetThreadId) {
           return { 
             ...t, 
-            messages: [...updatedMessages, { role: 'assistant' as const, content: `[Connection Delay] Unable to proxy query to Gemini server layer: ${err.message}. Ensure your local dev server is powered on.` }] 
+            messages: [...updatedMessages, { role: 'assistant' as const, content: errorContent }] 
           };
         }
         return t;
@@ -5430,6 +5520,19 @@ ${roleLabel}: ${userQuery}`;
                       >
                         Create Profile & Sign Up →
                       </button>
+
+                      {/* Mobile App / Install APK promotion on login screen */}
+                      <div className="pt-2">
+                        <button
+                          type="button"
+                          onClick={() => setIsInstallAppModalOpen(true)}
+                          className="w-full py-2.5 px-3 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-white/10 hover:border-emerald-500/30 text-slate-300 hover:text-white text-xs font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer group"
+                        >
+                          <Smartphone className="w-4 h-4 text-emerald-400 group-hover:scale-110 transition-transform" />
+                          <span>Prefer mobile? <strong>Download StudentOS APK</strong></span>
+                          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold">v3.12</span>
+                        </button>
+                      </div>
                     </div>
                   </motion.div>
                 )}
@@ -6014,6 +6117,16 @@ ${roleLabel}: ${userQuery}`;
                     </button>
                   )}
 
+                  {(!presentationMode || isTabAllowedInPresentation('calendar')) && (
+                    <button 
+                      onClick={() => handleTabSelect('calendar')}
+                      className={getSidebarBtnClass('calendar')}
+                    >
+                      <span>🗓️</span>
+                      {sidebarOpen && 'Academic Calendar'}
+                    </button>
+                  )}
+
                   {!presentationMode && !isSportsTeacher && (
                     <button 
                       onClick={() => handleTabSelect('notes')}
@@ -6086,6 +6199,26 @@ ${roleLabel}: ${userQuery}`;
                     >
                       <span>📓</span>
                       {sidebarOpen && 'Assignment Center'}
+                    </button>
+                  )}
+
+                  {(!presentationMode || isTabAllowedInPresentation('gradebook')) && (
+                    <button 
+                      onClick={() => handleTabSelect('gradebook')}
+                      className={getSidebarBtnClass('gradebook')}
+                    >
+                      <span>📊</span>
+                      {sidebarOpen && 'Digital Gradebook'}
+                    </button>
+                  )}
+
+                  {(!presentationMode || isTabAllowedInPresentation('report_cards')) && (
+                    <button 
+                      onClick={() => handleTabSelect('report_cards')}
+                      className={getSidebarBtnClass('report_cards')}
+                    >
+                      <span>📜</span>
+                      {sidebarOpen && 'Report Cards'}
                     </button>
                   )}
 
@@ -6261,6 +6394,30 @@ ${roleLabel}: ${userQuery}`;
                   </div>
                 </div>
               )}
+              {/* Install App / Download APK in sidebar */}
+              {sidebarOpen ? (
+                <button
+                  type="button"
+                  onClick={() => setIsInstallAppModalOpen(true)}
+                  className="w-full flex items-center justify-between p-2.5 rounded-xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-indigo-500/10 hover:from-emerald-500/20 hover:to-teal-500/20 text-emerald-300 hover:text-white border border-emerald-500/25 transition-all text-xs font-bold cursor-pointer group shadow-sm"
+                >
+                  <div className="flex items-center gap-2">
+                    <Smartphone className="w-4 h-4 text-emerald-400 group-hover:scale-110 transition-transform" />
+                    <span>Download App</span>
+                  </div>
+                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">APK</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setIsInstallAppModalOpen(true)}
+                  className="w-full flex items-center justify-center p-2.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 hover:text-white border border-emerald-500/25 transition-all cursor-pointer"
+                  title="Install StudentOS Android APK"
+                >
+                  <Smartphone className="w-4 h-4" />
+                </button>
+              )}
+
               <button 
                 onClick={handleLogout}
                 className="w-full flex items-center justify-center gap-2 p-3 text-xs bg-red-500/10 hover:bg-red-500 hover:text-white text-red-400 rounded-xl transition-all font-semibold"
@@ -6383,6 +6540,9 @@ ${roleLabel}: ${userQuery}`;
                     {activeTab === 'analytics' && 'My Progress'}
                     {activeTab === 'profile' && 'My Profile'}
                     {activeTab === 'blogs' && 'Educational Blogs'}
+                    {activeTab === 'calendar' && 'Academic Calendar'}
+                    {activeTab === 'gradebook' && 'Digital Gradebook'}
+                    {activeTab === 'report_cards' && 'Official Report Cards'}
                   </h2>
                 </div>
               </div>
@@ -6581,6 +6741,18 @@ ${roleLabel}: ${userQuery}`;
                   <Clock className="w-4 h-4" />
                   <span>{clock}</span>
                 </div>
+
+                {/* Install App / Download APK Button */}
+                <button
+                  type="button"
+                  onClick={() => setIsInstallAppModalOpen(true)}
+                  className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600/90 to-teal-600/90 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-emerald-500/20 border border-emerald-500/30 transition-all active:scale-95 cursor-pointer"
+                  title="Download & Install StudentOS Android App (APK)"
+                >
+                  <Smartphone className="w-3.5 h-3.5 text-emerald-100" />
+                  <span className="hidden sm:inline">Install App</span>
+                  <span className="text-[9px] uppercase font-mono px-1.5 py-0.5 rounded bg-black/30 text-emerald-200 font-extrabold">APK</span>
+                </button>
 
                 {/* Broadcast Action Button */}
                 {['super_admin', 'admin', 'teacher', 'coordinator'].includes(effectiveRole) && (
@@ -8103,16 +8275,21 @@ ${activeNote.content}`);
                        profileAvatar={profileAvatar} 
                        setProfileAvatar={setProfileAvatar} 
                        profileTab={profileTab} 
-                       setProfileTab={setProfileTab} 
+                       setProfileTab={setProfileTab}
+                       onProfileUpdated={(updated: any) => {
+                         setCurrentUser(updated);
+                         try { localStorage.setItem('s_os_user', JSON.stringify(updated)); } catch (_) {}
+                         showNotification('✨ Profile card updated successfully!');
+                       }} 
                      />
                   ) : (
                     <>
                       {/* Profile Navigation Tabs for Non-Teachers */}
                       <div className="flex bg-slate-950 p-1.5 rounded-2xl border border-white/5 gap-1 mb-6 flex-wrap">
                         {(
-                          effectiveRole === 'student' ? ['overview', 'attendance', 'records', 'remarks', 'analytics'] : 
-                          effectiveRole === 'coordinator' ? ['overview', 'teacher_list', 'student_list', 'house_reports', 'section_reports', 'requests'] : 
-                          ['overview', 'students', 'teachers', 'coordinators', 'reports', 'requests']
+                          effectiveRole === 'student' ? ['overview', 'customizer', 'attendance', 'records', 'remarks', 'analytics'] : 
+                          effectiveRole === 'coordinator' ? ['overview', 'customizer', 'teacher_list', 'student_list', 'house_reports', 'section_reports', 'requests'] : 
+                          ['overview', 'customizer', 'students', 'teachers', 'coordinators', 'reports', 'requests']
                         ).map((pt) => (
                           <button
                             key={pt}
@@ -8122,6 +8299,7 @@ ${activeNote.content}`);
                             }`}
                           >
                             {pt === 'overview' && 'Overview'}
+                            {pt === 'customizer' && '✨ Custom Card'}
                             
                             {/* Student Tabs */}
                             {pt === 'attendance' && 'Attendance'}
@@ -8147,6 +8325,19 @@ ${activeNote.content}`);
                           </button>
                         ))}
                       </div>
+
+                      {profileTab === 'customizer' && currentUser && (
+                        <div className="animate-fadeIn">
+                          <ProfileCustomizer 
+                            currentUser={currentUser} 
+                            onProfileUpdated={(updated) => {
+                              setCurrentUser(updated);
+                              try { localStorage.setItem('s_os_user', JSON.stringify(updated)); } catch (_) {}
+                              showNotification('✨ Profile card updated successfully!');
+                            }} 
+                          />
+                        </div>
+                      )}
 
                       {profileTab === 'overview' && (
                         <form onSubmit={handleSaveProfile} className="space-y-6 animate-fadeIn">
@@ -8309,6 +8500,15 @@ ${activeNote.content}`);
                       >
                         {effectiveRole === 'student' ? 'Update Profile Picture' : 'Update Profile Parameters'}
                       </button>
+
+                      {/* App Download and Installation Section */}
+                      <div className="mt-8 pt-6 border-t border-white/5">
+                        <AppInstallSection 
+                          isSuperAdmin={Boolean(isSuperAdmin || effectiveRole === 'super_admin' || currentUser?.role === 'super_admin')}
+                          effectiveRole={effectiveRole || currentUser?.role || 'student'}
+                          currentUserName={currentUser?.name || currentUser?.email || 'Super Admin'}
+                        />
+                      </div>
                     </form>
                   )}
                   
@@ -10698,7 +10898,76 @@ Could you please guide me step-by-step on how to solve this, explaining the theo
               )}
                                      {/* Tab 7: AI Teacher Chat Dialog */}
               {activeTab === 'ai_teacher' && (
-                <div className="grid grid-cols-1 xl:grid-cols-12 gap-5 animate-fadeIn">
+                <div className="space-y-4 animate-fadeIn">
+                  
+                  {/* AI Quota & Limits Dashboard Banner */}
+                  <div className="smart-glass p-4 sm:p-5 rounded-3xl border border-white/10 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm bg-gradient-to-r from-slate-900/90 via-indigo-950/20 to-slate-900/90">
+                    <div className="flex items-center gap-3.5">
+                      <div className={`p-3 rounded-2xl border shrink-0 transition-colors ${aiUsageState.remaining <= 0 ? 'bg-red-500/15 border-red-500/30 text-red-400' : 'bg-indigo-500/15 border-indigo-500/30 text-indigo-400'}`}>
+                        <Sparkles className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h2 className="text-sm font-black text-white">AI Buddy Study Assistant</h2>
+                          <span className="text-[10px] uppercase tracking-wider font-extrabold px-2.5 py-0.5 rounded-full bg-slate-800/90 text-slate-300 border border-white/10 capitalize">
+                            {effectiveRole || 'student'} Tier
+                          </span>
+                          {aiUsageState.bonus > 0 && (
+                            <span className="text-[10px] uppercase tracking-wider font-extrabold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                              <Zap className="w-2.5 h-2.5" /> +{aiUsageState.bonus} Bonus Quota
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-400 mt-1">
+                          {aiUsageState.remaining <= 0 ? (
+                            <span className="text-red-400 font-semibold flex items-center gap-1">
+                              <AlertTriangle className="w-3.5 h-3.5 inline" /> Daily limit reached. Next slot unlocks in ~{aiUsageState.nextAvailableInMinutes || 60}m, or upgrade your quota below.
+                            </span>
+                          ) : (
+                            <span>
+                              Rolling 24-hour fair-use limits safeguard server compute and guarantee fast response times.
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Progress Bar & Upgrade Action */}
+                    <div className="flex items-center gap-4 self-stretch md:self-auto justify-between md:justify-end border-t md:border-t-0 border-white/5 pt-3 md:pt-0">
+                      <div className="flex flex-col items-start md:items-end gap-1">
+                        <div className="flex items-center gap-1.5 text-xs font-bold">
+                          <span className={aiUsageState.remaining <= 0 ? 'text-red-400 font-mono' : 'text-emerald-400 font-mono'}>
+                            {aiUsageState.remaining}
+                          </span>
+                          <span className="text-slate-400">/ {aiUsageState.limit} queries left today</span>
+                        </div>
+                        <div className="w-32 sm:w-40 h-2 bg-slate-800 rounded-full overflow-hidden border border-white/5">
+                          <div 
+                            className={`h-full rounded-full transition-all duration-500 ${
+                              aiUsageState.remaining <= 0
+                                ? 'bg-red-500'
+                                : (aiUsageState.used / Math.max(1, aiUsageState.limit)) > 0.8
+                                  ? 'bg-amber-500'
+                                  : 'bg-indigo-500'
+                            }`}
+                            style={{ width: `${Math.min(100, Math.round((aiUsageState.used / Math.max(1, aiUsageState.limit)) * 100))}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => setShowQuotaModal(true)}
+                        className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 flex items-center gap-1.5 shrink-0"
+                        title="View AI limits and upgrade quota"
+                      >
+                        <Zap className="w-3.5 h-3.5 text-amber-300" />
+                        <span>Upgrade Quota</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Main Chat Layout */}
+                  <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
                   
                   {/* Threads & Files Sidebar (XL: 3 Cols) */}
                   <div className="xl:col-span-3 space-y-4">
@@ -11077,21 +11346,54 @@ Could you please guide me step-by-step on how to solve this, explaining the theo
                           </div>
                         )}
 
+                        {/* Limit exhaustion alert banner */}
+                        {aiUsageState.remaining <= 0 && (
+                          <div className="p-3 rounded-2xl bg-red-500/10 border border-red-500/30 text-xs text-red-200 flex items-center justify-between gap-3 animate-fadeIn">
+                            <div className="flex items-center gap-2">
+                              <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+                              <span className="font-medium">
+                                Daily AI query quota exhausted (0/{aiUsageState.limit} remaining). Next slot unlocks in ~{aiUsageState.nextAvailableInMinutes || 60}m.
+                              </span>
+                            </div>
+                            <button
+                              onClick={() => setShowQuotaModal(true)}
+                              className="px-3 py-1.5 rounded-xl bg-red-500 hover:bg-red-400 text-white font-bold text-[11px] uppercase tracking-wider transition-all shrink-0 flex items-center gap-1 shadow-sm active:scale-95"
+                            >
+                              <Zap className="w-3 h-3" /> Upgrade
+                            </button>
+                          </div>
+                        )}
+
                         <div className="flex gap-2">
                           <input 
                             type="text"
                             value={aiInput}
                             onChange={e => setAiInput(e.target.value)}
                             onKeyDown={e => e.key === 'Enter' && handleAskAIModel()}
-                            placeholder={attachedFiles && attachedFiles.length > 0 ? `Ask Mentor about ${attachedFiles.map(f => f.name).join('')}...` : "Explicate formulas, code fragments, or query lesson summaries..."}
-                            className="flex-1 px-4 py-3 rounded-xl bg-slate-900 border border-white/10 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 text-white font-medium"
+                            placeholder={
+                              aiUsageState.remaining <= 0 
+                                ? "Daily quota exhausted. Click 'Upgrade Quota' above to redeem code or boost limit." 
+                                : attachedFiles && attachedFiles.length > 0 
+                                  ? `Ask Mentor about ${attachedFiles.map(f => f.name).join('')}...` 
+                                  : "Explicate formulas, code fragments, or query lesson summaries..."
+                            }
+                            disabled={aiLoading || aiUsageState.remaining <= 0}
+                            className={`flex-1 px-4 py-3 rounded-xl bg-slate-900 border text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 text-white font-medium ${aiUsageState.remaining <= 0 ? 'border-red-500/30 opacity-70 cursor-not-allowed' : 'border-white/10'}`}
                           />
                           <button 
-                            onClick={handleAskAIModel}
+                            onClick={aiUsageState.remaining <= 0 ? () => setShowQuotaModal(true) : handleAskAIModel}
                             disabled={aiLoading}
-                            className="px-5 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs uppercase tracking-wide transition-all shadow-md active:scale-95 flex items-center justify-center gap-1.5"
+                            className={`px-5 py-3 rounded-xl font-bold text-xs uppercase tracking-wide transition-all shadow-md active:scale-95 flex items-center justify-center gap-1.5 ${
+                              aiUsageState.remaining <= 0 
+                                ? 'bg-amber-600 hover:bg-amber-500 text-white' 
+                                : 'bg-indigo-600 hover:bg-indigo-500 text-white'
+                            }`}
                           >
-                            <Send className="w-3.5 h-3.5" /> AskAI
+                            {aiUsageState.remaining <= 0 ? (
+                              <><Zap className="w-3.5 h-3.5" /> Boost</>
+                            ) : (
+                              <><Send className="w-3.5 h-3.5" /> AskAI</>
+                            )}
                           </button>
                         </div>
                       </div>
@@ -11099,6 +11401,7 @@ Could you please guide me step-by-step on how to solve this, explaining the theo
                     </div>
                   </div>
 
+                  </div>
                 </div>
               )}
 
@@ -11171,6 +11474,21 @@ Could you please guide me step-by-step on how to solve this, explaining the theo
                   quizzesTaken: 12,
                   studyHours: 40
                 }} />
+              )}
+
+              {/* Tab 14: Academic Calendar */}
+              {activeTab === 'calendar' && (
+                <AcademicCalendar currentUser={currentUser} effectiveRole={effectiveRole} />
+              )}
+
+              {/* Tab 15: Digital Gradebook */}
+              {activeTab === 'gradebook' && (
+                <DigitalGradebook currentUser={currentUser} effectiveRole={effectiveRole} />
+              )}
+
+              {/* Tab 16: Digital Report Cards */}
+              {activeTab === 'report_cards' && (
+                <DigitalReportCards currentUser={currentUser} effectiveRole={effectiveRole} />
               )}
 
             </main>
@@ -11470,6 +11788,29 @@ Could you please guide me step-by-step on how to solve this, explaining the theo
           isOpen={isBroadcastModalOpen}
           onClose={() => setIsBroadcastModalOpen(false)}
           showNotification={showNotification}
+        />
+      )}
+
+      {showQuotaModal && (
+        <AIQuotaManagerModal
+          isOpen={showQuotaModal}
+          onClose={() => setShowQuotaModal(false)}
+          usageState={aiUsageState}
+          userId={currentUser?.uid || 'guest'}
+          userName={currentUser?.name || 'Student'}
+          userEmail={currentUser?.email}
+          userRole={effectiveRole || currentUser?.role || 'student'}
+          onQuotaUpdated={(updated) => setAiUsageState(updated)}
+        />
+      )}
+
+      {isInstallAppModalOpen && (
+        <InstallAppModal
+          isOpen={isInstallAppModalOpen}
+          onClose={() => setIsInstallAppModalOpen(false)}
+          isSuperAdmin={Boolean(isSuperAdmin || effectiveRole === 'super_admin' || currentUser?.role === 'super_admin')}
+          effectiveRole={effectiveRole || currentUser?.role || 'student'}
+          currentUserName={currentUser?.name || currentUser?.email || 'Super Admin'}
         />
       )}
 
