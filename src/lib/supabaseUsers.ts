@@ -15,6 +15,7 @@ export interface SupabaseUser {
  * Maps a Supabase user row to a frontend UserProfile
  */
 export function mapSupabaseUserToProfile(u: any): UserProfile {
+  const raw = u.raw_data || {};
   return {
     uid: u.id || u.uid || u.firebase_uid || '',
     email: u.email?.toLowerCase(),
@@ -28,18 +29,25 @@ export function mapSupabaseUserToProfile(u: any): UserProfile {
     subjects: u.subjects || [],
     specialtySubject: u.specialty_subject || null,
     designation: u.designation || null,
-    photoURL: u.photo_url || u.profile_image || u.photoURL || '',
-    avatar: u.photo_url || u.profile_image || u.photoURL || '',
+    photoURL: u.photo_url || u.profile_image || u.photoURL || raw.avatar || '',
+    avatar: u.photo_url || u.profile_image || u.photoURL || raw.avatar || '',
+    bannerUrl: u.banner_url || raw.bannerUrl || '',
+    bannerPreset: u.banner_preset || raw.bannerPreset || '',
+    bio: u.bio || raw.bio || '',
+    pronouns: raw.pronouns || '',
+    customStatus: raw.customStatus || '',
+    avatarFrame: u.avatar_frame || raw.avatarFrame || 'none',
+    accentColor: u.accent_color || raw.accentColor || 'indigo',
     accountStatus: u.account_status || u.accountStatus || 'approved',
-    phone: u.raw_data?.phone || '',
-    birthdate: u.raw_data?.birthdate || '',
+    phone: raw.phone || '',
+    birthdate: raw.birthdate || '',
     pin: u.pin || '',
     requestedRole: u.requested_role || u.requestedRole || u.role,
     studyHours: u.studyHours || 14,
     quizzesTaken: u.quizzesTaken || 5,
     streakDays: u.streakDays || 8,
     lastLogin: u.lastLogin || Date.now(),
-    raw_data: u.raw_data || null,
+    raw_data: raw,
   };
 }
 
@@ -186,15 +194,24 @@ export async function saveSupabaseUserProfile(profile: UserProfile): Promise<Use
     subjects: (profile as any).subjects || [],
     specialty_subject: (profile as any).specialtySubject || null,
     designation: (profile as any).designation || null,
-    photo_url: profile.photoURL || null,
+    photo_url: profile.photoURL || profile.avatar || null,
+    bio: profile.bio || null,
     requested_role: profile.requestedRole || profile.role,
     account_status: profile.accountStatus || 'approved',
     raw_data: { 
       ...(profile.raw_data || {}), 
       phone: profile.phone,
-      birthdate: profile.birthdate
+      birthdate: profile.birthdate,
+      bannerUrl: profile.bannerUrl,
+      bannerPreset: profile.bannerPreset,
+      bio: profile.bio,
+      pronouns: profile.pronouns,
+      customStatus: profile.customStatus,
+      avatarFrame: profile.avatarFrame,
+      accentColor: profile.accentColor
     },
     pin: profile.pin || null,
+    updated_at: Date.now()
   };
 
   try {
