@@ -44,6 +44,15 @@ export interface UserProfile {
   assignedClasses?: string[]; // Format: "{Grade}_{Section}" e.g. "Grade 9_Section A"
   avatar?: string;
   photoURL?: string;
+  bannerUrl?: string;
+  bannerPreset?: string;
+  bio?: string;
+  pronouns?: string;
+  customStatus?: string;
+  avatarFrame?: string;
+  accentColor?: string;
+  badges?: string[];
+  unlockedFrames?: string[];
   lastLogin?: number;
   studyHours?: number;
   quizzesTaken?: number;
@@ -52,6 +61,127 @@ export interface UserProfile {
   grant_all_permissions?: boolean;
   permissions?: string[];
   raw_data?: any;
+}
+
+export type ProfileFrameStyle =
+  | 'none'
+  | 'neon-cyber'
+  | 'gold-championship'
+  | 'emerald-scholar'
+  | 'ruby-flame'
+  | 'sapphire-galaxy'
+  | 'topaz-spark'
+  | 'pixel-retro'
+  | 'rainbow-holo';
+
+export type CalendarEventType =
+  | 'EXAM'
+  | 'TEST'
+  | 'ASSIGNMENT'
+  | 'HOLIDAY'
+  | 'SCHOOL_EVENT'
+  | 'COMPETITION'
+  | 'MEETING'
+  | 'OTHER';
+
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  description?: string;
+  startTime: string; // ISO or YYYY-MM-DDTHH:mm
+  endTime: string;
+  eventType: CalendarEventType;
+  category?: string;
+  color?: string;
+  audience: 'all' | 'students' | 'teachers' | 'coordinators';
+  classGrade?: string;
+  classSection?: string;
+  createdBy?: string;
+  createdByName?: string;
+  createdAt?: string;
+}
+
+export type AssessmentType =
+  | 'Quiz'
+  | 'Assignment'
+  | 'Unit Test'
+  | 'Periodic Test'
+  | 'Midterm'
+  | 'Project'
+  | 'Practical'
+  | 'Final Exam'
+  | 'Other';
+
+export interface GradebookAssessment {
+  id: string;
+  title: string;
+  classGrade: string;
+  classSection: string;
+  subject: string;
+  period: string;
+  type: AssessmentType;
+  maxScore: number;
+  date: string;
+  teacherId: string;
+  teacherName?: string;
+  createdAt?: string;
+}
+
+export interface GradebookEntry {
+  id: string;
+  assessmentId: string;
+  studentId: string;
+  studentName: string;
+  subject: string;
+  score: number;
+  maxScore: number;
+  percentage: number;
+  letterGrade: string;
+  comment?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+export type ReportCardStatus = 'DRAFT' | 'REVIEW' | 'PUBLISHED';
+
+export interface ReportCardSubject {
+  subject: string;
+  marksObtained: number;
+  maxMarks: number;
+  percentage: number;
+  letterGrade: string;
+  teacherComment?: string;
+}
+
+export interface ReportCard {
+  id: string;
+  studentId: string;
+  studentName: string;
+  studentEmail?: string;
+  rollNumber?: string;
+  classGrade: string;
+  classSection: string;
+  house?: HouseType;
+  academicPeriod: string;
+  status: ReportCardStatus;
+  subjects: ReportCardSubject[];
+  totalMarks: number;
+  maxTotalMarks: number;
+  overallPercentage: number;
+  overallGrade: string;
+  gpa?: number;
+  rank?: string;
+  attendanceSummary?: {
+    totalDays: number;
+    presentDays: number;
+    percentage: number;
+  };
+  teacherRemarks?: string;
+  principalRemarks?: string;
+  conductGrade?: string;
+  generatedAt: string;
+  publishedAt?: string;
+  updatedBy?: string;
 }
 
 export interface RecentAccount {
