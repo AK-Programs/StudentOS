@@ -9,7 +9,10 @@ import {
   setCustomApkConfig, 
   resetCustomApkConfig,
   syncApkConfigFromServer,
-  publishGlobalApkConfig
+  publishGlobalApkConfig,
+  isApkInstalledOnDevice,
+  markApkInstalledOnDevice,
+  resetApkInstalledOnDevice
 } from '../config/appConfig';
 
 interface InstallAppModalProps {
@@ -29,6 +32,7 @@ export function InstallAppModal({
 }: InstallAppModalProps) {
   const [downloading, setDownloading] = useState(false);
   const [downloaded, setDownloaded] = useState(false);
+  const [isInstalled, setIsInstalled] = useState(() => isApkInstalledOnDevice());
   const [showConfig, setShowConfig] = useState(false);
   const [currentUrl, setCurrentUrl] = useState(() => getApkDownloadUrl());
   const [currentFileName, setCurrentFileName] = useState(() => getApkFileName());
@@ -59,8 +63,17 @@ export function InstallAppModal({
       setInputUrl(url);
       setInputFileName(fn);
     };
+
+    const handleInstallChanged = (e: any) => {
+      setIsInstalled(Boolean(e.detail?.installed));
+    };
+
     window.addEventListener('s_os_apk_config_updated', handleUpdate);
-    return () => window.removeEventListener('s_os_apk_config_updated', handleUpdate);
+    window.addEventListener('studentos_apk_installed_changed', handleInstallChanged);
+    return () => {
+      window.removeEventListener('s_os_apk_config_updated', handleUpdate);
+      window.removeEventListener('studentos_apk_installed_changed', handleInstallChanged);
+    };
   }, []);
 
   if (!isOpen) return null;
@@ -68,10 +81,18 @@ export function InstallAppModal({
   const handleDownload = () => {
     setDownloading(true);
     triggerApkDownload();
+    markApkInstalledOnDevice(true);
+    setIsInstalled(true);
     setTimeout(() => {
       setDownloading(false);
       setDownloaded(true);
     }, 1500);
+  };
+
+  const handleToggleInstalledState = () => {
+    const next = !isInstalled;
+    markApkInstalledOnDevice(next);
+    setIsInstalled(next);
   };
 
   const handleSaveDestination = async (e: React.FormEvent) => {
@@ -179,16 +200,43 @@ export function InstallAppModal({
             </div>
           </div>
 
-          {/* Primary Action Button */}
-          <div className="space-y-2">
+          {/* Primary Action Button & Installed Status */}
+          <div className="space-y-2.5">
+            {isInstalled && (
+              <div className="p-3 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2 text-emerald-300 text-xs font-bold">
+                  <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>StudentOS is marked as installed on this device</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleToggleInstalledState}
+                  className="text-[10px] text-slate-400 hover:text-white underline cursor-pointer"
+                  title="Click to reset installation status"
+                >
+                  Reset status
+                </button>
+              </div>
+            )}
+
             <button
               onClick={handleDownload}
               disabled={downloading}
-              className="w-full py-4 px-6 rounded-2xl bg-gradient-to-r from-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white font-black text-sm tracking-wide shadow-lg shadow-emerald-500/20 active:scale-[0.98] transition-all flex items-center justify-center gap-3 disabled:opacity-50 cursor-pointer"
+              className={`w-full py-4 px-6 rounded-2xl font-black text-sm tracking-wide shadow-lg active:scale-[0.98] transition-all flex items-center justify-center gap-3 disabled:opacity-50 cursor-pointer ${
+                isInstalled 
+                  ? 'bg-slate-800 hover:bg-slate-700 text-white border border-white/10 shadow-slate-900/40' 
+                  : 'bg-gradient-to-r from-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white shadow-emerald-500/20'
+              }`}
             >
               <Download className={`w-5 h-5 ${downloading ? 'animate-bounce' : ''}`} />
               <span>
-                {downloading ? 'Starting APK Download...' : isAndroid ? 'Download & Install StudentOS APK' : 'Download Android APK'}
+                {downloading 
+                  ? 'Starting APK Download...' 
+                  : isInstalled 
+                    ? 'Re-download StudentOS APK' 
+                    : isAndroid 
+                      ? 'Download & Install StudentOS APK' 
+                      : 'Download Android APK'}
               </span>
               <span className="text-[11px] font-mono opacity-80">({STUDENTOS_RELEASE_INFO.apkSize})</span>
             </button>
@@ -373,6 +421,7 @@ export function AppInstallSection({
   const [inputFileName, setInputFileName] = useState(() => getApkFileName());
   const [savedFeedback, setSavedFeedback] = useState<string | null>(null);
   const [saveLoading, setSaveLoading] = useState(false);
+  const [isInstalled, setIsInstalled] = useState(() => isApkInstalledOnDevice());
 
   const isAndroid = isAndroidDevice();
   const canConfigure = Boolean(isSuperAdmin || effectiveRole === 'super_admin' || effectiveRole === 'admin');
@@ -396,17 +445,34 @@ export function AppInstallSection({
       setInputUrl(u);
       setInputFileName(f);
     };
+
+    const handleInstallChanged = (e: any) => {
+      setIsInstalled(Boolean(e.detail?.installed));
+    };
+
     window.addEventListener('s_os_apk_config_updated', handleConfigUpdate);
-    return () => window.removeEventListener('s_os_apk_config_updated', handleConfigUpdate);
+    window.addEventListener('studentos_apk_installed_changed', handleInstallChanged);
+    return () => {
+      window.removeEventListener('s_os_apk_config_updated', handleConfigUpdate);
+      window.removeEventListener('studentos_apk_installed_changed', handleInstallChanged);
+    };
   }, []);
 
   const handleDownload = () => {
     setDownloading(true);
     triggerApkDownload();
+    markApkInstalledOnDevice(true);
+    setIsInstalled(true);
     setTimeout(() => {
       setDownloading(false);
       setDownloaded(true);
     }, 1500);
+  };
+
+  const handleToggleInstalled = () => {
+    const next = !isInstalled;
+    markApkInstalledOnDevice(next);
+    setIsInstalled(next);
   };
 
   const handleSaveDestination = async (e: React.FormEvent) => {
@@ -464,7 +530,21 @@ export function AppInstallSection({
           </div>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          {isInstalled && (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs font-bold">
+              <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Installed</span>
+              <button
+                type="button"
+                onClick={handleToggleInstalled}
+                className="text-[10px] text-slate-400 hover:text-white underline ml-1 cursor-pointer"
+                title="Reset installed indicator"
+              >
+                (Reset)
+              </button>
+            </div>
+          )}
           {canConfigure && (
             <button
               type="button"
@@ -479,10 +559,22 @@ export function AppInstallSection({
           <button
             onClick={handleDownload}
             disabled={downloading}
-            className="py-3 px-5 rounded-xl bg-gradient-to-r from-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-emerald-500/20 active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer"
+            className={`py-3 px-5 rounded-xl font-bold text-xs uppercase tracking-wider shadow-lg active:scale-95 transition-all flex items-center justify-center gap-2 cursor-pointer ${
+              isInstalled
+                ? 'bg-slate-800 hover:bg-slate-700 text-white border border-white/10 shadow-slate-900/40'
+                : 'bg-gradient-to-r from-emerald-600 to-indigo-600 hover:from-emerald-500 hover:to-indigo-500 text-white shadow-emerald-500/20'
+            }`}
           >
             <Download className="w-4 h-4" />
-            <span>{downloading ? 'Downloading...' : isAndroid ? 'Download APK' : 'Download APK'}</span>
+            <span>
+              {downloading 
+                ? 'Downloading...' 
+                : isInstalled 
+                  ? 'Re-download APK' 
+                  : isAndroid 
+                    ? 'Download APK' 
+                    : 'Download APK'}
+            </span>
           </button>
         </div>
       </div>
