@@ -94,17 +94,17 @@ export async function getSupabaseUserProfile(uid: string, email?: string, forceR
   console.log('[SUPABASE-USERS] Fetching profile for uid:', uid, 'email:', email);
   let data: any = null;
 
-  // 1. Try querying by id if it is a valid UUID
-  if (isValidUUID(uid)) {
+  // 1. Try querying by id or uid in user_profiles
+  if (uid) {
     try {
       const { data: res, error: err } = await supabase
         .from('user_profiles')
         .select('*')
-        .eq('id', uid)
+        .or(`id.eq.${uid},uid.eq.${uid}`)
         .maybeSingle();
       if (!err && res) {
         data = res;
-        console.log('[SUPABASE-USERS] Found profile by id in user_profiles');
+        console.log('[SUPABASE-USERS] Found profile by id/uid in user_profiles');
       }
     } catch (e) { }
   }
@@ -129,7 +129,7 @@ export async function getSupabaseUserProfile(uid: string, email?: string, forceR
   let foundInLegacy = false;
   if (!data) {
     try {
-      if (isValidUUID(uid)) {
+      if (uid) {
         const { data: oldRes } = await supabase.from('users').select('*').eq('id', uid).maybeSingle();
         if (oldRes) data = oldRes;
       }
@@ -137,7 +137,7 @@ export async function getSupabaseUserProfile(uid: string, email?: string, forceR
         const { data: oldRes } = await supabase.from('users').select('*').eq('email', email.toLowerCase()).maybeSingle();
         if (oldRes) data = oldRes;
       }
-      if (!data) {
+      if (!data && uid) {
         const { data: oldRes } = await supabase.from('users').select('*').eq('firebase_uid', uid).maybeSingle();
         if (oldRes) data = oldRes;
       }
@@ -152,7 +152,7 @@ export async function getSupabaseUserProfile(uid: string, email?: string, forceR
 
   const profile = mapSupabaseUserToProfile(data);
 
-  if (uid && isValidUUID(uid)) {
+  if (uid) {
     profile.uid = uid;
   }
 
@@ -172,18 +172,16 @@ export async function getSupabaseUserProfile(uid: string, email?: string, forceR
  * Creates or updates a user profile in Supabase `user_profiles` table.
  */
 export async function saveSupabaseUserProfile(profile: UserProfile): Promise<UserProfile> {
-  console.log('[SUPABASE-USERS] Saving user profile:', profile.uid);
+  const targetId = profile.uid || (profile as any).id || profile.email?.toLowerCase();
+  console.log('[SUPABASE-USERS] Saving user profile:', targetId);
 
-  let targetId = profile.uid;
-
-  if (!isValidUUID(targetId!)) {
-     console.warn("[SUPABASE-USERS] Cannot save to user_profiles with non-UUID id:", targetId);
-     return profile;
+  if (!targetId) {
+    throw new Error('Cannot save profile without a valid user ID or email');
   }
 
   const upsertData: any = {
     id: targetId,
-    uid: targetId,
+    uid: profile.uid || targetId,
     email: profile.email?.toLowerCase() || '',
     name: profile.name || '',
     role: profile.role || 'student',
@@ -198,6 +196,7 @@ export async function saveSupabaseUserProfile(profile: UserProfile): Promise<Use
     bio: profile.bio || null,
     requested_role: profile.requestedRole || profile.role,
     account_status: profile.accountStatus || 'approved',
+    badges: profile.badges || [],
     raw_data: { 
       ...(profile.raw_data || {}), 
       phone: profile.phone,
@@ -208,7 +207,9 @@ export async function saveSupabaseUserProfile(profile: UserProfile): Promise<Use
       pronouns: profile.pronouns,
       customStatus: profile.customStatus,
       avatarFrame: profile.avatarFrame,
-      accentColor: profile.accentColor
+      accentColor: profile.accentColor,
+      badges: profile.badges,
+      unlockedFrames: (profile as any).unlockedFrames || ['none']
     },
     pin: profile.pin || null,
     updated_at: Date.now()
@@ -221,9 +222,26 @@ export async function saveSupabaseUserProfile(profile: UserProfile): Promise<Use
       .select()
       .maybeSingle();
 
-    if (error) throw error;
+    if (error) {
+      // Fallback: try upserting by email if id conflict
+      if (error.code === '23505' && profile.email) {
+        const { data: emailData, error: emailError } = await supabase
+          .from('user_profiles')
+          .update(upsertData)
+          .eq('email', profile.email.toLowerCase())
+          .select()
+          .maybeSingle();
+        if (!emailError && emailData) {
+          const savedProfile = mapSupabaseUserToProfile(emailData);
+          if (savedProfile.uid) profileCache.set(savedProfile.uid, { profile: savedProfile, timestamp: Date.now() });
+          if (savedProfile.email) profileCache.set(savedProfile.email.toLowerCase(), { profile: savedProfile, timestamp: Date.now() });
+          return savedProfile;
+        }
+      }
+      throw error;
+    }
     
-    const savedProfile = mapSupabaseUserToProfile(data);
+    const savedProfile = mapSupabaseUserToProfile(data || upsertData);
     if (savedProfile.uid) profileCache.set(savedProfile.uid, { profile: savedProfile, timestamp: Date.now() });
     if (savedProfile.email) profileCache.set(savedProfile.email.toLowerCase(), { profile: savedProfile, timestamp: Date.now() });
     return savedProfile;
