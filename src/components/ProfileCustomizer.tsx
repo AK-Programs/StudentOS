@@ -144,15 +144,17 @@ export function ProfileCustomizer({ currentUser, onUpdateUser, onProfileUpdated,
   const handleSave = async () => {
     setSaving(true);
     setErrorMsg(null);
+    setSaveSuccess(false);
 
     const sanitizedBio = sanitizeText(bio);
     const sanitizedPronouns = sanitizeText(pronouns);
     const sanitizedStatus = sanitizeText(customStatus);
 
+    // Safeguard: only cosmetic customization fields are updated
     const updatedProfile: UserProfile = {
       ...currentUser,
-      photoURL: photoURL || currentUser.photoURL,
-      avatar: photoURL || currentUser.avatar,
+      photoURL: photoURL || currentUser.photoURL || currentUser.avatar,
+      avatar: photoURL || currentUser.avatar || currentUser.photoURL,
       bannerUrl: bannerUrl || undefined,
       bannerPreset: bannerPreset || undefined,
       bio: sanitizedBio,
@@ -162,21 +164,28 @@ export function ProfileCustomizer({ currentUser, onUpdateUser, onProfileUpdated,
       accentColor: accentColor
     };
 
-    try {
-      // 1. Try standard save via supabaseUsers helper
-      let persistedProfile = updatedProfile;
-      try {
-        persistedProfile = await saveSupabaseUserProfile(updatedProfile);
-      } catch (saveErr) {
-        console.warn('saveSupabaseUserProfile warning, trying direct table update:', saveErr);
-      }
+    let persistedProfile: UserProfile = updatedProfile;
+    let savedSuccessfully = false;
 
-      // 2. Direct table update fallback to ensure raw_data and dedicated columns are synced
-      if (currentUser.uid) {
-        try {
-          await supabase
+    try {
+      // 1. Primary save via Supabase user profile service
+      persistedProfile = await saveSupabaseUserProfile(updatedProfile);
+      savedSuccessfully = true;
+    } catch (saveErr: any) {
+      console.warn('saveSupabaseUserProfile warning, trying direct table update:', saveErr);
+      
+      // 2. Direct table fallback if service throws
+      try {
+        const targetId = currentUser.uid || currentUser.email;
+        if (targetId) {
+          const { data, error } = await supabase
             .from('user_profiles')
-            .update({
+            .upsert({
+              id: targetId,
+              uid: currentUser.uid || targetId,
+              email: currentUser.email?.toLowerCase(),
+              name: currentUser.name,
+              role: currentUser.role || 'student',
               photo_url: updatedProfile.photoURL,
               bio: updatedProfile.bio,
               raw_data: {
@@ -190,13 +199,25 @@ export function ProfileCustomizer({ currentUser, onUpdateUser, onProfileUpdated,
                 accentColor: updatedProfile.accentColor
               },
               updated_at: Date.now()
-            })
-            .eq('uid', currentUser.uid);
-        } catch (tblErr) {
-          console.warn('Direct user_profiles table update notice:', tblErr);
-        }
-      }
+            }, { onConflict: 'id' })
+            .select()
+            .maybeSingle();
 
+          if (error) throw error;
+          savedSuccessfully = true;
+          if (data) {
+            persistedProfile = { ...updatedProfile, ...data };
+          }
+        }
+      } catch (directErr: any) {
+        console.error('Direct fallback save also failed:', directErr);
+        setErrorMsg(`Failed to save profile to database: ${directErr.message || 'Network error'}`);
+        setSaving(false);
+        return;
+      }
+    }
+
+    if (savedSuccessfully) {
       // 3. Update local storage cache and recent accounts
       try {
         localStorage.setItem('s_os_user', JSON.stringify(persistedProfile));
@@ -218,13 +239,10 @@ export function ProfileCustomizer({ currentUser, onUpdateUser, onProfileUpdated,
       onUpdateUser?.(persistedProfile);
       onProfileUpdated?.(persistedProfile);
       setSaveSuccess(true);
-      setTimeout(() => setSaveSuccess(false), 2500);
-    } catch (err: any) {
-      console.error('Failed to save profile customization:', err);
-      setErrorMsg('Failed to save changes. Please try again.');
-    } finally {
-      setSaving(false);
+      setTimeout(() => setSaveSuccess(false), 3000);
     }
+
+    setSaving(false);
   };
 
   // Frame styling lookup
