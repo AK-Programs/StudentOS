@@ -22,7 +22,7 @@ const PORT = 3000;
 app.use(express.json({ limit: '10mb' }));
 
 // VAPID keys for Web Push with file system persistence across server restarts
-const DEFAULT_VAPID_PUBLIC_KEY = 'BPO8bIMHJfOSpN1NkgxPhI_XZ9KkFr0q_6NpMjqw7oZcMI1tqz04PPQg2m-4IIiPHFrTbpMpZHhn8AM3S-SPw1I';
+const DEFAULT_VAPID_PUBLIC_KEY = 'BJrzpoU4JY2uj2YmpzKKMoNsa5aHr_iL6rmLvG55NsGqInuYW1BzI1_6vYjz20GTx8qid6znkPbsVdMdppQ1uf4';
 const VAPID_KEY_FILE = path.join(process.cwd(), '.vapid-keys.json');
 
 function getOrGenerateVapidKeys() {
@@ -241,14 +241,233 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', time: new Date() });
 });
 
+// ========================================================================
+// AI BUDDY ROLLING 24-HOUR USAGE LIMIT SYSTEM
+// Role-based limits: Student (30), Teacher (75), Coordinator (100), Admin (150)
+// ========================================================================
 
+interface AIUsageLog {
+  id: string;
+  userId: string;
+  role: string;
+  feature: string;
+  timestamp: number;
+}
+
+let ROLE_AI_LIMITS: Record<string, number> = {
+  student: 30,
+  teacher: 75,
+  coordinator: 100,
+  admin: 150,
+  super_admin: 150
+};
+
+const memoryAIUsage: AIUsageLog[] = [];
+
+const userBonusQuotas: Record<string, number> = {};
+const userRedeemedCodes: Record<string, string[]> = {};
+const pendingQuotaRequests: Array<{ id: string; userId: string; userName: string; userEmail: string; reason: string; timestamp: number }> = [];
+
+const VALID_VOUCHERS: Record<string, { bonus: number; title: string }> = {
+  'STUDENTOS-PRO': { bonus: 25, title: 'StudentOS Pro Booster (+25/day)' },
+  'EXAM-PREP': { bonus: 35, title: 'Exam Preparation Sprint (+35/day)' },
+  'SCHOLAR-PASS': { bonus: 50, title: 'Academic Scholar Pass (+50/day)' },
+  'GENIUS-2026': { bonus: 40, title: '2026 Innovation Grant (+40/day)' },
+  'TEACHER-GRANT': { bonus: 60, title: 'Faculty Authorized Quota (+60/day)' },
+  'STUDENTOS-UNLIMITED': { bonus: 100, title: 'StudentOS Unlimited Sprint (+100/day)' },
+};
+
+function getRoleLimit(role?: string): number {
+  const r = (role || 'student').toLowerCase();
+  return ROLE_AI_LIMITS[r] || 30;
+}
+
+function getRolling24hUsage(userId: string, role?: string): {
+  used: number;
+  limit: number;
+  baseLimit: number;
+  bonus: number;
+  remaining: number;
+  nextAvailableInMinutes: number | null;
+  role: string;
+} {
+  const now = Date.now();
+  const windowStart = now - 24 * 60 * 60 * 1000;
+
+  // Filter records in last 24h
+  const activeRecords = memoryAIUsage.filter(u => u.userId === userId && u.timestamp >= windowStart);
+  activeRecords.sort((a, b) => a.timestamp - b.timestamp);
+
+  const baseLimit = getRoleLimit(role);
+  const bonus = userBonusQuotas[userId] || 0;
+  const limit = baseLimit + bonus;
+  const used = activeRecords.length;
+  const remaining = Math.max(0, limit - used);
+
+  let nextAvailableInMinutes: number | null = null;
+  if (used >= limit && activeRecords.length > 0) {
+    const oldest = activeRecords[0].timestamp;
+    const expiresAt = oldest + 24 * 60 * 60 * 1000;
+    nextAvailableInMinutes = Math.max(1, Math.ceil((expiresAt - now) / 60000));
+  }
+
+  return {
+    used,
+    limit,
+    baseLimit,
+    bonus,
+    remaining,
+    nextAvailableInMinutes,
+    role: (role || 'student').toLowerCase()
+  };
+}
+
+// Endpoint to inspect rolling 24-hour limit
+app.get('/api/ai/usage-status', (req, res) => {
+  const userId = (req.query.userId as string) || 'anonymous';
+  const role = (req.query.role as string) || 'student';
+  const info = getRolling24hUsage(userId, role);
+  return res.json(info);
+});
+
+// Endpoint to redeem voucher codes for quota boost
+app.post('/api/ai/redeem-voucher', (req, res) => {
+  const { code, userId, userRole } = req.body || {};
+  const activeUserId = userId || 'anonymous';
+  const cleanCode = String(code || '').trim().toUpperCase();
+
+  const voucher = VALID_VOUCHERS[cleanCode];
+  if (!voucher) {
+    return res.status(400).json({ success: false, error: 'Invalid or expired voucher code.' });
+  }
+
+  const redeemed = userRedeemedCodes[activeUserId] || [];
+  if (redeemed.includes(cleanCode)) {
+    return res.status(400).json({ success: false, error: 'Voucher has already been redeemed for this account.' });
+  }
+
+  // Redeem voucher
+  redeemed.push(cleanCode);
+  userRedeemedCodes[activeUserId] = redeemed;
+  userBonusQuotas[activeUserId] = (userBonusQuotas[activeUserId] || 0) + voucher.bonus;
+
+  const updatedUsage = getRolling24hUsage(activeUserId, userRole);
+  return res.json({
+    success: true,
+    message: `Voucher redeemed! Added ${voucher.title}`,
+    bonusAdded: voucher.bonus,
+    newLimit: updatedUsage.limit,
+    remaining: updatedUsage.remaining
+  });
+});
+
+// Endpoint to request AI boost from school staff
+app.post('/api/ai/request-boost', (req, res) => {
+  const { userId, userName, userEmail, reason } = req.body || {};
+  if (!reason) {
+    return res.status(400).json({ success: false, error: 'Reason is required' });
+  }
+
+  const request = {
+    id: 'req_' + Math.random().toString(36).substring(2, 11),
+    userId: userId || 'anonymous',
+    userName: userName || 'Student',
+    userEmail: userEmail || '',
+    reason: String(reason).trim(),
+    timestamp: Date.now()
+  };
+
+  pendingQuotaRequests.push(request);
+  return res.json({
+    success: true,
+    message: 'Your quota upgrade request has been forwarded to faculty coordinators.'
+  });
+});
+
+// Endpoint for admins to configure role limits
+app.post('/api/admin/ai-limits', (req, res) => {
+  const { limits, adminRole } = req.body || {};
+  if (adminRole !== 'admin' && adminRole !== 'super_admin') {
+    return res.status(403).json({ error: 'Unauthorized. Admin privilege required.' });
+  }
+  if (limits && typeof limits === 'object') {
+    ROLE_AI_LIMITS = { ...ROLE_AI_LIMITS, ...limits };
+  }
+  return res.json({ status: 'ok', limits: ROLE_AI_LIMITS });
+});
+
+// Global APK Configuration State (Accessible to all users for download, editable by Super Admin)
+let globalApkConfig = {
+  apkUrl: process.env.VITE_STUDENTOS_APK_URL || '/studentos-v3.12.apk',
+  apkFileName: process.env.VITE_STUDENTOS_APK_FILENAME || 'studentos-v3.12.0.apk',
+  apkSize: '24.8 MB',
+  updatedAt: new Date().toISOString(),
+  updatedBy: 'System Default'
+};
+
+// GET /api/config/apk - Public for all users (students, teachers, coordinators) to fetch the authoritative download destination
+app.get('/api/config/apk', (req, res) => {
+  return res.json({
+    success: true,
+    ...globalApkConfig
+  });
+});
+
+// POST /api/config/apk - Restricted: Only Super Admin and Admins can publish new APK download destinations
+app.post('/api/config/apk', (req, res) => {
+  const { apkUrl, apkFileName, apkSize, userRole, isSuperAdmin, updatedBy } = req.body || {};
+
+  const isAuthorized = isSuperAdmin === true || userRole === 'super_admin' || userRole === 'admin';
+  if (!isAuthorized) {
+    return res.status(403).json({
+      success: false,
+      error: 'Permission denied. Only Super Admin and Administrators have authority to modify the global APK download destination.'
+    });
+  }
+
+  if (apkUrl && typeof apkUrl === 'string') {
+    globalApkConfig.apkUrl = apkUrl.trim();
+  }
+  if (apkFileName && typeof apkFileName === 'string') {
+    globalApkConfig.apkFileName = apkFileName.trim();
+  }
+  if (apkSize && typeof apkSize === 'string') {
+    globalApkConfig.apkSize = apkSize.trim();
+  }
+  globalApkConfig.updatedAt = new Date().toISOString();
+  globalApkConfig.updatedBy = updatedBy || 'Super Admin';
+
+  console.log(`[APK CONFIG] Global download destination updated by ${globalApkConfig.updatedBy}: URL="${globalApkConfig.apkUrl}" File="${globalApkConfig.apkFileName}"`);
+
+  return res.json({
+    success: true,
+    message: 'Global APK destination updated successfully for all users.',
+    ...globalApkConfig
+  });
+});
 
 // Secure API endpoint for AI Teacher and Buddy conversations
 app.post('/api/ai/chat', async (req, res) => {
-  const { prompt, history, persona, level, subject, mode, ragContext } = req.body;
+  const { prompt, history, persona, level, subject, mode, ragContext, userId, userRole } = req.body;
 
   if (!prompt) {
     return res.status(400).json({ error: 'Prompt is required' });
+  }
+
+  // Enforce server-side rolling 24-hour limit
+  const activeUserId = userId || 'user_guest';
+  const activeRole = userRole || 'student';
+
+  const usage = getRolling24hUsage(activeUserId, activeRole);
+  if (usage.used >= usage.limit) {
+    return res.status(429).json({
+      error: 'AI_LIMIT_REACHED',
+      message: `You have reached your daily limit of ${usage.limit} AI messages. A new message slot will open in ${usage.nextAvailableInMinutes || 60} minutes.`,
+      used: usage.used,
+      limit: usage.limit,
+      remaining: 0,
+      nextAvailableInMinutes: usage.nextAvailableInMinutes
+    });
   }
 
   // Construct context based on chatbot Persona
@@ -304,7 +523,27 @@ app.post('/api/ai/chat', async (req, res) => {
       endpointName: 'AIChat'
     });
     console.log(`[SERVER AI /api/ai/chat] Completion generated successfully. Output length: ${text?.length || 0}`);
-    return res.json({ text });
+    
+    // Record rolling 24h usage log
+    memoryAIUsage.push({
+      id: 'use_' + Math.random().toString(36).substring(2, 11),
+      userId: activeUserId,
+      role: activeRole,
+      feature: persona || 'ai_buddy',
+      timestamp: Date.now()
+    });
+
+    const updatedUsage = getRolling24hUsage(activeUserId, activeRole);
+
+    return res.json({ 
+      text,
+      usage: {
+        used: updatedUsage.used,
+        limit: updatedUsage.limit,
+        remaining: updatedUsage.remaining,
+        nextAvailableInMinutes: updatedUsage.nextAvailableInMinutes
+      }
+    });
   } catch (apiErr: any) {
     console.error(`[SERVER AI /api/ai/chat ERROR] Provider completion failed: ${apiErr.message || apiErr}`);
     const isJsonRequested = prompt.includes('raw JSON format') || prompt.includes('MUST be raw JSON format') || prompt.includes('operational actions');
