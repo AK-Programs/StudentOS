@@ -540,17 +540,23 @@ export const StudentOSJarvis: React.FC<StudentOSJarvisProps> = ({
           prompt: `You are an academic discovery engine. Based on the topic "${query}", list 4 highly recommended learning resources (e.g., active experiments, scientific papers, specific web articles) with bulleted descriptions.`,
           persona: 'study_buddy',
           level: 'Secondary',
-          mode: 'explanatory'
+          mode: 'explanatory',
+          userId: currentUser?.uid || 'guest',
+          userRole: currentUser?.role || 'student'
         })
       });
       if (!response.ok) {
+        if (response.status === 429) {
+          const errData = await response.json();
+          throw new Error(errData.message || 'Daily AI message limit reached.');
+        }
         throw new Error(`HTTP error: ${response.status}`);
       }
       const data = await response.json();
       setSearchResults(data.text || "No recommendations compiled.");
-    } catch (err) {
+    } catch (err: any) {
       console.error("Resource discovery failed:", err);
-      setSearchResults("Connection offline. Check Material Hub for local copies. Alternatively, try reloading the page.");
+      setSearchResults(err.message?.includes('limit') ? `⚠️ ${err.message}` : "Connection offline. Check Material Hub for local copies. Alternatively, try reloading the page.");
     } finally {
       setSearching(false);
     }
@@ -569,7 +575,9 @@ export const StudentOSJarvis: React.FC<StudentOSJarvisProps> = ({
           prompt: `You are an expert curriculum supervisor. Create a structured 1-hour study lesson plan block for: "${topic}". Include Timing, Activities, and Learning objectives.`,
           persona: 'study_buddy',
           level: 'Secondary',
-          mode: 'explanatory'
+          mode: 'explanatory',
+          userId: currentUser?.uid || 'guest',
+          userRole: currentUser?.role || 'student'
         })
       });
       if (!response.ok) {
@@ -748,7 +756,11 @@ The user typed or spoke this command: "${command}".
 Analyze the input and classify into ONE of these operational actions:
 - "send_broadcast" (broadcast, announce school-wide, tell everyone)
 - "notify_users" (notify all teachers, notify class 10, notify students)
-- "create_event" (schedule annual function, schedule event, schedule class)
+- "create_study_plan" (create study plan, make study plan, plan study for exams, study schedule)
+- "create_calendar_event" (add to calendar, add event to calendar, add holiday, add exam date)
+- "create_note" (create note, save note to vault, take note)
+- "mark_attendance" (take attendance, mark attendance, record attendance)
+- "create_event" (schedule annual function, schedule event, schedule assembly)
 - "create_competition" (create competition, create coding competition, create sports competition)
 - "create_meet" (schedule StudentOS Meet, schedule meeting)
 - "create_homework" (create homework, create assignment)
@@ -782,7 +794,9 @@ Your response MUST be raw JSON format with NO markdown wrapping:
             level: 'Secondary',
             mode: 'explanatory',
             history: historyItems.map(item => ({ role: 'user', content: item.prompt })).flatMap(u => [u, { role: 'assistant', content: '...' }]).slice(-6),
-            ragContext: ragContext
+            ragContext: ragContext,
+            userId: currentUser?.uid || 'guest',
+            userRole: currentUser?.role || 'student'
           })
         });
 
@@ -835,6 +849,10 @@ Your response MUST be raw JSON format with NO markdown wrapping:
   // Command Parser & Executor (Orion 2.0 Operating Assistant)
   const mapActionNameToType = (aiAction: string, textLow: string): OrionActionType => {
     if (aiAction === 'web_search' || textLow.includes('search about') || textLow.includes('search the web') || textLow.startsWith('look up')) return 'web_search';
+    if (aiAction === 'create_study_plan' || textLow.includes('create study plan') || textLow.includes('make a study plan') || textLow.includes('plan study') || textLow.includes('study plan for')) return 'create_study_plan';
+    if (aiAction === 'create_calendar_event' || (textLow.includes('calendar') && (textLow.includes('add') || textLow.includes('schedule') || textLow.includes('event')))) return 'create_calendar_event';
+    if (aiAction === 'create_note' || textLow.includes('save note') || textLow.includes('take note') || (textLow.includes('note') && textLow.includes('vault'))) return 'create_note';
+    if (aiAction === 'mark_attendance' || aiAction === 'start_attendance' || textLow.includes('attendance') && (textLow.includes('take') || textLow.includes('mark') || textLow.includes('start'))) return 'mark_attendance';
     if (aiAction === 'send_broadcast' || textLow.includes('broadcast')) return 'create_broadcast';
     if (aiAction === 'notify_users' || textLow.includes('notify') || textLow.includes('tell class')) return 'notify_users';
     if (aiAction === 'create_event' || textLow.includes('schedule event') || textLow.includes('annual function') || textLow.includes('schedule assembly')) return 'create_event';
@@ -847,7 +865,6 @@ Your response MUST be raw JSON format with NO markdown wrapping:
     if (aiAction === 'create_homework' || textLow.includes('homework') || textLow.includes('assignment')) return 'create_homework';
     if (aiAction === 'delete_item' || textLow.startsWith('delete') || textLow.startsWith('cancel') || textLow.startsWith('remove')) return 'delete_item';
     if (aiAction === 'register_competition') return 'register_competition';
-    if (aiAction === 'start_attendance') return 'start_attendance';
     return (aiAction as OrionActionType) || 'general_chat';
   };
 
