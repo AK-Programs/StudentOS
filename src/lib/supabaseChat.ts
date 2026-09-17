@@ -319,7 +319,9 @@ function getLocalMessages(): ChatMessage[] {
     if (cached) {
       return JSON.parse(cached);
     }
-  } catch (e) {}
+  } catch (e) {
+    console.warn('[SUPABASE-CHAT] Local storage getLocalMessages parse error:', e);
+  }
   return [];
 }
 
@@ -335,7 +337,9 @@ function saveLocalMessage(message: ChatMessage): void {
       if (all.length > 200) all.shift();
       localStorage.setItem('s_os_messages', JSON.stringify(all));
     }
-  } catch (e) {}
+  } catch (e) {
+    console.warn('[SUPABASE-CHAT] Local storage saveLocalMessage error:', e);
+  }
 }
 
 function getLocalChatRooms(): ChatRoom[] {
@@ -344,7 +348,9 @@ function getLocalChatRooms(): ChatRoom[] {
     if (cached) {
       return JSON.parse(cached);
     }
-  } catch (e) {}
+  } catch (e) {
+    console.warn('[SUPABASE-CHAT] Local storage getLocalChatRooms parse error:', e);
+  }
   return [
     { id: 'general', name: 'General Announcements', type: 'channel', icon: '📢', description: 'General announcements channel for students' },
     { id: 'maths', name: 'Mathematics Desk', type: 'channel', icon: '📐', description: 'Class discussion on maths formulas and logic' },
@@ -363,5 +369,7 @@ function saveLocalChatRoom(room: ChatRoom): void {
       all.push(room);
       localStorage.setItem('s_os_chat_rooms', JSON.stringify(all));
     }
-  } catch (e) {}
+  } catch (e) {
+    console.warn('[SUPABASE-CHAT] Local storage saveLocalChatRoom error:', e);
+  }
 }

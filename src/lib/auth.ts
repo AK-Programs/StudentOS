@@ -70,7 +70,9 @@ export function initSupabaseAuthListener(setProfile: (p: UserProfile | null) => 
           if (typeof window !== 'undefined' && window.location && window.location.hash) {
             history.replaceState(null, '', window.location.pathname + window.location.search);
           }
-        } catch (e) {}
+        } catch (e) {
+          console.warn('[AUTH-LISTENER] Failed to clean OAuth hash from URL:', e);
+        }
         await handleSession(user, setProfile);
       } else {
         setProfile(null);

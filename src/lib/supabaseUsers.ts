@@ -229,7 +229,9 @@ export async function saveSupabaseUserProfile(profile: UserProfile): Promise<Use
         .eq('id', profile.uid)
         .maybeSingle();
       if (data) existing = data;
-    } catch (e) {}
+    } catch (e) {
+      console.warn('[SUPABASE-USERS] Lookup by id failed during save:', e);
+    }
   }
 
   if (!existing) {
@@ -240,7 +242,9 @@ export async function saveSupabaseUserProfile(profile: UserProfile): Promise<Use
         .eq('firebase_uid', profile.uid)
         .maybeSingle();
       if (data) existing = data;
-    } catch (e) {}
+    } catch (e) {
+      console.warn('[SUPABASE-USERS] Lookup by firebase_uid failed during save:', e);
+    }
   }
 
   if (!existing && profile.email) {
@@ -252,7 +256,9 @@ export async function saveSupabaseUserProfile(profile: UserProfile): Promise<Use
         .eq('email', normalized)
         .maybeSingle();
       if (data) existing = data;
-    } catch (e) {}
+    } catch (e) {
+      console.warn('[SUPABASE-USERS] Lookup by email failed during save:', e);
+    }
   }
 
   // Single shared payload used by safeExecuteWithRetry for both UPDATE and INSERT.

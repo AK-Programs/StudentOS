@@ -3,11 +3,12 @@ import { UserProfile, AttendanceRecord, AttendanceStatus, UserRole } from '../ty
 import { fetchAllSupabaseUsers } from '../lib/supabaseUsers';
 import { supabase } from '../lib/supabase';
 
-export default function AttendanceManager({ currentUser, effectiveRole }: { currentUser: UserProfile; effectiveRole: UserRole | undefined }) {
+export default function AttendanceManager({ currentUser, effectiveRole, showNotification }: { currentUser: UserProfile; effectiveRole: UserRole | undefined; showNotification?: (msg: string) => void }) {
   const [date, setDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [selectedGrade, setSelectedGrade] = useState<string>('Grade 10');
   const [selectedSection, setSelectedSection] = useState<string>('Solara');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   
   const [students, setStudents] = useState<UserProfile[]>([]);
   const [attendance, setAttendance] = useState<Record<string, AttendanceRecord>>({});
@@ -18,6 +19,7 @@ export default function AttendanceManager({ currentUser, effectiveRole }: { curr
 
   const fetchStudentsAndAttendance = async () => {
     setLoading(true);
+    setError(null);
     try {
       // 1. Fetch Students
       const allStudents: UserProfile[] = [];
@@ -30,27 +32,30 @@ export default function AttendanceManager({ currentUser, effectiveRole }: { curr
       setStudents(allStudents);
 
       // 2. Fetch Attendance
-      const { data, error } = await supabase
+      const { data, error: fetchError } = await supabase
         .from('attendance')
         .select('*')
         .eq('date', date);
         
-      if (error) throw error;
+      if (fetchError) throw fetchError;
       
       const attendanceMap: Record<string, AttendanceRecord> = {};
       data?.forEach((rec: any) => {
         attendanceMap[rec.user_id] = {
           id: rec.id,
           date: rec.date,
-          grade: selectedGrade, // Simplified as it is not stored in attendance table
-          section: selectedSection, // Simplified
+          grade: selectedGrade,
+          section: selectedSection,
           studentId: rec.user_id,
           status: rec.status,
         };
       });
       setAttendance(attendanceMap);
-    } catch (err) {
-      console.error('Failed to load attendance:', err);
+    } catch (err: any) {
+      const msg = `Failed to load attendance: ${err?.message || err}`;
+      console.error(msg, err);
+      setError(msg);
+      showNotification?.(msg);
     } finally {
       setLoading(false);
     }
@@ -58,7 +63,7 @@ export default function AttendanceManager({ currentUser, effectiveRole }: { curr
 
   const markStatus = async (studentId: string, status: AttendanceStatus, studentName: string) => {
     try {
-      const { error } = await supabase
+      const { error: upsertError } = await supabase
         .from('attendance')
         .upsert({
           user_id: studentId,
@@ -66,10 +71,13 @@ export default function AttendanceManager({ currentUser, effectiveRole }: { curr
           status: status,
         }, { onConflict: 'user_id, date' });
         
-      if (error) throw error;
+      if (upsertError) throw upsertError;
       fetchStudentsAndAttendance();
-    } catch (err) {
-      console.error('Failed to mark attendance:', err);
+    } catch (err: any) {
+      const msg = `Failed to mark attendance for ${studentName}: ${err?.message || err}`;
+      console.error(msg, err);
+      setError(msg);
+      showNotification?.(msg);
     }
   };
 
@@ -80,14 +88,17 @@ export default function AttendanceManager({ currentUser, effectiveRole }: { curr
         date: date,
         status: status,
       }));
-      const { error } = await supabase
+      const { error: upsertError } = await supabase
         .from('attendance')
         .upsert(records, { onConflict: 'user_id, date' });
         
-      if (error) throw error;
+      if (upsertError) throw upsertError;
       fetchStudentsAndAttendance();
-    } catch (err) {
-      console.error('Failed to mark all attendance:', err);
+    } catch (err: any) {
+      const msg = `Failed to mark all attendance: ${err?.message || err}`;
+      console.error(msg, err);
+      setError(msg);
+      showNotification?.(msg);
     }
   };
 
@@ -102,6 +113,11 @@ export default function AttendanceManager({ currentUser, effectiveRole }: { curr
 
   return (
     <div className="smart-glass p-6 md:p-8 rounded-3xl space-y-6 max-w-5xl mx-auto animate-fadeIn w-full">
+      {error && (
+        <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-red-400 text-sm">
+          {error}
+        </div>
+      )}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
         <div className="space-y-1">
           <h3 className="text-2xl font-black font-display text-white">Attendance Manager</h3>
