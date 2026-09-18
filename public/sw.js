@@ -22,8 +22,8 @@ self.addEventListener('push', (event) => {
   const tag = data.tag || `studentos-notif-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
   const options = {
     body: data.body || '',
-    icon: data.icon || '/icon.svg',
-    badge: data.badge || '/icon.svg',
+    icon: data.icon || '/icons/icon-192.png',
+    badge: data.badge || '/icons/icon-192.png',
     tag: tag,
     renotify: true,
     requireInteraction: false,
