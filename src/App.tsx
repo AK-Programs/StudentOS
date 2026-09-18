@@ -59,6 +59,7 @@ import { TeacherFunZone } from './components/TeacherFunZone';
 import AcademicCalendar from './components/AcademicCalendar';
 import DigitalGradebook from './components/DigitalGradebook';
 import DigitalReportCards from './components/DigitalReportCards';
+import PerformanceAnalytics from './components/PerformanceAnalytics';
 import ProfileCustomizer from './components/ProfileCustomizer';
 import AIQuotaManagerModal from './components/AIQuotaManagerModal';
 import { InstallAppModal, AppInstallSection } from './components/InstallAppModal';
@@ -6212,26 +6213,6 @@ ${roleLabel}: ${userQuery}`;
                     </button>
                   )}
 
-                  {(!presentationMode || isTabAllowedInPresentation('gradebook')) && (
-                    <button 
-                      onClick={() => handleTabSelect('gradebook')}
-                      className={getSidebarBtnClass('gradebook')}
-                    >
-                      <span>📊</span>
-                      {sidebarOpen && 'Digital Gradebook'}
-                    </button>
-                  )}
-
-                  {(!presentationMode || isTabAllowedInPresentation('report_cards')) && (
-                    <button 
-                      onClick={() => handleTabSelect('report_cards')}
-                      className={getSidebarBtnClass('report_cards')}
-                    >
-                      <span>📜</span>
-                      {sidebarOpen && 'Report Cards'}
-                    </button>
-                  )}
-
                   {!presentationMode && (
                     <button 
                       onClick={() => handleTabSelect('houses')}
@@ -8150,130 +8131,13 @@ ${activeNote.content}`);
                 </div>
               )}
 
-              {/* Tab: Performance Analytics View */}
-              {activeTab === 'analytics' && (
-                <div className="smart-glass p-8 rounded-3xl space-y-6 max-w-4xl mx-auto animate-fadeIn">
-                  <div className="space-y-2">
-                    <h3 className="text-2xl font-black font-display text-white">Performance & Study Analytics</h3>
-                    <p className="text-xs text-slate-400">Detailed overview of tracking milestones and weekly workload parameters.</p>
-                  </div>
-
-                  {effectiveRole === 'student' && (
-                    <>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-                        <div className="p-6 rounded-2xl bg-white/5 border border-white/5 text-center space-y-1 shadow-sm">
-                          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Historical Tasks Count</p>
-                          <h4 className="text-3xl font-black text-white">{tasks.length}</h4>
-                          <p className="text-[10px] text-indigo-400 font-mono">Items recorded</p>
-                        </div>
-                        <div className="p-6 rounded-2xl bg-white/5 border border-white/5 text-center space-y-1 shadow-sm">
-                          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Generated Notes</p>
-                          <h4 className="text-3xl font-black text-amber-500">{vaultNotes.length}</h4>
-                          <p className="text-[10px] text-amber-400 font-mono font-bold">Committed notes</p>
-                        </div>
-                        <div className="p-6 rounded-2xl bg-white/5 border border-white/5 text-center space-y-1 shadow-sm">
-                          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Consecutive Study Streak</p>
-                          <h4 className="text-3xl font-black text-emerald-500">{currentUser.streakDays || 4} Days</h4>
-                          <p className="text-[10px] text-emerald-400 font-mono font-bold">Active current streak</p>
-                        </div>
-                      </div>
-
-                      {/* Inline Premium Interactive Study Distribution Chart */}
-                      <div className="p-6 rounded-3xl bg-slate-950/60 border border-white/5 shadow-sm space-y-4">
-                        <div className="flex items-center justify-between">
-                          <h4 className="font-bold text-sm text-white">Weekly Focus Distribution Hour Path</h4>
-                          <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 font-bold">Monitored Hours</span>
-                        </div>
-
-                        <div className="relative pt-4 pb-2">
-                          <div className="h-44 w-full flex items-end justify-between px-2 sm:px-6 relative border-b border-white/5">
-                            {/* Horizontal guides */}
-                            <div className="absolute inset-x-0 top-0 border-t border-white/5 pointer-events-none"></div>
-                            <div className="absolute inset-x-0 top-1/3 border-t border-white/5 pointer-events-none"></div>
-                            <div className="absolute inset-x-0 top-2/3 border-t border-white/5 pointer-events-none"></div>
-
-                            {/* Animated bars */}
-                            {[
-                              { lbl: 'Mon', hrs: 2, scale: 'h-[30%]', color: 'bg-indigo-500/80 hover:bg-indigo-400' },
-                              { lbl: 'Tue', hrs: 4, scale: 'h-[50%]', color: 'bg-indigo-600/80 hover:bg-indigo-500' },
-                              { lbl: 'Wed', hrs: 1.5, scale: 'h-[25%]', color: 'bg-indigo-400/80 hover:bg-indigo-300' },
-                              { lbl: 'Thu', hrs: 5.5, scale: 'h-[75%]', color: 'bg-emerald-500/80 hover:bg-emerald-400' },
-                              { lbl: 'Fri', hrs: 7, scale: 'h-[95%]', color: 'bg-indigo-500/80 hover:bg-indigo-400' },
-                              { lbl: 'Sat', hrs: 3, scale: 'h-[44%]', color: 'bg-amber-500/80 hover:bg-amber-400' },
-                              { lbl: 'Sun', hrs: 6, scale: 'h-[85%]', color: 'bg-emerald-600/80 hover:bg-emerald-500' }
-                            ].map((bar, bIdx) => (
-                              <div key={bIdx} className="flex flex-col items-center gap-2 group cursor-pointer relative z-10 w-8">
-                                <div className="absolute -top-7 opacity-0 group-hover:opacity-100 transition-opacity bg-slate-900 border border-white/10 text-[9px] text-indigo-300 px-1.5 py-0.5 rounded shadow whitespace-nowrap z-50">
-                                  {bar.hrs} hrs focus
-                                </div>
-                                <div className={`w-3 sm:w-6 ${bar.scale} ${bar.color} rounded-t-md transition-all duration-500 shadow-md`}></div>
-                                <span className="text-[10px] text-slate-500 font-bold">{bar.lbl}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    </>
-                  )}
-
-                  {effectiveRole !== 'student' && (
-                    <div className="space-y-6">
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-                        <div className="p-6 rounded-2xl bg-white/5 border border-white/5 text-center space-y-1 shadow-sm">
-                          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Average Performance</p>
-                          <h4 className="text-3xl font-black text-white">84%</h4>
-                          <p className="text-[10px] text-emerald-400 font-mono font-bold">+2.4% vs last term</p>
-                        </div>
-                        <div className="p-6 rounded-2xl bg-white/5 border border-white/5 text-center space-y-1 shadow-sm">
-                          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Output</p>
-                          <h4 className="text-3xl font-black text-amber-500">1.2x</h4>
-                          <p className="text-[10px] text-amber-400 font-mono font-bold">Standard deviation</p>
-                        </div>
-                        <div className="p-6 rounded-2xl bg-white/5 border border-white/5 text-center space-y-1 shadow-sm">
-                          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Growth Delta</p>
-                          <h4 className="text-3xl font-black text-emerald-500">+14%</h4>
-                          <p className="text-[10px] text-emerald-400 font-mono font-bold">In top percentiles</p>
-                        </div>
-                      </div>
-                      
-                      <div className="p-6 rounded-3xl bg-slate-950/60 border border-white/5 shadow-sm space-y-4">
-                        <div className="flex items-center justify-between">
-                          <h4 className="font-bold text-sm text-white">
-                            {effectiveRole === 'teacher' ? 'Student & Class Performance (Your Subject)' : effectiveRole === 'coordinator' ? 'Teacher & House Analytics' : 'School-Wide Performance Overview'}
-                          </h4>
-                          <span className="text-[10px] px-2.5 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-bold">Term Activity</span>
-                        </div>
-                        
-                        <div className="relative pt-4 pb-2">
-                          <div className="h-44 w-full flex items-end justify-between px-2 sm:px-6 relative border-b border-white/5">
-                            {/* Horizontal guides */}
-                            <div className="absolute inset-x-0 top-0 border-t border-white/5 pointer-events-none"></div>
-                            <div className="absolute inset-x-0 top-1/3 border-t border-white/5 pointer-events-none"></div>
-                            <div className="absolute inset-x-0 top-2/3 border-t border-white/5 pointer-events-none"></div>
-
-                            {/* Animated bars */}
-                            {[
-                              { lbl: 'W1', pts: 82, scale: 'h-[82%]', color: 'bg-emerald-500/80 hover:bg-emerald-400' },
-                              { lbl: 'W2', pts: 84, scale: 'h-[84%]', color: 'bg-emerald-500/80 hover:bg-emerald-400' },
-                              { lbl: 'W3', pts: 78, scale: 'h-[78%]', color: 'bg-amber-500/80 hover:bg-amber-400' },
-                              { lbl: 'W4', pts: 85, scale: 'h-[85%]', color: 'bg-emerald-500/80 hover:bg-emerald-400' },
-                              { lbl: 'W5', pts: 88, scale: 'h-[88%]', color: 'bg-emerald-600/80 hover:bg-emerald-500' },
-                              { lbl: 'W6', pts: 92, scale: 'h-[92%]', color: 'bg-indigo-500/80 hover:bg-indigo-400' }
-                            ].map((bar, bIdx) => (
-                              <div key={bIdx} className="flex flex-col items-center gap-2 group cursor-pointer relative z-10 w-8">
-                                <div className="absolute -top-7 opacity-0 group-hover:opacity-100 transition-opacity bg-slate-900 border border-white/10 text-[9px] text-emerald-300 px-1.5 py-0.5 rounded shadow whitespace-nowrap z-50">
-                                  {bar.pts}% Avg
-                                </div>
-                                <div className={`w-4 sm:w-8 ${bar.scale} ${bar.color} rounded-t-md transition-all duration-500 shadow-md`}></div>
-                                <span className="text-[10px] text-slate-500 font-bold">{bar.lbl}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
+              {/* Tab: Performance Analytics (Unified Overview, Gradebook, Report Cards, and Attendance) */}
+              {(activeTab === 'analytics' || activeTab === 'gradebook' || activeTab === 'report_cards') && (
+                <PerformanceAnalytics 
+                  currentUser={currentUser} 
+                  effectiveRole={effectiveRole} 
+                  initialSubTab={activeTab === 'gradebook' ? 'gradebook' : activeTab === 'report_cards' ? 'report_cards' : 'overview'}
+                />
               )}
 
               {/* Tab: Student/Staff Profile View */}
@@ -11497,16 +11361,6 @@ Could you please guide me step-by-step on how to solve this, explaining the theo
               {/* Tab 14: Academic Calendar */}
               {activeTab === 'calendar' && (
                 <AcademicCalendar currentUser={currentUser} effectiveRole={effectiveRole} />
-              )}
-
-              {/* Tab 15: Digital Gradebook */}
-              {activeTab === 'gradebook' && (
-                <DigitalGradebook currentUser={currentUser} effectiveRole={effectiveRole} />
-              )}
-
-              {/* Tab 16: Digital Report Cards */}
-              {activeTab === 'report_cards' && (
-                <DigitalReportCards currentUser={currentUser} effectiveRole={effectiveRole} />
               )}
 
             </main>
