@@ -12,7 +12,7 @@ import {
   ZoomOut, Eye, Settings, MessageSquare, BarChart2, User, Calendar, 
   Flame, Upload, FileText, CheckCircle, Download, ChevronLeft, 
   PenTool, Eraser, Share2, LogOut, AlertTriangle, Activity, RefreshCw,
-  Heart, Bookmark, X, Bell, Zap, Gift, Smartphone
+  Heart, Bookmark, X, Bell, Zap, Gift, Smartphone, Paperclip, History
 } from 'lucide-react';
 import { 
   UserRole, HouseType, SectionType, UserProfile, HouseStats, 
@@ -794,6 +794,8 @@ export default function App() {
     getLocalUsageState(currentUser?.uid || 'guest', effectiveRole || 'student')
   );
   const [showQuotaModal, setShowQuotaModal] = useState<boolean>(false);
+  const [showAiHistoryDrawer, setShowAiHistoryDrawer] = useState<boolean>(false);
+  const aiFileInputRef = useRef<HTMLInputElement>(null);
 
   // Sync AI Usage status dynamically
   useEffect(() => {
@@ -10848,440 +10850,429 @@ Could you please guide me step-by-step on how to solve this, explaining the theo
                     </div>
                   </div>
 
-                  {/* Main Chat Layout */}
-                  <div className="grid grid-cols-1 xl:grid-cols-12 gap-5">
-                  
-                  {/* Threads & Files Sidebar (XL: 3 Cols) */}
-                  <div className="xl:col-span-3 space-y-4">
-                    
-                    {/* Threads Manager */}
-                    <div className="smart-glass p-4 rounded-3xl space-y-4 shadow-sm">
-                      <div className="flex items-center justify-between border-b border-white/5 pb-2">
-                        <div>
-                          <h3 className="font-extrabold text-xs text-white">Study Threads</h3>
-                          <p className="text-[10px] text-slate-400">Previous sessions & history</p>
-                        </div>
-                        <button 
-                          onClick={handleCreateNewThread}
-                          className="p-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-[10px] font-bold uppercase transition-all shadow-sm flex items-center gap-1 active:scale-95"
-                          title="New discussion session"
+                  {/* Slide-out Study Threads Drawer */}
+                  <AnimatePresence>
+                    {showAiHistoryDrawer && (
+                      <>
+                        <motion.div
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          onClick={() => setShowAiHistoryDrawer(false)}
+                          className="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 transition-opacity"
+                        />
+                        <motion.div
+                          initial={{ x: '-100%' }}
+                          animate={{ x: 0 }}
+                          exit={{ x: '-100%' }}
+                          transition={{ type: 'spring', damping: 25, stiffness: 280 }}
+                          className="fixed inset-y-0 left-0 w-80 max-w-[85vw] bg-slate-950/95 border-r border-white/10 z-50 p-5 flex flex-col shadow-2xl backdrop-blur-md"
                         >
-                          <Plus className="w-3 h-3" /> New
+                          <div className="flex items-center justify-between pb-4 border-b border-white/10">
+                            <div className="flex items-center gap-2">
+                              <History className="w-4 h-4 text-indigo-400" />
+                              <h3 className="font-extrabold text-sm text-white">Study Threads</h3>
+                            </div>
+                            <button
+                              onClick={() => setShowAiHistoryDrawer(false)}
+                              className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+
+                          <div className="pt-3 pb-2">
+                            <button
+                              onClick={() => {
+                                handleCreateNewThread();
+                                setShowAiHistoryDrawer(false);
+                              }}
+                              className="w-full py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-md active:scale-95"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>New Study Session</span>
+                            </button>
+                          </div>
+
+                          <div className="flex-1 overflow-y-auto space-y-1.5 py-2 pr-1">
+                            {aiThreads.length === 0 ? (
+                              <p className="text-center text-slate-500 text-xs py-8">No previous study threads</p>
+                            ) : (
+                              aiThreads.map(t => (
+                                <div
+                                  key={t.id}
+                                  onClick={() => {
+                                    setActiveThreadId(t.id);
+                                    setSelectedPersona(t.personaId);
+                                    setAiMode(t.mode);
+                                    if (t.attachedFiles) {
+                                      setAttachedFiles(t.attachedFiles);
+                                    } else if (t.attachedFile) {
+                                      setAttachedFiles([t.attachedFile]);
+                                    } else {
+                                      setAttachedFiles([]);
+                                    }
+                                    setShowAiHistoryDrawer(false);
+                                  }}
+                                  className={`group flex items-center justify-between p-2.5 rounded-xl border text-left cursor-pointer transition-all ${
+                                    activeThreadId === t.id
+                                      ? 'border-indigo-500 bg-indigo-500/15 shadow-sm'
+                                      : 'border-white/5 bg-slate-900/40 hover:bg-slate-900 hover:border-white/10'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2.5 truncate max-w-[82%]">
+                                    <span className="text-sm shrink-0">
+                                      {AI_PERSONAS.find(p => p.id === t.personaId)?.avatarChar || '💬'}
+                                    </span>
+                                    <div className="truncate">
+                                      <span className="text-xs text-slate-200 truncate font-semibold block leading-tight">{t.title}</span>
+                                      <span className="text-[9px] text-slate-400 capitalize">{t.mode}</span>
+                                    </div>
+                                  </div>
+                                  <button
+                                    onClick={(e) => handleDeleteThread(t.id, e)}
+                                    className="opacity-0 group-hover:opacity-100 p-1.5 rounded hover:bg-white/10 text-slate-400 hover:text-red-400 transition-all shrink-0"
+                                    title="Delete conversation"
+                                  >
+                                    <Trash className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </motion.div>
+                      </>
+                    )}
+                  </AnimatePresence>
+
+                  {/* Primary Chat Dialog Pane */}
+                  <div className="smart-glass p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl min-h-[580px] h-[calc(100vh-210px)] max-h-[760px] flex flex-col justify-between shadow-lg relative border border-white/5">
+                    
+                    {/* Header: Controls, Selectors & Actions */}
+                    <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-white/5 pb-3">
+                      {/* Left Actions: History Drawer & New Thread */}
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setShowAiHistoryDrawer(true)}
+                          className="px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-850 border border-white/10 text-slate-300 hover:text-white flex items-center gap-1.5 text-xs font-semibold transition-all shadow-sm active:scale-95"
+                          title="Open Study History & Threads"
+                        >
+                          <History className="w-3.5 h-3.5 text-indigo-400" />
+                          <span className="hidden sm:inline">Threads</span>
+                          <span className="px-1.5 py-0.2 rounded-full bg-indigo-500/20 text-indigo-300 text-[10px] font-mono font-bold">
+                            {aiThreads.length}
+                          </span>
+                        </button>
+                        <button
+                          onClick={handleCreateNewThread}
+                          className="px-2.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white flex items-center gap-1 text-xs font-bold transition-all shadow-sm active:scale-95"
+                          title="Start New Thread"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span className="hidden sm:inline">New</span>
                         </button>
                       </div>
 
-                      {/* Thread List */}
-                      <div className="space-y-1.5 max-h-[180px] overflow-y-auto pr-1">
-                        {aiThreads.map(t => (
-                          <div 
-                            key={t.id}
-                            onClick={() => {
-                              setActiveThreadId(t.id);
-                              setSelectedPersona(t.personaId);
-                              setAiMode(t.mode);
-                              if (t.attachedFiles) {
-                                setAttachedFiles(t.attachedFiles);
-                              } else if (t.attachedFile) {
-                                setAttachedFiles([t.attachedFile]);
-                              } else {
-                                setAttachedFiles([]);
-                              }
-                            }}
-                            className={`group flex items-center justify-between p-2.5 rounded-xl border text-left cursor-pointer transition-all ${activeThreadId === t.id ? 'border-indigo-500 bg-indigo-500/10 shadow-sm' : 'border-white/5 bg-slate-900/40 hover:bg-slate-850'}`}
+                      {/* Center Selectors: Tutor Persona & Tutorial Mode */}
+                      <div className="flex flex-wrap items-center gap-2">
+                        {/* Persona Selector */}
+                        <div className="flex items-center gap-1.5 bg-slate-900 border border-white/10 rounded-xl px-2.5 py-1 shadow-inner">
+                          <span className="text-sm shrink-0">
+                            {AI_PERSONAS.find(p => p.id === selectedPersona)?.avatarChar || '🤖'}
+                          </span>
+                          <select
+                            value={selectedPersona}
+                            onChange={(e) => handleSwitchPersona(e.target.value)}
+                            className="bg-transparent text-white text-xs font-bold focus:outline-none cursor-pointer pr-1 max-w-[130px] sm:max-w-[180px] truncate"
+                            title="Select AI Instructor"
                           >
-                            <div className="flex items-center gap-2 truncate max-w-[85%]">
-                              <span className="text-[11px] leading-none shrink-0">
-                                {AI_PERSONAS.find(p => p.id === t.personaId)?.avatarChar || '💬'}
-                              </span>
-                              <span className="text-[11px] text-slate-200 truncate font-semibold">{t.title}</span>
-                            </div>
-                            <button 
-                              onClick={(e) => handleDeleteThread(t.id, e)}
-                              className="opacity-0 group-hover:opacity-100 p-1.5 rounded hover:bg-white/10 text-slate-400 hover:text-red-400 transition-all shrink-0"
-                              title="Delete conversation"
-                            >
-                              <Trash className="w-3 h-3" />
-                            </button>
-                          </div>
-                        ))}
+                            {AI_PERSONAS.map(p => (
+                              <option key={p.id} value={p.id} className="bg-slate-900 text-white">
+                                {p.name} ({p.speciality})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Mode Selector */}
+                        <div className="flex items-center gap-1.5 bg-slate-900 border border-white/10 rounded-xl px-2.5 py-1 shadow-inner">
+                          <select
+                            value={aiMode}
+                            onChange={(e) => handleSwitchMode(e.target.value as any)}
+                            className="bg-transparent text-indigo-300 text-xs font-bold focus:outline-none cursor-pointer uppercase tracking-wider text-[10px] max-w-[120px] sm:max-w-none"
+                            title="Active Tutorial Mode"
+                          >
+                            <option value="explanatory" className="bg-slate-900 text-white">📚 Explainer Mode</option>
+                            <option value="socratic" className="bg-slate-900 text-white">🎓 Socratic Mode</option>
+                            <option value="coder" className="bg-slate-900 text-white">💻 Coding Coach</option>
+                            <option value="quiz_gen" className="bg-slate-900 text-white">📝 Quiz Exam</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Right Actions: Clear Chat */}
+                      <div className="flex items-center gap-1.5 ml-auto sm:ml-0">
+                        <button
+                          onClick={handleClearThreadHistory}
+                          className="px-2.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white border border-white/5 text-[11px] font-semibold transition-all flex items-center gap-1"
+                          title="Flush dialogue entries for this thread"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span className="hidden md:inline">Clear</span>
+                        </button>
                       </div>
                     </div>
 
-                    {/* File Attachment Upload Zone */}
-                    <div className="smart-glass p-4 rounded-3xl space-y-3.5 shadow-sm">
-                      <div>
-                        <h3 className="font-extrabold text-xs text-white">Reference Context</h3>
-                        <p className="text-[10px] text-slate-400 font-medium">Attach files to direct active instruction</p>
+                    {/* Dialogue Stream Body */}
+                    <div id="ai-dialog-scroll" className="flex-1 overflow-y-auto pr-2 my-3 space-y-3.5 bg-slate-950/40 p-3 sm:p-4 rounded-2xl border border-white/5 shadow-inner">
+                      <div className="text-center p-2.5 border border-white/5 bg-white/5 rounded-2xl">
+                        <p className="text-[9px] text-indigo-400 font-extrabold uppercase tracking-widest">Dialogue channel connected successfully</p>
+                        <p className="text-[11px] text-slate-400 mt-0.5">Prompt mathematical derivations, software syntax, essay critiques, or review sheets.</p>
                       </div>
 
-                      {/* Drag & Drop Area */}
-                      <div className="relative border border-dashed border-white/10 hover:border-indigo-500/50 bg-slate-950/40 hover:bg-indigo-500/5 p-4 rounded-2xl flex flex-col items-center justify-center text-center transition-all cursor-pointer group">
-                        <input 
-                          type="file" 
-                          id="ai-file-uploader"
-                          onChange={handleFileUploadAction}
-                          multiple
-                          accept=".pdf,.doc,.docx,.ppt,.pptx,.txt,.md,.png,.jpg,.jpeg,.webp"
-                          className="absolute inset-0 opacity-0 cursor-pointer z-10"
-                        />
-                        <Upload className="w-5 h-5 text-indigo-400 mb-1 group-hover:scale-110 transition-transform" />
-                        <span className="text-[11px] font-bold text-slate-200">Upload Study Files</span>
-                        <span className="text-[9px] text-slate-500 mt-0.5">Supports PDF, DOCX, PPTX, Images, Text, MD</span>
-                      </div>
+                      {(!activeThread || !activeThread.messages || activeThread.messages.length === 0) && (
+                        <div className="py-6 px-4 space-y-6 text-center animate-fadeIn">
+                          <div className="flex flex-col items-center justify-center space-y-2">
+                            <div className="p-3 bg-indigo-500/10 rounded-full border border-indigo-500/20 text-indigo-400">
+                              <Sparkles className="w-8 h-8 animate-pulse" />
+                            </div>
+                            <h3 className="text-base font-black text-white tracking-tight mt-2">
+                              Hi, {currentUser?.name || 'Scholar'}! 👋
+                            </h3>
+                            <p className="text-xs text-slate-400 max-w-sm mx-auto leading-relaxed">
+                              I am your advanced AI Teacher Copilot and Subject Expert. Ask me anything about your studies, or select one of the high-yield topics below:
+                            </p>
+                          </div>
 
-                      {/* Attached Files Display */}
-                      {attachedFiles && attachedFiles.length > 0 && (
-                        <div className="space-y-1.5 max-h-[140px] overflow-y-auto">
-                          {attachedFiles.map((file, idx) => {
-                            let icon = <FileText className="w-3.5 h-3.5 shrink-0 text-indigo-400" />;
-                            if (file.name.toLowerCase().endsWith('.pdf')) {
-                              icon = <span className="text-xs shrink-0">📕</span>;
-                            } else if (file.type.startsWith('image/')) {
-                              icon = <span className="text-xs shrink-0">🖼️</span>;
-                            }
-                            return (
-                              <div key={idx} className="flex items-center justify-between p-2 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-[11px] animate-fadeIn">
-                                <div className="flex items-center gap-1.5 text-indigo-300 font-semibold truncate max-w-[80%]">
-                                  {icon}
-                                  <span className="truncate">{file.name}</span>
-                                  <span className="text-[8px] text-slate-400 uppercase font-mono">({(file.size / 1024).toFixed(1)} KB)</span>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-md mx-auto text-left">
+                            {[
+                              { icon: '🌌', label: 'Physics', text: 'Explain Quantum Physics to a high school beginner with real-world analogies.' },
+                              { icon: '🧪', label: 'Chemistry', text: 'Show me step-by-step how to balance complex chemical equations.' },
+                              { icon: '📈', label: 'Calculus', text: 'Solve and explain the derivative of x^2 * sin(x) using the product rule.' },
+                              { icon: '💻', label: 'Computer Science', text: 'Explain how closures work in JavaScript with clear code examples.' }
+                            ].map((item, i) => (
+                              <button
+                                key={i}
+                                onClick={() => setAiInput(item.text)}
+                                className="p-3 bg-slate-900 hover:bg-slate-850 border border-white/5 hover:border-indigo-500/40 rounded-xl transition-all group flex flex-col justify-between h-28 text-left hover:scale-[1.02] active:scale-95 cursor-pointer"
+                              >
+                                <div className="flex items-center justify-between w-full">
+                                  <span className="text-lg">{item.icon}</span>
+                                  <span className="text-[8px] bg-indigo-500/10 text-indigo-300 px-1.5 py-0.5 rounded font-extrabold uppercase tracking-widest">{item.label}</span>
                                 </div>
+                                <p className="text-[10px] text-slate-400 font-medium leading-relaxed mt-2 group-hover:text-white transition-colors line-clamp-2">
+                                  "{item.text}"
+                                </p>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {activeThread && (activeThread.messages || []).map((m, idx) => {
+                        const msgKey = `${activeThread.id}-${idx}`;
+                        const isSpeaking = speakingMsgIdx === msgKey;
+                        return (
+                          <div key={idx} className={`p-3.5 rounded-2xl text-xs max-w-[85%] ${m.role === 'user' ? 'bg-indigo-600/15 border border-indigo-500/20 text-white ml-auto' : 'bg-slate-900 border border-white/5 text-slate-200 mr-auto'}`}>
+                            <span className="text-[8px] uppercase tracking-wider font-extrabold block mb-1.5 text-indigo-400">
+                              {m.role === 'user' ? `👤 ${currentUser?.role ? currentUser.role.charAt(0).toUpperCase() + currentUser.role.slice(1) : 'Student'} Inquiry` : '🤖 Instructor Response'}
+                            </span>
+                            <div className="space-y-1">
+                              {renderMarkdown(m.content)}
+                            </div>
+                            
+                            {/* Attached Files visual inside bubbles */}
+                            {m.files && m.files.length > 0 && (
+                              <div className="mt-2.5 space-y-1.5 border-t border-white/10 pt-2 bg-black/10 -mx-3.5 px-3.5 py-2.5 rounded-b-2xl">
+                                <p className="text-[8px] text-indigo-400 uppercase font-black tracking-wider leading-none mb-1">Attached References:</p>
+                                <div className="flex flex-col gap-1.5">
+                                  {m.files.map((file: any, fIdx: number) => {
+                                    let icon = '📎';
+                                    let colorTheme = 'border-indigo-500/10 bg-indigo-950/10';
+                                    if (file.name.toLowerCase().endsWith('.pdf')) {
+                                      icon = '📕';
+                                      colorTheme = 'border-red-500/10 bg-red-950/10';
+                                    } else if (file.type.startsWith('image/')) {
+                                      icon = '🖼️';
+                                      colorTheme = 'border-emerald-500/10 bg-emerald-950/10';
+                                    } else if (file.name.toLowerCase().endsWith('.doc') || file.name.toLowerCase().endsWith('.docx')) {
+                                      icon = '📘';
+                                      colorTheme = 'border-blue-500/10 bg-blue-950/10';
+                                    } else if (file.name.toLowerCase().endsWith('.ppt') || file.name.toLowerCase().endsWith('.pptx')) {
+                                      icon = '📊';
+                                      colorTheme = 'border-amber-500/10 bg-amber-950/10';
+                                    } else if (file.name.toLowerCase().endsWith('.md') || file.name.toLowerCase().endsWith('.txt')) {
+                                      icon = '📝';
+                                      colorTheme = 'border-indigo-500/10 bg-indigo-950/10';
+                                    }
+
+                                    const extSize = (file.size / (1024 * 1024)).toFixed(2);
+                                    const showMb = Number(extSize) > 0.1 ? `${extSize} MB` : `${(file.size / 1024).toFixed(1)} KB`;
+
+                                    return (
+                                      <div key={fIdx} className={`flex items-center justify-between p-2 rounded-xl border ${colorTheme} text-[10px]`}>
+                                        <div className="flex items-center gap-2 truncate">
+                                          <span className="text-sm shrink-0">{icon}</span>
+                                          <div className="truncate text-left leading-tight">
+                                            <p className="font-extrabold text-white truncate max-w-[150px]">{file.name}</p>
+                                            <p className="text-[8px] text-slate-400 font-mono">{showMb}</p>
+                                          </div>
+                                        </div>
+                                        {file.type.startsWith('image/') && file.content && (
+                                          <div className="w-8 h-8 rounded overflow-hidden border border-white/5 shrink-0 bg-black/40">
+                                            <img src={file.content} alt="Preview" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            {m.role !== 'user' && (
+                              <div className="mt-3 pt-2 border-t border-white/5 flex flex-wrap items-center gap-2 text-[10px] text-slate-400">
+                                <button
+                                  onClick={() => handleCopyToClipboard(m.content)}
+                                  className="flex items-center gap-1 hover:text-white hover:bg-white/10 bg-slate-950/40 border border-white/5 px-2.5 py-1 rounded-lg transition-colors font-medium active:scale-95"
+                                  title="Copy text content to clipboard"
+                                >
+                                  <span>📋</span> Copy
+                                </button>
+                                <button
+                                  onClick={() => handleSaveToNotes(m.content)}
+                                  className="flex items-center gap-1 hover:text-white hover:bg-white/10 bg-slate-950/40 border border-white/5 px-2.5 py-1 rounded-lg transition-colors font-medium active:scale-95"
+                                  title="Construct new archive in Personal Vault Notes"
+                                >
+                                  <span>💾</span> Save Note
+                                </button>
+                                <button
+                                  onClick={() => handleToggleSpeakMessage(m.content, msgKey)}
+                                  className={`flex items-center gap-1 border px-2.5 py-1 rounded-lg transition-colors font-medium active:scale-95 ${isSpeaking ? 'text-rose-400 border-rose-500/30 bg-rose-500/10 font-bold' : 'hover:text-white hover:bg-white/10 bg-slate-950/40 border-white/5'}`}
+                                  title={isSpeaking ? "Suspend voice generator output" : "Synthesize study reading"}
+                                >
+                                  <span>{isSpeaking ? '⏹️' : '🔊'}</span> {isSpeaking ? 'Stop' : 'Read Aloud'}
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+
+                      {aiLoading && (
+                        <div className="p-3 bg-amber-500/5 text-amber-500 border border-amber-500/15 rounded-2xl text-[10px] max-w-[80%] mr-auto animate-pulse flex items-center gap-2">
+                           <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                           <span>Mentor formulating response guidelines...</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Chat Interactive Composer with Integrated File Upload */}
+                    <div className="space-y-2">
+                      
+                      {/* Attached Files Chips Strip */}
+                      {attachedFiles && attachedFiles.length > 0 && (
+                        <div className="flex flex-wrap gap-2 p-2 bg-slate-900/60 rounded-xl border border-white/5 max-h-[100px] overflow-y-auto">
+                          {attachedFiles.map((file, idx) => {
+                            let icon = '📎';
+                            if (file.name.toLowerCase().endsWith('.pdf')) icon = '📕';
+                            else if (file.type.startsWith('image/')) icon = '🖼️';
+                            else if (file.name.toLowerCase().endsWith('.doc') || file.name.toLowerCase().endsWith('.docx')) icon = '📘';
+                            else if (file.name.toLowerCase().endsWith('.ppt') || file.name.toLowerCase().endsWith('.pptx')) icon = '📊';
+                            else if (file.name.toLowerCase().endsWith('.md') || file.name.toLowerCase().endsWith('.txt')) icon = '📝';
+                            
+                            const kbSize = (file.size / 1024).toFixed(1);
+
+                            return (
+                              <div key={idx} className="flex items-center gap-1.5 bg-indigo-950/40 text-[10px] text-indigo-300 px-2.5 py-1 rounded-xl border border-indigo-500/20 shadow-sm transition-all hover:border-indigo-500/40">
+                                <span>{icon}</span>
+                                <span className="truncate max-w-[130px] font-semibold">{file.name}</span>
+                                <span className="text-[8px] text-slate-500 font-mono">({kbSize} KB)</span>
                                 <button 
-                                  onClick={() => handleRemoveAttachedFile(file.name)}
-                                  className="p-1 rounded hover:bg-white/10 text-slate-400 hover:text-red-400 transition-all shrink-0"
+                                  type="button"
+                                  onClick={() => handleRemoveAttachedFile(file.name)} 
+                                  className="text-slate-400 hover:text-red-400 font-extrabold cursor-pointer ml-1 p-0.5 rounded hover:bg-white/5 active:scale-90 leading-none"
                                   title="Remove attachment"
                                 >
-                                  <Trash className="w-3 h-3" />
+                                  <X className="w-3 h-3 inline" />
                                 </button>
                               </div>
                             );
                           })}
                         </div>
                       )}
-                    </div>
 
-                  </div>
+                      {/* Hidden File Input Triggered by Composer Paperclip */}
+                      <input 
+                        type="file" 
+                        ref={aiFileInputRef}
+                        id="ai-file-uploader"
+                        onChange={handleFileUploadAction}
+                        multiple
+                        accept=".pdf,.doc,.docx,.ppt,.pptx,.txt,.md,.png,.jpg,.jpeg,.webp"
+                        className="hidden"
+                      />
 
-                  {/* Tutor Selection and Interaction Modes (XL: 4 Cols) */}
-                  <div className="xl:col-span-4 space-y-4">
-                    
-                    {/* Tutor Personas list */}
-                    <div className="smart-glass p-4 rounded-3xl space-y-3 shadow-sm">
-                      <div>
-                        <h3 className="font-extrabold text-xs text-white">Select AI Instructor</h3>
-                        <p className="text-[10px] text-slate-400">Tutors maintain specific expertise & teaching style profiles.</p>
-                      </div>
-
-                      <div className="space-y-2 max-h-[190px] overflow-y-auto pr-1">
-                        {AI_PERSONAS.map(p => (
-                          <button 
-                            key={p.id}
-                            onClick={() => handleSwitchPersona(p.id)}
-                            className={`w-full p-2.5 rounded-2xl border text-left flex items-start gap-3 transition-all ${selectedPersona === p.id ? 'border-indigo-500 bg-indigo-500/10 shadow-sm' : 'border-white/5 bg-slate-900/60 hover:bg-slate-800'}`}
-                          >
-                            <span className="text-base p-1.5 bg-black/40 rounded-lg block shrink-0">{p.avatarChar}</span>
-                            <div className="space-y-0.5 truncate">
-                              <p className="font-bold text-xs text-white">{p.name}</p>
-                              <p className="text-[9px] text-slate-400 leading-none truncate">Focus: {p.speciality}</p>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Dynamic Modes Selector */}
-                    <div className="smart-glass p-4 rounded-3xl space-y-3.5 shadow-sm">
-                      <div>
-                        <h3 className="font-extrabold text-xs text-white">Active Tutorial Mode</h3>
-                        <p className="text-[10px] text-slate-400 font-medium">Re-orient feedback algorithms on demand</p>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2">
-                        {[
-                          { id: 'explanatory', label: 'Explainer mode', emoji: '📚', desc: 'Detailed concepts' },
-                          { id: 'socratic', label: 'Socratic mode', emoji: '🎓', desc: 'Step-by-step guidance' },
-                          { id: 'coder', label: 'Coding coach', emoji: '💻', desc: 'Code optimization' },
-                          { id: 'quiz_gen', label: 'Quiz exam', emoji: '📝', desc: 'Challenges & grades' }
-                        ].map(m => (
-                          <button
-                            key={m.id}
-                            onClick={() => handleSwitchMode(m.id as any)}
-                            className={`p-2.5 rounded-xl border text-left flex flex-col justify-between transition-all group ${aiMode === m.id ? 'border-indigo-500 bg-indigo-500/10 text-white' : 'border-white/5 bg-slate-900/60 hover:bg-slate-800 text-slate-400 hover:text-white'}`}
-                          >
-                            <span className="text-xs">{m.emoji}</span>
-                            <div className="mt-1">
-                              <p className="text-[10px] font-extrabold leading-none">{m.label}</p>
-                              <p className="text-[7.5px] text-slate-500 group-hover:text-slate-400 mt-0.5 leading-tight">{m.desc}</p>
-                            </div>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-
-                  </div>
-
-                  {/* Chat dialog pane (XL: 5 Cols) */}
-                  <div className="xl:col-span-12 lg:xl:col-span-5 space-y-4">
-                    <div className="smart-glass p-4 rounded-3xl h-[530px] flex flex-col justify-between shadow-lg relative border border-white/5">
-                      
-                      {/* Dialogue Stream Header Banner */}
-                      <div className="flex items-center justify-between border-b border-white/5 pb-2.5">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm">
-                            {AI_PERSONAS.find(p => p.id === selectedPersona)?.avatarChar || '🤖'}
-                          </span>
-                          <div>
-                            <span className="text-xs font-black text-white">
-                              {AI_PERSONAS.find(p => p.id === selectedPersona)?.name || 'Study Mate'}
-                            </span>
-                            <span className="mx-1.5 text-slate-600 text-[10px]">•</span>
-                            <span className="text-[9px] uppercase tracking-wider font-extrabold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-full border border-indigo-500/20">
-                              {aiMode.toUpperCase()}
+                      {/* Limit exhaustion alert banner */}
+                      {aiUsageState.remaining <= 0 && (
+                        <div className="p-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-xs text-red-200 flex items-center justify-between gap-3 animate-fadeIn">
+                          <div className="flex items-center gap-2">
+                            <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
+                            <span className="font-medium text-[11px]">
+                              Daily AI query quota exhausted (0/{aiUsageState.limit} remaining). Next slot unlocks in ~{aiUsageState.nextAvailableInMinutes || 60}m.
                             </span>
                           </div>
+                          <button
+                            onClick={() => setShowQuotaModal(true)}
+                            className="px-2.5 py-1 rounded-lg bg-red-500 hover:bg-red-400 text-white font-bold text-[10px] uppercase tracking-wider transition-all shrink-0 flex items-center gap-1 shadow-sm active:scale-95"
+                          >
+                            <Zap className="w-3 h-3" /> Upgrade
+                          </button>
                         </div>
-                        <button 
-                          onClick={handleClearThreadHistory}
-                          className="px-2.5 py-1 rounded-xl bg-white/5 hover:bg-white/10 text-[9px] font-bold text-slate-400 hover:text-white border border-white/5 transition-all"
-                          title="Flush dialogue entries for this thread"
+                      )}
+
+                      {/* Composer input bar */}
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => aiFileInputRef.current?.click()}
+                          className="p-3 rounded-xl bg-slate-900 hover:bg-slate-850 border border-white/10 text-slate-400 hover:text-indigo-400 transition-all shrink-0 active:scale-95"
+                          title="Attach study files (PDF, DOCX, Images, Notes)"
                         >
-                          Clear Chat
+                          <Paperclip className="w-4 h-4" />
+                        </button>
+                        <input 
+                          type="text"
+                          value={aiInput}
+                          onChange={e => setAiInput(e.target.value)}
+                          onKeyDown={e => e.key === 'Enter' && handleAskAIModel()}
+                          placeholder={
+                            aiUsageState.remaining <= 0 
+                              ? "Daily quota exhausted. Click 'Upgrade Quota' above to redeem code or boost limit." 
+                              : attachedFiles && attachedFiles.length > 0 
+                                ? `Ask Mentor about ${attachedFiles.map(f => f.name).join(', ')}...` 
+                                : "Ask about formulas, essay analysis, code bugs, exam revision..."
+                          }
+                          disabled={aiLoading || aiUsageState.remaining <= 0}
+                          className={`flex-1 px-4 py-3 rounded-xl bg-slate-900 border text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 text-white font-medium ${aiUsageState.remaining <= 0 ? 'border-red-500/30 opacity-70 cursor-not-allowed' : 'border-white/10'}`}
+                        />
+                        <button 
+                          onClick={aiUsageState.remaining <= 0 ? () => setShowQuotaModal(true) : handleAskAIModel}
+                          disabled={aiLoading}
+                          className={`px-4 sm:px-5 py-3 rounded-xl font-bold text-xs uppercase tracking-wide transition-all shadow-md active:scale-95 flex items-center justify-center gap-1.5 shrink-0 ${
+                            aiUsageState.remaining <= 0 
+                              ? 'bg-amber-600 hover:bg-amber-500 text-white' 
+                              : 'bg-indigo-600 hover:bg-indigo-500 text-white'
+                          }`}
+                        >
+                          {aiUsageState.remaining <= 0 ? (
+                            <><Zap className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Boost</span></>
+                          ) : (
+                            <><Send className="w-3.5 h-3.5" /> <span className="hidden sm:inline">AskAI</span></>
+                          )}
                         </button>
                       </div>
-
-                      {/* Dialogue Stream Body */}
-                      <div id="ai-dialog-scroll" className="flex-1 overflow-y-auto pr-2 my-3 space-y-3.5 bg-slate-950/40 p-4 rounded-2xl border border-white/5 shadow-inner">
-                        <div className="text-center p-3 border border-white/5 bg-white/5 rounded-2xl">
-                          <p className="text-[9px] text-indigo-400 font-extrabold uppercase tracking-widest">Dialogue channel connected successfully</p>
-                          <p className="text-[11px] text-slate-400 mt-0.5">Prompt mathematical derivations, software syntax, essay critiques, or review sheets.</p>
-                        </div>
-
-                        {(!activeThread || !activeThread.messages || activeThread.messages.length === 0) && (
-                          <div className="py-6 px-4 space-y-6 text-center animate-fadeIn">
-                            <div className="flex flex-col items-center justify-center space-y-2">
-                              <div className="p-3 bg-indigo-500/10 rounded-full border border-indigo-500/20 text-indigo-400">
-                                <Sparkles className="w-8 h-8 animate-pulse" />
-                              </div>
-                              <h3 className="text-base font-black text-white tracking-tight mt-2">
-                                Hi, {currentUser?.name || 'Scholar'}! 👋
-                              </h3>
-                              <p className="text-xs text-slate-400 max-w-sm mx-auto leading-relaxed">
-                                I am your advanced AI Teacher Copilot and Subject Expert. Ask me anything about your studies, or select one of the high-yield topics below:
-                              </p>
-                            </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-md mx-auto text-left">
-                              {[
-                                { icon: '🌌', label: 'Physics', text: 'Explain Quantum Physics to a high school beginner with real-world analogies.' },
-                                { icon: '🧪', label: 'Chemistry', text: 'Show me step-by-step how to balance complex chemical equations.' },
-                                { icon: '📈', label: 'Calculus', text: 'Solve and explain the derivative of x^2 * sin(x) using the product rule.' },
-                                { icon: '💻', label: 'Computer Science', text: 'Explain how closures work in JavaScript with clear code examples.' }
-                              ].map((item, i) => (
-                                <button
-                                  key={i}
-                                  onClick={() => setAiInput(item.text)}
-                                  className="p-3 bg-slate-900 hover:bg-slate-850 border border-white/5 hover:border-indigo-500/40 rounded-xl transition-all group flex flex-col justify-between h-28 text-left hover:scale-[1.02] active:scale-95 cursor-pointer"
-                                >
-                                  <div className="flex items-center justify-between w-full">
-                                    <span className="text-lg">{item.icon}</span>
-                                    <span className="text-[8px] bg-indigo-500/10 text-indigo-300 px-1.5 py-0.5 rounded font-extrabold uppercase tracking-widest">{item.label}</span>
-                                  </div>
-                                  <p className="text-[10px] text-slate-400 font-medium leading-relaxed mt-2 group-hover:text-white transition-colors line-clamp-2">
-                                    "{item.text}"
-                                  </p>
-                                </button>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {activeThread && (activeThread.messages || []).map((m, idx) => {
-                          const msgKey = `${activeThread.id}-${idx}`;
-                          const isSpeaking = speakingMsgIdx === msgKey;
-                          return (
-                            <div key={idx} className={`p-3.5 rounded-2xl text-xs max-w-[85%] ${m.role === 'user' ? 'bg-indigo-600/15 border border-indigo-500/20 text-white ml-auto' : 'bg-slate-900 border border-white/5 text-slate-200 mr-auto'}`}>
-                              <span className="text-[8px] uppercase tracking-wider font-extrabold block mb-1.5 text-indigo-400">
-                                {m.role === 'user' ? `👤 ${currentUser?.role ? currentUser.role.charAt(0).toUpperCase() + currentUser.role.slice(1) : 'Student'} Inquiry` : '🤖 Instructor Response'}
-                              </span>
-                              <div className="space-y-1">
-                                {renderMarkdown(m.content)}
-                              </div>
-                              
-                              {/* Attached Files visual inside bubbles */}
-                              {m.files && m.files.length > 0 && (
-                                <div className="mt-2.5 space-y-1.5 border-t border-white/10 pt-2 bg-black/10 -mx-3.5 px-3.5 py-2.5 rounded-b-2xl">
-                                  <p className="text-[8px] text-indigo-400 uppercase font-black tracking-wider leading-none mb-1">Attached References:</p>
-                                  <div className="flex flex-col gap-1.5">
-                                    {m.files.map((file: any, fIdx: number) => {
-                                      let icon = '📎';
-                                      let colorTheme = 'border-indigo-500/10 bg-indigo-950/10';
-                                      if (file.name.toLowerCase().endsWith('.pdf')) {
-                                        icon = '📕';
-                                        colorTheme = 'border-red-500/10 bg-red-950/10';
-                                      } else if (file.type.startsWith('image/')) {
-                                        icon = '🖼️';
-                                        colorTheme = 'border-emerald-500/10 bg-emerald-950/10';
-                                      } else if (file.name.toLowerCase().endsWith('.doc') || file.name.toLowerCase().endsWith('.docx')) {
-                                        icon = '📘';
-                                        colorTheme = 'border-blue-500/10 bg-blue-950/10';
-                                      } else if (file.name.toLowerCase().endsWith('.ppt') || file.name.toLowerCase().endsWith('.pptx')) {
-                                        icon = '📊';
-                                        colorTheme = 'border-amber-500/10 bg-amber-950/10';
-                                      } else if (file.name.toLowerCase().endsWith('.md') || file.name.toLowerCase().endsWith('.txt')) {
-                                        icon = '📝';
-                                        colorTheme = 'border-indigo-500/10 bg-indigo-950/10';
-                                      }
-
-                                      const extSize = (file.size / (1024 * 1024)).toFixed(2);
-                                      const showMb = Number(extSize) > 0.1 ? `${extSize} MB` : `${(file.size / 1024).toFixed(1)} KB`;
-
-                                      return (
-                                        <div key={fIdx} className={`flex items-center justify-between p-2 rounded-xl border ${colorTheme} text-[10px]`}>
-                                          <div className="flex items-center gap-2 truncate">
-                                            <span className="text-sm shrink-0">{icon}</span>
-                                            <div className="truncate text-left leading-tight">
-                                              <p className="font-extrabold text-white truncate max-w-[150px]">{file.name}</p>
-                                              <p className="text-[8px] text-slate-400 font-mono">{showMb}</p>
-                                            </div>
-                                          </div>
-                                          {file.type.startsWith('image/') && file.content && (
-                                            <div className="w-8 h-8 rounded overflow-hidden border border-white/5 shrink-0 bg-black/40">
-                                              <img src={file.content} alt="Preview" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                                            </div>
-                                          )}
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              )}
-
-                              {m.role !== 'user' && (
-                                <div className="mt-3 pt-2 border-t border-white/5 flex flex-wrap items-center gap-2 text-[10px] text-slate-400">
-                                  <button
-                                    onClick={() => handleCopyToClipboard(m.content)}
-                                    className="flex items-center gap-1 hover:text-white hover:bg-white/10 bg-slate-950/40 border border-white/5 px-2.5 py-1 rounded-lg transition-colors font-medium active:scale-95"
-                                    title="Copy text content to clipboard"
-                                  >
-                                    <span>📋</span> Copy
-                                  </button>
-                                  <button
-                                    onClick={() => handleSaveToNotes(m.content)}
-                                    className="flex items-center gap-1 hover:text-white hover:bg-white/10 bg-slate-950/40 border border-white/5 px-2.5 py-1 rounded-lg transition-colors font-medium active:scale-95"
-                                    title="Construct new archive in Personal Vault Notes"
-                                  >
-                                    <span>💾</span> Save Note
-                                  </button>
-                                  <button
-                                    onClick={() => handleToggleSpeakMessage(m.content, msgKey)}
-                                    className={`flex items-center gap-1 border px-2.5 py-1 rounded-lg transition-colors font-medium active:scale-95 ${isSpeaking ? 'text-rose-400 border-rose-500/30 bg-rose-500/10 font-bold' : 'hover:text-white hover:bg-white/10 bg-slate-950/40 border-white/5'}`}
-                                    title={isSpeaking ? "Suspend voice generator output" : "Synthesize study reading"}
-                                  >
-                                    <span>{isSpeaking ? '⏹️' : '🔊'}</span> {isSpeaking ? 'Stop' : 'Read Aloud'}
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-
-                        {aiLoading && (
-                          <div className="p-3 bg-amber-500/5 text-amber-500 border border-amber-500/15 rounded-2xl text-[10px] max-w-[80%] mr-auto animate-pulse flex items-center gap-2">
-                             <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                             <span>Mentor formulating response guidelines...</span>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Chat interactive panel */}
-                      <div className="space-y-2">
-                        
-                        {/* Dynamic Status Display for attachments inside typing box */}
-                        {attachedFiles && attachedFiles.length > 0 && (
-                          <div className="flex flex-wrap gap-2 p-2 bg-slate-900/60 rounded-xl border border-white/5 max-h-[110px] overflow-y-auto">
-                            {attachedFiles.map((file, idx) => {
-                              let icon = '📎';
-                              if (file.name.toLowerCase().endsWith('.pdf')) icon = '📕';
-                              else if (file.type.startsWith('image/')) icon = '🖼️';
-                              else if (file.name.toLowerCase().endsWith('.doc') || file.name.toLowerCase().endsWith('.docx')) icon = '📘';
-                              else if (file.name.toLowerCase().endsWith('.ppt') || file.name.toLowerCase().endsWith('.pptx')) icon = '📊';
-                              else if (file.name.toLowerCase().endsWith('.md') || file.name.toLowerCase().endsWith('.txt')) icon = '📝';
-                              
-                              const kbSize = (file.size / 1024).toFixed(1);
-
-                              return (
-                                <div key={idx} className="flex items-center gap-1.5 bg-indigo-950/40 text-[10px] text-indigo-300 px-2.5 py-1 rounded-xl border border-indigo-500/20 shadow-sm transition-all hover:border-indigo-500/40">
-                                  <span>{icon}</span>
-                                  <span className="truncate max-w-[130px] font-semibold">{file.name}</span>
-                                  <span className="text-[8px] text-slate-500 font-mono">({kbSize} KB)</span>
-                                  <button 
-                                    type="button"
-                                    onClick={() => handleRemoveAttachedFile(file.name)} 
-                                    className="text-slate-400 hover:text-red-400 font-extrabold cursor-pointer ml-1 p-0.5 rounded hover:bg-white/5 active:scale-90 leading-none"
-                                    title="Remove attachment"
-                                  >
-                                    ❌
-                                  </button>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-
-                        {/* Limit exhaustion alert banner */}
-                        {aiUsageState.remaining <= 0 && (
-                          <div className="p-3 rounded-2xl bg-red-500/10 border border-red-500/30 text-xs text-red-200 flex items-center justify-between gap-3 animate-fadeIn">
-                            <div className="flex items-center gap-2">
-                              <AlertTriangle className="w-4 h-4 text-red-400 shrink-0" />
-                              <span className="font-medium">
-                                Daily AI query quota exhausted (0/{aiUsageState.limit} remaining). Next slot unlocks in ~{aiUsageState.nextAvailableInMinutes || 60}m.
-                              </span>
-                            </div>
-                            <button
-                              onClick={() => setShowQuotaModal(true)}
-                              className="px-3 py-1.5 rounded-xl bg-red-500 hover:bg-red-400 text-white font-bold text-[11px] uppercase tracking-wider transition-all shrink-0 flex items-center gap-1 shadow-sm active:scale-95"
-                            >
-                              <Zap className="w-3 h-3" /> Upgrade
-                            </button>
-                          </div>
-                        )}
-
-                        <div className="flex gap-2">
-                          <input 
-                            type="text"
-                            value={aiInput}
-                            onChange={e => setAiInput(e.target.value)}
-                            onKeyDown={e => e.key === 'Enter' && handleAskAIModel()}
-                            placeholder={
-                              aiUsageState.remaining <= 0 
-                                ? "Daily quota exhausted. Click 'Upgrade Quota' above to redeem code or boost limit." 
-                                : attachedFiles && attachedFiles.length > 0 
-                                  ? `Ask Mentor about ${attachedFiles.map(f => f.name).join('')}...` 
-                                  : "Explicate formulas, code fragments, or query lesson summaries..."
-                            }
-                            disabled={aiLoading || aiUsageState.remaining <= 0}
-                            className={`flex-1 px-4 py-3 rounded-xl bg-slate-900 border text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 text-white font-medium ${aiUsageState.remaining <= 0 ? 'border-red-500/30 opacity-70 cursor-not-allowed' : 'border-white/10'}`}
-                          />
-                          <button 
-                            onClick={aiUsageState.remaining <= 0 ? () => setShowQuotaModal(true) : handleAskAIModel}
-                            disabled={aiLoading}
-                            className={`px-5 py-3 rounded-xl font-bold text-xs uppercase tracking-wide transition-all shadow-md active:scale-95 flex items-center justify-center gap-1.5 ${
-                              aiUsageState.remaining <= 0 
-                                ? 'bg-amber-600 hover:bg-amber-500 text-white' 
-                                : 'bg-indigo-600 hover:bg-indigo-500 text-white'
-                            }`}
-                          >
-                            {aiUsageState.remaining <= 0 ? (
-                              <><Zap className="w-3.5 h-3.5" /> Boost</>
-                            ) : (
-                              <><Send className="w-3.5 h-3.5" /> AskAI</>
-                            )}
-                          </button>
-                        </div>
-                      </div>
-
                     </div>
-                  </div>
 
                   </div>
                 </div>
