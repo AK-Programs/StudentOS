@@ -308,12 +308,12 @@ export default function AttendanceManager({ currentUser, effectiveRole }: { curr
   }, [targetUsers, historicalStats]);
 
   return (
-    <div className="smart-glass p-6 md:p-8 rounded-3xl space-y-6 max-w-7xl mx-auto animate-fadeIn w-full">
+    <div className="smart-glass p-3.5 sm:p-6 md:p-8 rounded-2xl sm:rounded-3xl space-y-6 max-w-7xl mx-auto animate-fadeIn w-full">
       {/* Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h3 className="text-2xl font-black text-white tracking-tight">StudentOS Attendance Center</h3>
+            <h3 className="text-xl sm:text-2xl font-black text-white tracking-tight">StudentOS Attendance Center</h3>
             <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
               {effectiveRole?.toUpperCase()}
             </span>
@@ -323,22 +323,22 @@ export default function AttendanceManager({ currentUser, effectiveRole }: { curr
           </p>
         </div>
 
-        <div className="flex items-center gap-2 bg-slate-900/90 rounded-2xl p-1 border border-white/10">
+        <div className="flex flex-wrap items-center gap-1.5 bg-slate-900/90 rounded-2xl p-1 border border-white/10 w-full sm:w-auto">
           <button 
             onClick={() => setActiveTab('attendance')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${activeTab === 'attendance' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+            className={`px-3 sm:px-4 py-2 rounded-xl text-xs font-bold transition-all flex-1 sm:flex-initial text-center ${activeTab === 'attendance' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
           >
-            Mark Daily Records
+            Daily Records
           </button>
           <button 
             onClick={() => setActiveTab('analytics')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${activeTab === 'analytics' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+            className={`px-3 sm:px-4 py-2 rounded-xl text-xs font-bold transition-all flex-1 sm:flex-initial text-center ${activeTab === 'analytics' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
           >
             Cohort Analytics
           </button>
           <button 
             onClick={() => setActiveTab('leaves')}
-            className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${activeTab === 'leaves' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+            className={`px-3 sm:px-4 py-2 rounded-xl text-xs font-bold transition-all flex-1 sm:flex-initial text-center ${activeTab === 'leaves' ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
           >
             Leave Requests
           </button>
@@ -349,52 +349,52 @@ export default function AttendanceManager({ currentUser, effectiveRole }: { curr
       {activeTab === 'attendance' && (
         <div className="space-y-6">
           {/* Controls Filter Bar */}
-          <div className="p-4 bg-slate-950/60 border border-white/10 rounded-2xl flex flex-wrap items-center gap-3">
-            <div>
+          <div className="p-3.5 sm:p-4 bg-slate-950/60 border border-white/10 rounded-2xl flex flex-wrap items-center gap-3">
+            <div className="w-full sm:w-auto">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Date</label>
               <input 
                 type="date" 
                 value={date} 
                 onChange={e => setDate(e.target.value)}
-                className="px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-xs focus:outline-none focus:border-indigo-500"
+                className="w-full sm:w-auto px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-xs focus:outline-none focus:border-indigo-500"
               />
             </div>
 
-            <div>
+            <div className="w-full sm:w-auto">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Grade</label>
               <select 
                 value={selectedGrade} 
                 onChange={e => setSelectedGrade(e.target.value)} 
-                className="px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-xs focus:outline-none focus:border-indigo-500"
+                className="w-full sm:w-auto px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-xs focus:outline-none focus:border-indigo-500"
               >
                 {['Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'].map(g => <option key={g} value={g}>{g}</option>)}
               </select>
             </div>
 
-            <div>
+            <div className="w-full sm:w-auto">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Section</label>
               <select 
                 value={selectedSection} 
                 onChange={e => setSelectedSection(e.target.value)} 
-                className="px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-xs focus:outline-none focus:border-indigo-500"
+                className="w-full sm:w-auto px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-xs focus:outline-none focus:border-indigo-500"
               >
                 {['Solara', 'Astra', 'Elara', 'Vega'].map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
 
-            <div>
+            <div className="w-full sm:w-auto">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Subject</label>
               <select 
                 value={selectedSubject} 
                 onChange={e => setSelectedSubject(e.target.value)} 
-                className="px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-xs focus:outline-none focus:border-indigo-500"
+                className="w-full sm:w-auto px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-xs focus:outline-none focus:border-indigo-500"
               >
                 {SUBJECT_LIST.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
 
             {/* Quick search */}
-            <div className="flex-1 min-w-[180px]">
+            <div className="flex-1 min-w-[160px] w-full sm:w-auto">
               <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Search Student</label>
               <input
                 type="text"
@@ -406,10 +406,10 @@ export default function AttendanceManager({ currentUser, effectiveRole }: { curr
             </div>
 
             {/* Action buttons */}
-            <div className="flex items-end gap-2 ml-auto pt-4 sm:pt-0">
+            <div className="flex flex-wrap items-end gap-2 w-full sm:w-auto sm:ml-auto pt-2 sm:pt-0">
               <button
                 onClick={handleMarkAllPresent}
-                className="px-3.5 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 font-bold text-xs border border-emerald-500/30 transition-all flex items-center gap-1.5"
+                className="px-3.5 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 font-bold text-xs border border-emerald-500/30 transition-all flex items-center justify-center gap-1.5 flex-1 sm:flex-initial"
               >
                 <CheckCircle2 className="w-3.5 h-3.5" />
                 Mark All Present
@@ -417,7 +417,7 @@ export default function AttendanceManager({ currentUser, effectiveRole }: { curr
 
               <button
                 onClick={exportToCSV}
-                className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 font-bold text-xs border border-white/10 transition-all flex items-center gap-1.5"
+                className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 font-bold text-xs border border-white/10 transition-all flex items-center justify-center gap-1.5 flex-1 sm:flex-initial"
               >
                 <Download className="w-3.5 h-3.5" />
                 CSV Export
@@ -426,43 +426,43 @@ export default function AttendanceManager({ currentUser, effectiveRole }: { curr
           </div>
 
           {/* Quick Metrics Bar for Selected Class on Selected Date */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="p-3.5 bg-slate-950/60 border border-white/5 rounded-2xl flex items-center justify-between">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
+            <div className="p-3 sm:p-3.5 bg-slate-950/60 border border-white/5 rounded-2xl flex items-center justify-between">
               <div>
                 <span className="text-[10px] font-bold uppercase text-slate-400 block">Class Roster</span>
-                <span className="text-xl font-black text-white font-mono mt-0.5 block">{visibleStudents.length}</span>
+                <span className="text-lg sm:text-xl font-black text-white font-mono mt-0.5 block">{visibleStudents.length}</span>
               </div>
-              <Users className="w-6 h-6 text-indigo-400 opacity-60" />
+              <Users className="w-5 h-5 sm:w-6 sm:h-6 text-indigo-400 opacity-60 shrink-0" />
             </div>
 
-            <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-center justify-between">
+            <div className="p-3 sm:p-3.5 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-center justify-between">
               <div>
                 <span className="text-[10px] font-bold uppercase text-emerald-400 block">Present</span>
-                <span className="text-xl font-black text-emerald-300 font-mono mt-0.5 block">{markedPresentToday}</span>
+                <span className="text-lg sm:text-xl font-black text-emerald-300 font-mono mt-0.5 block">{markedPresentToday}</span>
               </div>
-              <Check className="w-6 h-6 text-emerald-400 opacity-60" />
+              <Check className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-400 opacity-60 shrink-0" />
             </div>
 
-            <div className="p-3.5 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-center justify-between">
+            <div className="p-3 sm:p-3.5 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-center justify-between">
               <div>
                 <span className="text-[10px] font-bold uppercase text-amber-400 block">Late</span>
-                <span className="text-xl font-black text-amber-300 font-mono mt-0.5 block">{markedLateToday}</span>
+                <span className="text-lg sm:text-xl font-black text-amber-300 font-mono mt-0.5 block">{markedLateToday}</span>
               </div>
-              <Clock className="w-6 h-6 text-amber-400 opacity-60" />
+              <Clock className="w-5 h-5 sm:w-6 sm:h-6 text-amber-400 opacity-60 shrink-0" />
             </div>
 
-            <div className="p-3.5 bg-rose-500/10 border border-rose-500/20 rounded-2xl flex items-center justify-between">
+            <div className="p-3 sm:p-3.5 bg-rose-500/10 border border-rose-500/20 rounded-2xl flex items-center justify-between">
               <div>
                 <span className="text-[10px] font-bold uppercase text-rose-400 block">Absent</span>
-                <span className="text-xl font-black text-rose-300 font-mono mt-0.5 block">{markedAbsentToday}</span>
+                <span className="text-lg sm:text-xl font-black text-rose-300 font-mono mt-0.5 block">{markedAbsentToday}</span>
               </div>
-              <X className="w-6 h-6 text-rose-400 opacity-60" />
+              <X className="w-5 h-5 sm:w-6 sm:h-6 text-rose-400 opacity-60 shrink-0" />
             </div>
           </div>
 
           {/* Table */}
-          <div className="bg-slate-950/60 rounded-3xl border border-white/10 overflow-hidden shadow-xl">
-            <table className="w-full text-left border-collapse text-xs">
+          <div className="bg-slate-950/60 rounded-2xl sm:rounded-3xl border border-white/10 overflow-hidden overflow-x-auto shadow-xl">
+            <table className="w-full min-w-[580px] text-left border-collapse text-xs">
               <thead>
                 <tr className="bg-slate-900 border-b border-white/10 text-slate-400 uppercase tracking-wider text-[10px] font-bold">
                   <th className="p-4">Student</th>
