@@ -4,7 +4,7 @@ import { PromotionalBanner, getActivePromotionalBanners } from '../config/promot
 
 interface PromotionalBannersProps {
   onNavigateTab?: (tab: string, subtab?: string) => void;
-  className?: string;
+  className?: string; 
 }
 
 export const PromotionalBanners: React.FC<PromotionalBannersProps> = ({
