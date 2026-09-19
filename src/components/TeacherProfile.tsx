@@ -4,6 +4,7 @@ import TeacherStudentList from './TeacherStudentList';
 import TeacherStudentReports from './TeacherStudentReports';
 import StudentMarksCenter from './StudentMarksCenter';
 import ProfileCustomizer from './ProfileCustomizer';
+import { ProfileSettings } from './ProfileSettings';
 
 export default function TeacherProfile({ currentUser, handleSaveProfile, profileNameInput, setProfileNameInput, profileAvatar, setProfileAvatar, profileTab, setProfileTab, onProfileUpdated }: any) {
   return (
@@ -34,16 +35,16 @@ export default function TeacherProfile({ currentUser, handleSaveProfile, profile
 
       {/* Navigation for specific modules */}
       <div className="flex bg-slate-950 p-1.5 rounded-2xl border border-white/5 gap-1 mb-6 flex-wrap">
-         {['my_students', 'customizer', 'reports', 'marks_center'].map((pt) => (
+         {['my_students', 'settings', 'reports', 'marks_center'].map((pt) => (
            <button
              key={pt}
              onClick={() => setProfileTab(pt)}
              className={`py-3 px-2 sm:px-4 flex-1 rounded-xl text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all min-w-[70px] ${
-                profileTab === pt ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white hover:bg-white/5'
+                profileTab === pt || (pt === 'settings' && profileTab === 'customizer') ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white hover:bg-white/5'
              }`}
            >
               {pt === 'my_students' && 'My Students'}
-              {pt === 'customizer' && '✨ Custom Card'}
+              {pt === 'settings' && '⚙️ Settings'}
               {pt === 'reports' && 'Reports'}
               {pt === 'marks_center' && 'Marks Centre'}
            </button>
@@ -54,8 +55,8 @@ export default function TeacherProfile({ currentUser, handleSaveProfile, profile
          {profileTab === 'my_students' && (
            <TeacherStudentList currentUser={currentUser} />
          )}
-         {profileTab === 'customizer' && (
-           <ProfileCustomizer 
+         {(profileTab === 'settings' || profileTab === 'customizer') && (
+           <ProfileSettings 
              currentUser={currentUser} 
              onProfileUpdated={onProfileUpdated} 
            />
