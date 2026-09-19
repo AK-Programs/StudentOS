@@ -4,7 +4,8 @@ import {
   Trash2, Edit3, Pin, Shield, QrCode, UserPlus, LogOut, Settings, X, Search, 
   CheckCheck, Check, Volume2, VolumeX, Video, VideoOff, Phone, PhoneOff, PhoneIncoming, PhoneOutgoing,
   AlertTriangle, Info, Sparkles, Filter, Bell, Copy, Link, Eye, UserCheck, Flame, ThumbsUp, Heart,
-  Trophy, Megaphone, BookOpen, Users, Hash, MoreHorizontal, ArrowLeft, Monitor, User as UserIcon
+  Trophy, Megaphone, BookOpen, Users, Hash, MoreHorizontal, ArrowLeft, Monitor, User as UserIcon,
+  ShieldCheck
 } from 'lucide-react';
 import { ChatMessage, ChatRoom, UserRole, HouseType, ChatAttachment, UserProfile } from '../types';
 import { moderateChatMessage } from '../lib/aiModeration';
@@ -16,6 +17,8 @@ import { saveAppNotification } from '../lib/notifications';
 import { supabase } from '../lib/supabase';
 import { presenceService, UserPresence } from '../lib/presenceService';
 import { soundService } from '../lib/soundService';
+import { PublicProfileModal } from './PublicProfileModal';
+import { getVerificationStatus } from '../lib/verification';
 
 interface ChatSystemProps {
   currentUser: UserProfile | null;
@@ -1474,9 +1477,14 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
                     <div className={`flex items-center gap-1.5 text-[10px] ${isMine ? 'justify-end' : 'justify-start'}`}>
                       <button
                         onClick={() => setSelectedProfileUser(senderUser)}
-                        className="font-bold text-slate-300 hover:text-indigo-400 transition-colors"
+                        className="font-bold text-slate-300 hover:text-indigo-400 transition-colors inline-flex items-center gap-1"
                       >
-                        {displayName}
+                        <span>{displayName}</span>
+                        {senderUser && getVerificationStatus(senderUser).isVerified && (
+                          <span title="StudentOS Verified" className="inline-flex items-center">
+                            <ShieldCheck className="w-3 h-3 text-indigo-400" />
+                          </span>
+                        )}
                       </button>
                       <span className="text-[9px] text-indigo-400 uppercase font-black bg-indigo-500/10 px-1.5 py-0.2 rounded border border-indigo-500/20">
                         {senderUser?.role || msg.role}
@@ -1735,93 +1743,21 @@ export const ChatSystem: React.FC<ChatSystemProps> = ({
 
       </div>
 
-      {/* MEMBER PROFILE CARD MODAL */}
+      {/* MEMBER PUBLIC PROFILE MODAL */}
       {selectedProfileUser && (
-        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-slate-900 border border-white/10 rounded-3xl max-w-sm w-full p-6 shadow-2xl relative space-y-4 text-center">
-            <button
-              onClick={() => setSelectedProfileUser(null)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-white p-1 rounded-full bg-white/5"
-            >
-              <X className="w-4 h-4" />
-            </button>
-
-            {/* Profile Header & Avatar */}
-            <div className="flex flex-col items-center space-y-2 pt-2">
-              <div className="relative">
-                {selectedProfileUser.avatar || selectedProfileUser.photoURL ? (
-                  <img src={selectedProfileUser.avatar || selectedProfileUser.photoURL} alt="" className="w-20 h-20 rounded-full object-cover border-2 border-indigo-500/50 shadow-xl" />
-                ) : (
-                  <div className="w-20 h-20 rounded-full bg-indigo-600/30 text-indigo-300 font-black text-2xl flex items-center justify-center border-2 border-indigo-500/50 shadow-xl">
-                    {selectedProfileUser.name.charAt(0).toUpperCase()}
-                  </div>
-                )}
-                <span className="w-4 h-4 rounded-full bg-emerald-400 border-2 border-slate-900 absolute bottom-1 right-1" title="Online" />
-              </div>
-
-              <h3 className="text-lg font-black text-white">{selectedProfileUser.name}</h3>
-              <span className="text-[10px] bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-3 py-1 rounded-full font-bold uppercase tracking-wider">
-                {selectedProfileUser.role}
-              </span>
-            </div>
-
-            {/* Details Grid */}
-            <div className="bg-slate-950/60 p-4 rounded-2xl border border-white/5 text-left space-y-2 text-xs text-slate-300">
-              <div className="flex justify-between border-b border-white/5 pb-1.5">
-                <span className="text-slate-500 font-bold">Email:</span>
-                <span className="text-white font-medium truncate max-w-[180px]">{selectedProfileUser.email || 'N/A'}</span>
-              </div>
-              <div className="flex justify-between border-b border-white/5 pb-1.5">
-                <span className="text-slate-500 font-bold">Phone:</span>
-                <span className="text-emerald-400 font-mono font-bold">{selectedProfileUser.phone || 'Not provided'}</span>
-              </div>
-              <div className="flex justify-between border-b border-white/5 pb-1.5">
-                <span className="text-slate-500 font-bold">Class / Grade:</span>
-                <span className="text-white font-medium">{selectedProfileUser.grade ? `${selectedProfileUser.grade} - ${selectedProfileUser.section || ''}` : 'School Campus'}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500 font-bold">House:</span>
-                <span className="text-indigo-400 font-bold">{selectedProfileUser.house || 'Ruby'}</span>
-              </div>
-            </div>
-
-            {/* Direct Action Buttons */}
-            {selectedProfileUser.uid !== currentUser?.uid && (
-              <div className="flex gap-2 pt-2">
-                <button
-                  onClick={() => {
-                    setSelectedProfileUser(null);
-                    handleStartDirectMessage(selectedProfileUser);
-                  }}
-                  className="flex-1 bg-teal-600 hover:bg-teal-500 text-white font-bold py-2.5 rounded-xl text-xs flex items-center justify-center gap-1.5 shadow-lg"
-                >
-                  <Send className="w-3.5 h-3.5" />
-                  Message
-                </button>
-                <button
-                  onClick={() => {
-                    setSelectedProfileUser(null);
-                    handleStartCall(selectedProfileUser, 'audio');
-                  }}
-                  className="p-2.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 rounded-xl"
-                  title="Voice Call"
-                >
-                  <Phone className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => {
-                    setSelectedProfileUser(null);
-                    handleStartCall(selectedProfileUser, 'video');
-                  }}
-                  className="p-2.5 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 border border-indigo-500/30 rounded-xl"
-                  title="Video Call"
-                >
-                  <Video className="w-4 h-4" />
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
+        <PublicProfileModal
+          user={selectedProfileUser}
+          currentUserId={currentUser?.uid || (currentUser as any)?.id}
+          onClose={() => setSelectedProfileUser(null)}
+          onStartDirectMessage={(user) => {
+            setSelectedProfileUser(null);
+            handleStartDirectMessage(user);
+          }}
+          onStartCall={(user, isVideo) => {
+            setSelectedProfileUser(null);
+            handleStartCall(user, isVideo ? 'video' : 'audio');
+          }}
+        />
       )}
 
       {/* VOICE & VIDEO CALL OVERLAY MODAL */}
