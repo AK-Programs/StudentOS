@@ -266,12 +266,12 @@ export default function DigitalReportCards({ currentUser, effectiveRole }: Digit
   };
 
   return (
-    <div className="smart-glass p-6 md:p-8 rounded-3xl space-y-6 max-w-7xl mx-auto animate-fadeIn w-full">
+    <div className="smart-glass p-3.5 sm:p-6 md:p-8 rounded-2xl sm:rounded-3xl space-y-6 max-w-7xl mx-auto animate-fadeIn w-full">
       {/* Top Header */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h3 className="text-2xl font-black text-white tracking-tight">StudentOS Digital Report Cards</h3>
+            <h3 className="text-xl sm:text-2xl font-black text-white tracking-tight">StudentOS Digital Report Cards</h3>
             <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
               {isStudent ? 'Student Terminal' : effectiveRole?.toUpperCase()}
             </span>
@@ -284,7 +284,7 @@ export default function DigitalReportCards({ currentUser, effectiveRole }: Digit
         {selectedReportCard && (
           <button
             onClick={handlePrint}
-            className="py-2.5 px-4 rounded-xl bg-white/5 hover:bg-white/10 text-white font-bold text-xs uppercase tracking-wider border border-white/10 transition-all flex items-center gap-2 cursor-pointer shadow-lg"
+            className="w-full sm:w-auto py-2.5 px-4 rounded-xl bg-white/5 hover:bg-white/10 text-white font-bold text-xs uppercase tracking-wider border border-white/10 transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg"
           >
             <Printer className="w-4 h-4 text-indigo-400" />
             <span>Print / PDF Certificate</span>
@@ -469,16 +469,16 @@ export default function DigitalReportCards({ currentUser, effectiveRole }: Digit
               {/* Printable Official Certificate Document */}
               <div 
                 ref={printableRef}
-                className="bg-slate-950 border border-white/15 rounded-3xl p-8 shadow-2xl space-y-6 relative overflow-hidden print:bg-white print:text-black print:border-none print:p-0"
+                className="bg-slate-950 border border-white/15 rounded-2xl sm:rounded-3xl p-4 sm:p-6 md:p-8 shadow-2xl space-y-6 relative overflow-hidden print:bg-white print:text-black print:border-none print:p-0"
               >
                 {/* Decorative Seal / Header */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-6 border-b border-white/10 gap-4">
                   <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 rounded-2xl bg-indigo-600 flex items-center justify-center text-white font-black text-2xl shadow-xl shadow-indigo-600/30 print:border print:border-black">
+                    <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-indigo-600 flex items-center justify-center text-white font-black text-xl sm:text-2xl shadow-xl shadow-indigo-600/30 print:border print:border-black shrink-0">
                       OS
                     </div>
                     <div>
-                      <h2 className="text-xl font-black text-white uppercase tracking-wider print:text-black">
+                      <h2 className="text-lg sm:text-xl font-black text-white uppercase tracking-wider print:text-black">
                         StudentOS Academy
                       </h2>
                       <p className="text-xs text-slate-400 print:text-gray-600">
@@ -487,7 +487,7 @@ export default function DigitalReportCards({ currentUser, effectiveRole }: Digit
                     </div>
                   </div>
 
-                  <div className="text-right text-xs">
+                  <div className="text-left sm:text-right text-xs">
                     <span className="font-mono text-indigo-400 font-bold block print:text-black">
                       DOC #{selectedReportCard.id.substring(0, 8).toUpperCase()}
                     </span>
@@ -498,7 +498,7 @@ export default function DigitalReportCards({ currentUser, effectiveRole }: Digit
                 </div>
 
                 {/* Student Info Box */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 bg-slate-900/50 rounded-2xl border border-white/5 text-xs print:bg-gray-100 print:text-black">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 p-3.5 sm:p-4 bg-slate-900/50 rounded-2xl border border-white/5 text-xs print:bg-gray-100 print:text-black">
                   <div>
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block print:text-gray-500">Student Name</span>
                     <span className="font-bold text-white text-sm mt-0.5 block print:text-black">{selectedReportCard.studentName}</span>
@@ -518,8 +518,8 @@ export default function DigitalReportCards({ currentUser, effectiveRole }: Digit
                 </div>
 
                 {/* Subject Marks Table */}
-                <div className="rounded-2xl border border-white/10 overflow-hidden print:border-gray-300">
-                  <table className="w-full text-left border-collapse text-xs">
+                <div className="rounded-2xl border border-white/10 overflow-hidden overflow-x-auto print:border-gray-300">
+                  <table className="w-full min-w-[540px] text-left border-collapse text-xs">
                     <thead>
                       <tr className="bg-slate-900 border-b border-white/10 text-slate-400 uppercase tracking-wider text-[10px] font-bold print:bg-gray-200 print:text-black">
                         <th className="p-3.5">Course / Subject</th>
