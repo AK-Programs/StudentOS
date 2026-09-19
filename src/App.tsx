@@ -61,6 +61,8 @@ import DigitalGradebook from './components/DigitalGradebook';
 import DigitalReportCards from './components/DigitalReportCards';
 import PerformanceAnalytics from './components/PerformanceAnalytics';
 import ProfileCustomizer from './components/ProfileCustomizer';
+import { ProfileSettings } from './components/ProfileSettings';
+import { PromotionalBanners } from './components/PromotionalBanners';
 import AIQuotaManagerModal from './components/AIQuotaManagerModal';
 import { InstallAppModal, AppInstallSection } from './components/InstallAppModal';
 import { isApkInstalledOnDevice } from './config/appConfig';
@@ -6926,6 +6928,18 @@ ${roleLabel}: ${userQuery}`;
                     </div>
                   )}
 
+                  {/* Time-Controlled Promotional Banners */}
+                  <PromotionalBanners 
+                    onNavigateTab={(tab) => {
+                      if (tab === 'profile') {
+                        setActiveTab('profile');
+                        setProfileTab('settings');
+                      } else {
+                        setActiveTab(tab as any);
+                      }
+                    }} 
+                  />
+
                   {/* Glowing user banner */}
                   <div className={`p-8 rounded-3xl relative overflow-hidden backdrop-blur-md border shadow-xl ${currentUser.house === 'Ruby' ? 'bg-gradient-to-r from-red-950/40 to-slate-900 border-red-500/20' : currentUser.house === 'Emerald' ? 'bg-gradient-to-r from-emerald-950/40 to-slate-900 border-emerald-500/20' : currentUser.house === 'Sapphire' ? 'bg-gradient-to-r from-blue-950/40 to-slate-900 border-blue-500/20' : currentUser.house === 'Topaz' ? 'bg-gradient-to-r from-amber-950/40 to-slate-900 border-amber-500/20' : 'bg-gradient-to-r from-indigo-950/40 to-slate-900 border-white/10'}`}>
                     <div className="absolute top-0 right-0 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
@@ -8171,19 +8185,19 @@ ${activeNote.content}`);
                       {/* Profile Navigation Tabs for Non-Teachers */}
                       <div className="flex bg-slate-950 p-1.5 rounded-2xl border border-white/5 gap-1 mb-6 flex-wrap">
                         {(
-                          effectiveRole === 'student' ? ['overview', 'customizer', 'attendance', 'records', 'remarks', 'analytics'] : 
-                          effectiveRole === 'coordinator' ? ['overview', 'customizer', 'teacher_list', 'student_list', 'house_reports', 'section_reports', 'requests'] : 
-                          ['overview', 'customizer', 'students', 'teachers', 'coordinators', 'reports', 'requests']
+                          effectiveRole === 'student' ? ['overview', 'settings', 'attendance', 'records', 'remarks', 'analytics'] : 
+                          effectiveRole === 'coordinator' ? ['overview', 'settings', 'teacher_list', 'student_list', 'house_reports', 'section_reports', 'requests'] : 
+                          ['overview', 'settings', 'students', 'teachers', 'coordinators', 'reports', 'requests']
                         ).map((pt) => (
                           <button
                             key={pt}
                             onClick={() => setProfileTab(pt as any)}
                             className={`py-3 px-2 sm:px-4 flex-1 rounded-xl text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all min-w-[70px] ${
-                              profileTab === pt ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white hover:bg-white/5'
+                              profileTab === pt || (pt === 'settings' && profileTab === 'customizer') ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white hover:bg-white/5'
                             }`}
                           >
                             {pt === 'overview' && 'Overview'}
-                            {pt === 'customizer' && '✨ Custom Card'}
+                            {pt === 'settings' && '⚙️ Settings'}
                             
                             {/* Student Tabs */}
                             {pt === 'attendance' && 'Attendance'}
@@ -8210,14 +8224,19 @@ ${activeNote.content}`);
                         ))}
                       </div>
 
-                      {profileTab === 'customizer' && currentUser && (
+                      {(profileTab === 'settings' || profileTab === 'customizer') && currentUser && (
                         <div className="animate-fadeIn">
-                          <ProfileCustomizer 
-                            currentUser={currentUser} 
+                          <ProfileSettings 
+                            currentUser={currentUser}
+                            initialSubSection={profileTab === 'customizer' ? 'customization' : 'customization'}
+                            onUpdateUser={(updated) => {
+                              setCurrentUser(updated);
+                              try { localStorage.setItem('s_os_user', JSON.stringify(updated)); } catch (_) {}
+                            }}
                             onProfileUpdated={(updated) => {
                               setCurrentUser(updated);
                               try { localStorage.setItem('s_os_user', JSON.stringify(updated)); } catch (_) {}
-                              showNotification('✨ Profile card updated successfully!');
+                              showNotification('✨ Settings and profile updated successfully!');
                             }} 
                           />
                         </div>
