@@ -11,6 +11,34 @@ interface AcademicCalendarProps {
   effectiveRole?: UserRole;
 }
 
+// Pure local date formatting and parsing helpers (immune to timezone offset date-shifts)
+export function extractLocalDateString(val: string | Date | undefined | null): string {
+  if (!val) return '';
+  if (typeof val === 'string') {
+    const match = val.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match) {
+      return `${match[1]}-${match[2]}-${match[3]}`;
+    }
+  }
+  const d = typeof val === 'string' ? new Date(val) : val;
+  if (!d || isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+export function formatYMD(year: number, monthZeroIndexed: number, day: number): string {
+  const m = String(monthZeroIndexed + 1).padStart(2, '0');
+  const d = String(day).padStart(2, '0');
+  return `${year}-${m}-${d}`;
+}
+
+export function getTodayLocalString(): string {
+  const n = new Date();
+  return formatYMD(n.getFullYear(), n.getMonth(), n.getDate());
+}
+
 const EVENT_TYPE_COLORS: Record<CalendarEventType, { bg: string; text: string; border: string; badge: string }> = {
   EXAM: { bg: 'bg-rose-500/15', text: 'text-rose-400', border: 'border-rose-500/30', badge: 'bg-rose-500' },
   TEST: { bg: 'bg-amber-500/15', text: 'text-amber-400', border: 'border-amber-500/30', badge: 'bg-amber-500' },
@@ -36,9 +64,9 @@ export default function AcademicCalendar({ currentUser, effectiveRole }: Academi
   const [newTitle, setNewTitle] = useState('');
   const [newDesc, setNewDesc] = useState('');
   const [newType, setNewType] = useState<CalendarEventType>('EXAM');
-  const [newStartDate, setNewStartDate] = useState(new Date().toISOString().split('T')[0]);
+  const [newStartDate, setNewStartDate] = useState(getTodayLocalString());
   const [newStartTime, setNewStartTime] = useState('09:00');
-  const [newEndDate, setNewEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [newEndDate, setNewEndDate] = useState(getTodayLocalString());
   const [newEndTime, setNewEndTime] = useState('10:30');
   const [newAudience, setNewAudience] = useState<'all' | 'students' | 'teachers' | 'coordinators'>('all');
   const [newGrade, setNewGrade] = useState<string>('all');
@@ -97,26 +125,44 @@ export default function AcademicCalendar({ currentUser, effectiveRole }: Academi
     try {
       const { data, error } = await supabase
         .from('calendar_events')
-        .select('*')
-        .order('start_time', { ascending: true });
+        .select('*');
 
       if (data && data.length > 0) {
-        mapped = data.map((r: any) => ({
-          id: r.id,
-          title: r.title,
-          description: r.description,
-          startTime: r.start_time,
-          endTime: r.end_time,
-          eventType: r.event_type as CalendarEventType,
-          category: r.category,
-          color: r.color,
-          audience: r.audience || 'all',
-          classGrade: r.class_grade,
-          classSection: r.class_section,
-          createdBy: r.created_by,
-          createdByName: r.created_by_name,
-          createdAt: r.created_at
-        }));
+        mapped = data.map((r: any) => {
+          const rawStart = r.start_date || r.start_time || '';
+          const rawEnd = r.end_date || r.end_time || rawStart;
+          const rawCat = (r.category || r.event_type || 'Academic').toUpperCase();
+          const validTypes: CalendarEventType[] = ['EXAM', 'TEST', 'ASSIGNMENT', 'HOLIDAY', 'SCHOOL_EVENT', 'COMPETITION', 'MEETING', 'OTHER'];
+          
+          let eventType: CalendarEventType = 'OTHER';
+          if (rawCat.includes('EXAM')) eventType = 'EXAM';
+          else if (rawCat.includes('TEST') || rawCat.includes('QUIZ')) eventType = 'TEST';
+          else if (rawCat.includes('ASSIGN')) eventType = 'ASSIGNMENT';
+          else if (rawCat.includes('HOLIDAY') || rawCat.includes('VACATION') || rawCat.includes('BREAK')) eventType = 'HOLIDAY';
+          else if (rawCat.includes('EVENT') || rawCat.includes('ACADEMIC') || rawCat.includes('EXHIBITION')) eventType = 'SCHOOL_EVENT';
+          else if (rawCat.includes('COMPET')) eventType = 'COMPETITION';
+          else if (rawCat.includes('MEET') || rawCat.includes('CONFERENCE')) eventType = 'MEETING';
+          else if (validTypes.includes(rawCat as any)) eventType = rawCat as any;
+
+          const aud = (r.target_audience || r.audience || 'all').toLowerCase();
+
+          return {
+            id: r.id,
+            title: r.title || 'Untitled Event',
+            description: r.description || '',
+            startTime: rawStart,
+            endTime: rawEnd,
+            eventType,
+            category: r.category || eventType,
+            color: r.color,
+            audience: aud as any,
+            classGrade: (Array.isArray(r.target_grades) && r.target_grades.length > 0) ? r.target_grades[0] : (r.class_grade || null),
+            classSection: (Array.isArray(r.target_sections) && r.target_sections.length > 0) ? r.target_sections[0] : (r.class_section || null),
+            createdBy: r.created_by,
+            createdByName: r.created_by_name || 'Administration / Faculty',
+            createdAt: r.created_at
+          };
+        });
 
         try {
           localStorage.setItem('s_os_calendar_events', JSON.stringify(mapped));
@@ -162,10 +208,23 @@ export default function AcademicCalendar({ currentUser, effectiveRole }: Academi
         }
       } catch (_) {}
 
+      // Deduplicate events by id
+      const uniqueMap = new Map<string, CalendarEvent>();
+      mapped.forEach(e => {
+        if (!uniqueMap.has(e.id)) {
+          uniqueMap.set(e.id, e);
+        }
+      });
+      mapped = Array.from(uniqueMap.values());
+
       // Filter based on Student role and class
       if (effectiveRole === 'student') {
         mapped = mapped.filter(e => {
-          if (e.audience === 'teachers' || e.audience === 'coordinators') return false;
+          // School-wide events ('all', 'school', 'students') are ALWAYS visible to students
+          const aud = e.audience as string | undefined;
+          const isSchoolWide = !aud || aud === 'all' || aud === 'school' || aud === 'students';
+          if (isSchoolWide) return true;
+          if (aud === 'teachers' || aud === 'coordinators') return false;
           if (e.classGrade && e.classGrade !== 'all' && currentUser.grade && e.classGrade !== currentUser.grade) return false;
           return true;
         });
@@ -198,9 +257,9 @@ export default function AcademicCalendar({ currentUser, effectiveRole }: Academi
     setNewTitle('');
     setNewDesc('');
     setNewType('EXAM');
-    setNewStartDate(new Date().toISOString().split('T')[0]);
+    setNewStartDate(getTodayLocalString());
     setNewStartTime('09:00');
-    setNewEndDate(new Date().toISOString().split('T')[0]);
+    setNewEndDate(getTodayLocalString());
     setNewEndTime('10:30');
     setNewAudience('all');
     setNewGrade('all');
@@ -213,12 +272,14 @@ export default function AcademicCalendar({ currentUser, effectiveRole }: Academi
     setNewDesc(event.description || '');
     setNewType(event.eventType);
     
-    const startParts = event.startTime?.split('T') || [new Date().toISOString().split('T')[0], '09:00'];
-    const endParts = event.endTime?.split('T') || [startParts[0], '10:30'];
-    setNewStartDate(startParts[0]);
-    setNewStartTime(startParts[1]?.substring(0, 5) || '09:00');
-    setNewEndDate(endParts[0]);
-    setNewEndTime(endParts[1]?.substring(0, 5) || '10:30');
+    const localStart = extractLocalDateString(event.startTime) || getTodayLocalString();
+    const localEnd = extractLocalDateString(event.endTime) || localStart;
+    const timeMatch = event.startTime?.match(/T(\d{2}:\d{2})/);
+    const endTimeMatch = event.endTime?.match(/T(\d{2}:\d{2})/);
+    setNewStartDate(localStart);
+    setNewStartTime(timeMatch ? timeMatch[1] : '09:00');
+    setNewEndDate(localEnd);
+    setNewEndTime(endTimeMatch ? endTimeMatch[1] : '10:30');
     setNewAudience((event.audience as any) || 'all');
     setNewGrade(event.classGrade || 'all');
     setSelectedEvent(null);
@@ -238,6 +299,11 @@ export default function AcademicCalendar({ currentUser, effectiveRole }: Academi
       const eventPayload = {
         title: newTitle.trim(),
         description: newDesc.trim(),
+        start_date: newStartDate,
+        end_date: newEndDate,
+        category: newType,
+        target_audience: newAudience,
+        target_grades: newGrade === 'all' ? [] : [newGrade],
         event_type: newType,
         start_time: startDateTime,
         end_time: endDateTime,
@@ -390,46 +456,50 @@ export default function AcademicCalendar({ currentUser, effectiveRole }: Academi
     // Previous month filler days
     for (let i = firstDayIndex - 1; i >= 0; i--) {
       const dayNum = prevDaysInMonth - i;
-      const d = new Date(year, month - 1, dayNum);
+      const prevM = month === 0 ? 11 : month - 1;
+      const prevY = month === 0 ? year - 1 : year;
+      const dateStr = formatYMD(prevY, prevM, dayNum);
       cells.push({
-        dateStr: d.toISOString().split('T')[0],
+        dateStr,
         dayNum,
         isCurrentMonth: false,
-        date: d
+        date: new Date(prevY, prevM, dayNum)
       });
     }
 
     // Current month days
     for (let i = 1; i <= daysInMonth; i++) {
-      const d = new Date(year, month, i);
+      const dateStr = formatYMD(year, month, i);
       cells.push({
-        dateStr: d.toISOString().split('T')[0],
+        dateStr,
         dayNum: i,
         isCurrentMonth: true,
-        date: d
+        date: new Date(year, month, i)
       });
     }
 
     // Next month filler days to complete 35 or 42 grid cells
     const remaining = 42 - cells.length;
     for (let i = 1; i <= remaining; i++) {
-      const d = new Date(year, month + 1, i);
+      const nextM = month === 11 ? 0 : month + 1;
+      const nextY = month === 11 ? year + 1 : year;
+      const dateStr = formatYMD(nextY, nextM, i);
       cells.push({
-        dateStr: d.toISOString().split('T')[0],
+        dateStr,
         dayNum: i,
         isCurrentMonth: false,
-        date: d
+        date: new Date(nextY, nextM, i)
       });
     }
 
     return cells;
   }, [currentDate]);
 
-  // Today ISO
-  const todayStr = new Date().toISOString().split('T')[0];
+  // Today ISO (local, not shifted)
+  const todayStr = getTodayLocalString();
 
   return (
-    <div className="smart-glass p-6 md:p-8 rounded-3xl space-y-6 max-w-7xl mx-auto animate-fadeIn w-full">
+    <div className="smart-glass p-3.5 sm:p-6 md:p-8 rounded-2xl sm:rounded-3xl space-y-6 max-w-7xl mx-auto animate-fadeIn w-full">
       {/* Header Bar */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
@@ -544,7 +614,11 @@ export default function AcademicCalendar({ currentUser, effectiveRole }: Academi
             {monthData.map((cell, idx) => {
               const dayEvents = filteredEvents.filter(e => {
                 if (!e.startTime) return false;
-                return e.startTime.startsWith(cell.dateStr);
+                const startKey = extractLocalDateString(e.startTime);
+                const endKey = extractLocalDateString(e.endTime) || startKey;
+                if (cell.dateStr === startKey) return true;
+                if (cell.dateStr >= startKey && cell.dateStr <= endKey) return true;
+                return false;
               });
               const isToday = cell.dateStr === todayStr;
 
@@ -633,7 +707,7 @@ export default function AcademicCalendar({ currentUser, effectiveRole }: Academi
           ) : (
             filteredEvents.map(evt => {
               const color = EVENT_TYPE_COLORS[evt.eventType] || EVENT_TYPE_COLORS.OTHER;
-              const datePart = evt.startTime ? evt.startTime.split('T')[0] : 'Unspecified Date';
+              const datePart = evt.startTime ? extractLocalDateString(evt.startTime) : 'Unspecified Date';
               const timePart = evt.startTime && evt.startTime.includes('T') ? evt.startTime.split('T')[1].substring(0, 5) : '';
 
               return (
