@@ -300,7 +300,7 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
   return (
     <div className="space-y-6 animate-fadeIn">
       {/* Settings Header with App Environment Indicator */}
-      <div className="smart-glass p-5 sm:p-7 rounded-3xl space-y-4">
+      <div className="smart-glass p-4 sm:p-6 md:p-7 rounded-2xl sm:rounded-3xl space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="space-y-1">
             <div className="flex items-center gap-2 flex-wrap">
@@ -311,7 +311,7 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
                 {env.badgeLabel}
               </span>
             </div>
-            <h2 className="text-2xl font-black font-display text-white tracking-tight">
+            <h2 className="text-xl sm:text-2xl font-black font-display text-white tracking-tight">
               Settings & Personalization Studio
             </h2>
             <p className="text-xs text-slate-400 max-w-xl">
@@ -323,7 +323,7 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
             <button
               onClick={handleSaveAll}
               disabled={saving}
-              className="px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 active:scale-95 transition-all shadow-lg flex items-center gap-2 disabled:opacity-50"
+              className="w-full sm:w-auto justify-center px-4 py-2.5 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 active:scale-95 transition-all shadow-lg flex items-center gap-2 disabled:opacity-50"
             >
               {saving ? (
                 <>
