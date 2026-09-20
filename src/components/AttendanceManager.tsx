@@ -347,81 +347,84 @@ export default function AttendanceManager({ currentUser, effectiveRole }: { curr
 
       {/* TAB 1: MARK ATTENDANCE */}
       {activeTab === 'attendance' && (
-        <div className="space-y-6">
+        <div className="space-y-4 sm:space-y-6">
           {/* Controls Filter Bar */}
-          <div className="p-3.5 sm:p-4 bg-slate-950/60 border border-white/10 rounded-2xl flex flex-wrap items-center gap-3">
-            <div className="w-full sm:w-auto">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Date</label>
-              <input 
-                type="date" 
-                value={date} 
-                onChange={e => setDate(e.target.value)}
-                className="w-full sm:w-auto px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-xs focus:outline-none focus:border-indigo-500"
-              />
+          <div className="p-3.5 sm:p-4 bg-slate-950/60 border border-white/10 rounded-2xl space-y-3">
+            <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
+              <div>
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Date</label>
+                <input 
+                  type="date" 
+                  value={date} 
+                  onChange={e => setDate(e.target.value)} 
+                  className="w-full px-2.5 sm:px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-xs focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Grade</label>
+                <select 
+                  value={selectedGrade} 
+                  onChange={e => setSelectedGrade(e.target.value)} 
+                  className="w-full px-2.5 sm:px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-xs focus:outline-none focus:border-indigo-500"
+                >
+                  {['Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'].map(g => <option key={g} value={g}>{g}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Section</label>
+                <select 
+                  value={selectedSection} 
+                  onChange={e => setSelectedSection(e.target.value)} 
+                  className="w-full px-2.5 sm:px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-xs focus:outline-none focus:border-indigo-500"
+                >
+                  {['Solara', 'Astra', 'Elara', 'Vega'].map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Subject</label>
+                <select 
+                  value={selectedSubject} 
+                  onChange={e => setSelectedSubject(e.target.value)} 
+                  className="w-full px-2.5 sm:px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-xs focus:outline-none focus:border-indigo-500"
+                >
+                  {SUBJECT_LIST.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
             </div>
 
-            <div className="w-full sm:w-auto">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Grade</label>
-              <select 
-                value={selectedGrade} 
-                onChange={e => setSelectedGrade(e.target.value)} 
-                className="w-full sm:w-auto px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-xs focus:outline-none focus:border-indigo-500"
-              >
-                {['Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'].map(g => <option key={g} value={g}>{g}</option>)}
-              </select>
-            </div>
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-1 border-t border-white/5">
+              {/* Quick search */}
+              <div className="flex-1">
+                <input 
+                  type="text" 
+                  placeholder="Search student by name or email..." 
+                  value={searchQuery} 
+                  onChange={e => setSearchQuery(e.target.value)} 
+                  className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-xs placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                />
+              </div>
 
-            <div className="w-full sm:w-auto">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Section</label>
-              <select 
-                value={selectedSection} 
-                onChange={e => setSelectedSection(e.target.value)} 
-                className="w-full sm:w-auto px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-xs focus:outline-none focus:border-indigo-500"
-              >
-                {['Solara', 'Astra', 'Elara', 'Vega'].map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
+              {/* Action buttons */}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleMarkAllPresent}
+                  className="flex-1 sm:flex-initial px-3.5 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 font-bold text-xs border border-emerald-500/30 transition-all flex items-center justify-center gap-1.5"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                  <span>Mark All Present</span>
+                </button>
 
-            <div className="w-full sm:w-auto">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Subject</label>
-              <select 
-                value={selectedSubject} 
-                onChange={e => setSelectedSubject(e.target.value)} 
-                className="w-full sm:w-auto px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-xs focus:outline-none focus:border-indigo-500"
-              >
-                {SUBJECT_LIST.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
-            </div>
-
-            {/* Quick search */}
-            <div className="flex-1 min-w-[160px] w-full sm:w-auto">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Search Student</label>
-              <input
-                type="text"
-                placeholder="Search by student name..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-xs placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-              />
-            </div>
-
-            {/* Action buttons */}
-            <div className="flex flex-wrap items-end gap-2 w-full sm:w-auto sm:ml-auto pt-2 sm:pt-0">
-              <button
-                onClick={handleMarkAllPresent}
-                className="px-3.5 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 font-bold text-xs border border-emerald-500/30 transition-all flex items-center justify-center gap-1.5 flex-1 sm:flex-initial"
-              >
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                Mark All Present
-              </button>
-
-              <button
-                onClick={exportToCSV}
-                className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 font-bold text-xs border border-white/10 transition-all flex items-center justify-center gap-1.5 flex-1 sm:flex-initial"
-              >
-                <Download className="w-3.5 h-3.5" />
-                CSV Export
-              </button>
+                <button
+                  onClick={exportToCSV}
+                  className="flex-1 sm:flex-initial px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 font-bold text-xs border border-white/10 transition-all flex items-center justify-center gap-1.5"
+                >
+                  <Download className="w-3.5 h-3.5 shrink-0" />
+                  <span>CSV Export</span>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -460,8 +463,90 @@ export default function AttendanceManager({ currentUser, effectiveRole }: { curr
             </div>
           </div>
 
-          {/* Table */}
-          <div className="bg-slate-950/60 rounded-2xl sm:rounded-3xl border border-white/10 overflow-hidden overflow-x-auto shadow-xl">
+          {/* MOBILE VIEW: Touch-optimized Stacked Cards */}
+          <div className="block sm:hidden space-y-3">
+            {visibleStudents.map(u => {
+              const studentAtt = attendance[u.uid!]?.status;
+              const stats = historicalStats[u.uid!] || { present: 0, total: 0, percentage: 100 };
+              const isLow = stats.total >= 3 && stats.percentage < 75;
+
+              return (
+                <div key={u.uid} className="p-4 bg-slate-950/80 border border-white/10 rounded-2xl space-y-3 shadow-md">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      <div className="w-9 h-9 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold text-xs shrink-0 shadow-sm">
+                        {u.name ? u.name[0] : 'S'}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-bold text-white text-xs truncate">{u.name}</span>
+                          {isLow && (
+                            <span title="Low Attendance Alert (<75%)" className="text-amber-400 text-xs">⚠️</span>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-slate-400 truncate block">{u.email}</span>
+                      </div>
+                    </div>
+
+                    <div className="text-right shrink-0">
+                      <span className={`font-mono font-black text-xs ${isLow ? 'text-amber-400' : 'text-emerald-400'}`}>
+                        {stats.percentage}%
+                      </span>
+                      <span className="text-[9px] text-slate-500 block">({stats.present}/{stats.total})</span>
+                    </div>
+                  </div>
+
+                  {/* Current Status Pill & Quick Action Buttons */}
+                  <div className="grid grid-cols-3 gap-1.5 pt-1">
+                    <button 
+                      onClick={() => markStatus(u.uid!, 'present')} 
+                      className={`py-2 px-1 rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1 border ${
+                        studentAtt === 'present' 
+                          ? 'bg-emerald-500 border-emerald-400 text-slate-950 font-black shadow-md' 
+                          : 'bg-emerald-950/40 hover:bg-emerald-900/60 border-emerald-500/20 text-emerald-400'
+                      }`}
+                    >
+                      <Check className="w-3.5 h-3.5 shrink-0" />
+                      <span>Present</span>
+                    </button>
+
+                    <button 
+                      onClick={() => markStatus(u.uid!, 'late')} 
+                      className={`py-2 px-1 rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1 border ${
+                        studentAtt === 'late' 
+                          ? 'bg-amber-500 border-amber-400 text-slate-950 font-black shadow-md' 
+                          : 'bg-amber-950/40 hover:bg-amber-900/60 border-amber-500/20 text-amber-400'
+                      }`}
+                    >
+                      <Clock className="w-3.5 h-3.5 shrink-0" />
+                      <span>Late</span>
+                    </button>
+
+                    <button 
+                      onClick={() => markStatus(u.uid!, 'absent')} 
+                      className={`py-2 px-1 rounded-xl text-[11px] font-bold transition-all flex items-center justify-center gap-1 border ${
+                        studentAtt === 'absent' 
+                          ? 'bg-rose-500 border-rose-400 text-white font-black shadow-md' 
+                          : 'bg-rose-950/40 hover:bg-rose-900/60 border-rose-500/20 text-rose-400'
+                      }`}
+                    >
+                      <X className="w-3.5 h-3.5 shrink-0" />
+                      <span>Absent</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+
+            {visibleStudents.length === 0 && (
+              <div className="p-8 text-center bg-slate-950/60 border border-white/10 rounded-2xl text-slate-500 text-xs">
+                No students enrolled under {selectedGrade} - Section {selectedSection}.
+              </div>
+            )}
+          </div>
+
+          {/* TABLE VIEW (Tablet & Desktop): Clean responsive table with overflow protection */}
+          <div className="hidden sm:block bg-slate-950/60 rounded-2xl sm:rounded-3xl border border-white/10 overflow-hidden overflow-x-auto shadow-xl">
             <table className="w-full min-w-[580px] text-left border-collapse text-xs">
               <thead>
                 <tr className="bg-slate-900 border-b border-white/10 text-slate-400 uppercase tracking-wider text-[10px] font-bold">
@@ -618,15 +703,15 @@ export default function AttendanceManager({ currentUser, effectiveRole }: { curr
 
       {/* TAB 3: LEAVES */}
       {activeTab === 'leaves' && (
-        <div className="space-y-6">
-          <div className="flex justify-between items-center bg-slate-900/50 p-4 rounded-2xl border border-white/5">
+        <div className="space-y-4 sm:space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-900/50 p-4 rounded-2xl border border-white/5">
             <div>
               <h4 className="text-sm font-bold text-white">Student & Faculty Leaves</h4>
               <p className="text-xs text-slate-400">Process and authorize official leave applications.</p>
             </div>
             <button 
               onClick={() => setShowLeaveForm(!showLeaveForm)}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition-all"
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition-all self-start sm:self-auto"
             >
               + Apply for Leave
             </button>
