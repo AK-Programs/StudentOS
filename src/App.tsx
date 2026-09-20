@@ -9586,10 +9586,10 @@ Could you please guide me step-by-step on how to solve this, explaining the theo
 
                                 {/* Interactive Actions Line */}
                                 <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
-                                  <div className="flex flex-wrap gap-1.5 w-full">
+                                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 w-full">
                                     <button 
                                       onClick={() => handleDownloadMaterial(mat)}
-                                      className="text-[10px] font-bold text-white bg-indigo-600 hover:bg-slate-900 border border-indigo-500/20 px-3 py-1.5 rounded-xl transition-all flex items-center justify-center gap-1 flex-1 min-w-[30%] whitespace-nowrap overflow-hidden text-ellipsis"
+                                      className="text-[10px] font-bold text-white bg-indigo-600 hover:bg-slate-900 border border-indigo-500/20 px-2 sm:px-3 py-2 sm:py-1.5 rounded-xl transition-all flex items-center justify-center gap-1 w-full whitespace-nowrap overflow-hidden text-ellipsis shadow-sm"
                                     >
                                       <Download className="w-3.5 h-3.5 shrink-0" /> Open
                                     </button>
@@ -9599,28 +9599,28 @@ Could you please guide me step-by-step on how to solve this, explaining the theo
                                         setPreviewMaterial(mat);
                                         incrementViewsMaterial(mat);
                                       }}
-                                      className="text-[10px] font-bold text-white bg-indigo-500/20 hover:bg-indigo-600 border border-indigo-500/30 px-3 py-1.5 rounded-xl transition-all flex items-center justify-center gap-1 flex-1 min-w-[30%] whitespace-nowrap overflow-hidden text-ellipsis"
+                                      className="text-[10px] font-bold text-white bg-indigo-500/20 hover:bg-indigo-600 border border-indigo-500/30 px-2 sm:px-3 py-2 sm:py-1.5 rounded-xl transition-all flex items-center justify-center gap-1 w-full whitespace-nowrap overflow-hidden text-ellipsis shadow-sm"
                                     >
                                       🔍 Preview
                                     </button>
 
                                     <button 
                                       onClick={() => setShareMaterial(shareMaterial === mat ? null : mat)}
-                                      className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 hover:bg-emerald-600 hover:text-white border border-emerald-500/20 px-3 py-1.5 rounded-xl transition-all flex items-center justify-center gap-1 flex-1 min-w-[30%] whitespace-nowrap overflow-hidden text-ellipsis"
+                                      className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 hover:bg-emerald-600 hover:text-white border border-emerald-500/20 px-2 sm:px-3 py-2 sm:py-1.5 rounded-xl transition-all flex items-center justify-center gap-1 w-full whitespace-nowrap overflow-hidden text-ellipsis shadow-sm"
                                     >
                                       <span>🟢</span> Share
                                     </button>
 
                                     <button 
                                       onClick={() => toggleLikeMaterial(mat)}
-                                      className={`text-[10px] font-bold px-3 py-1.5 rounded-xl transition-all flex items-center justify-center gap-1 border flex-1 min-w-[30%] whitespace-nowrap overflow-hidden text-ellipsis ${isLiked ? 'bg-rose-500/10 border-rose-500/30 text-rose-400' : 'bg-white/5 border-white/5 hover:border-rose-500/20 text-slate-300'}`}
+                                      className={`text-[10px] font-bold px-2 sm:px-3 py-2 sm:py-1.5 rounded-xl transition-all flex items-center justify-center gap-1 border w-full whitespace-nowrap overflow-hidden text-ellipsis shadow-sm ${isLiked ? 'bg-rose-500/10 border-rose-500/30 text-rose-400' : 'bg-white/5 border-white/5 hover:border-rose-500/20 text-slate-300'}`}
                                     >
                                       <Heart className={`w-3.5 h-3.5 shrink-0 ${isLiked ? 'fill-current text-rose-450' : ''}`} /> {mat.likes || 0}
                                     </button>
 
                                     <button 
                                       onClick={() => toggleBookmarkMaterial(mat.id)}
-                                      className={`text-[10px] font-bold px-3 py-1.5 rounded-xl transition-all flex items-center justify-center gap-1 border flex-1 min-w-[30%] whitespace-nowrap overflow-hidden text-ellipsis ${isSaved ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' : 'bg-white/5 border-white/5 text-slate-300 hover:border-amber-400/20'}`}
+                                      className={`text-[10px] font-bold px-2 sm:px-3 py-2 sm:py-1.5 rounded-xl transition-all flex items-center justify-center gap-1 border w-full whitespace-nowrap overflow-hidden text-ellipsis shadow-sm ${isSaved ? 'bg-amber-500/10 border-amber-500/30 text-amber-400' : 'bg-white/5 border-white/5 text-slate-300 hover:border-amber-400/20'}`}
                                     >
                                       <Bookmark className={`w-3.5 h-3.5 shrink-0 ${isSaved ? 'fill-current' : ''}`} /> {isSaved ? 'Saved' : 'Save'}
                                     </button>
@@ -9631,7 +9631,7 @@ Could you please guide me step-by-step on how to solve this, explaining the theo
                                         // Increment views passively when engaging with comment threads
                                         incrementViewsMaterial(mat);
                                       }}
-                                      className="text-[10px] font-bold bg-white/5 border border-white/5 text-slate-300 hover:border-indigo-400/20 px-3 py-1.5 rounded-xl transition-all flex items-center justify-center gap-1 flex-1 min-w-[30%] whitespace-nowrap overflow-hidden text-ellipsis"
+                                      className="text-[10px] font-bold bg-white/5 border border-white/5 text-slate-300 hover:border-indigo-400/20 px-2 sm:px-3 py-2 sm:py-1.5 rounded-xl transition-all flex items-center justify-center gap-1 w-full whitespace-nowrap overflow-hidden text-ellipsis shadow-sm"
                                     >
                                       <MessageSquare className="w-3.5 h-3.5 text-indigo-400 shrink-0" /> ({mat.comments?.length || 0})
                                     </button>
@@ -11698,4 +11698,4 @@ Could you please guide me step-by-step on how to solve this, explaining the theo
 
     </div>
   );
-} 
+}
