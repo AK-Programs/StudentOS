@@ -9166,14 +9166,14 @@ Could you please guide me step-by-step on how to solve this, explaining the theo
                 <div className="space-y-8 animate-fadeIn">
                   
                   {/* Subject and Statistics Banner */}
-                  <div className="smart-glass p-6 sm:p-8 rounded-3xl space-y-4">
+                  <div className="smart-glass p-4 sm:p-6 md:p-8 rounded-2xl sm:rounded-3xl space-y-4">
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                       <div className="space-y-1">
                         <span className="text-[10px] font-black uppercase text-indigo-400 bg-indigo-500/10 px-3 py-1 rounded-full border border-indigo-500/20 tracking-wider">Academic Material Hub</span>
-                        <h3 className="text-2xl font-black font-display text-white">Central Knowledge Vault</h3>
+                        <h3 className="text-xl sm:text-2xl font-black font-display text-white">Central Knowledge Vault</h3>
                         <p className="text-xs text-slate-400 max-w-xl">Google Drive + Classroom Notes. Share syllabus outlines, assignment briefs, and questions to accumulate House standings!</p>
                       </div>
-                      <div className="flex flex-wrap gap-2.5">
+                      <div className="flex flex-col sm:flex-row flex-wrap gap-2.5">
                           <button 
                             onClick={async () => {
                               showNotification("Starting URL Repair & Deduplication...");
@@ -9240,14 +9240,14 @@ Could you please guide me step-by-step on how to solve this, explaining the theo
                                 showNotification("Repair failed.");
                               }
                             }}
-                            className="text-xs font-bold bg-amber-600/20 hover:bg-amber-600/40 text-amber-500 border border-amber-500/30 px-4 py-2.5 rounded-xl transition-all shadow-md active:scale-95 flex items-center gap-1.5"
+                            className="text-xs font-bold bg-amber-600/20 hover:bg-amber-600/40 text-amber-500 border border-amber-500/30 px-4 py-2.5 rounded-xl transition-all shadow-md active:scale-95 flex items-center justify-center gap-1.5 w-full sm:w-auto"
                           >
                             🔧 Repair & Deduplicate
                           </button>
 
                         <button 
                           onClick={() => setOpenUploadModal(true)}
-                          className="text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2.5 rounded-xl transition-all shadow-md active:scale-95 flex items-center gap-1.5"
+                          className="text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2.5 rounded-xl transition-all shadow-md active:scale-95 flex items-center justify-center gap-1.5 w-full sm:w-auto"
                         >
                           <Plus className="w-4 h-4" /> Share Resource
                         </button>
