@@ -370,11 +370,11 @@ export default function DigitalGradebook({ currentUser, effectiveRole }: Digital
     const studentGpaPct = maxPossiblePoints > 0 ? Math.round((totalStudentPoints / maxPossiblePoints) * 100) : 0;
 
     return (
-      <div className="smart-glass p-6 md:p-8 rounded-3xl space-y-6 max-w-6xl mx-auto animate-fadeIn w-full">
+      <div className="smart-glass p-3.5 sm:p-6 md:p-8 rounded-2xl sm:rounded-3xl space-y-4 sm:space-y-6 max-w-6xl mx-auto animate-fadeIn w-full">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="text-2xl font-black text-white tracking-tight">Student Academic Gradebook</h3>
+              <h3 className="text-xl sm:text-2xl font-black text-white tracking-tight">Student Academic Gradebook</h3>
               <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
                 Official Grades
               </span>
@@ -384,9 +384,9 @@ export default function DigitalGradebook({ currentUser, effectiveRole }: Digital
             </p>
           </div>
 
-          <div className="p-4 bg-slate-950/60 rounded-2xl border border-white/5 flex items-center gap-4">
+          <div className="p-3.5 sm:p-4 bg-slate-950/60 rounded-2xl border border-white/5 flex items-center gap-4 w-full md:w-auto justify-around md:justify-start">
             <div className="text-center">
-              <span className="text-3xl font-black text-emerald-400 font-mono block">{studentGpaPct}%</span>
+              <span className="text-2xl sm:text-3xl font-black text-emerald-400 font-mono block">{studentGpaPct}%</span>
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Overall Avg</span>
             </div>
             <div className="h-8 w-px bg-white/10" />
@@ -398,7 +398,7 @@ export default function DigitalGradebook({ currentUser, effectiveRole }: Digital
         </div>
 
         {myEntries.length === 0 ? (
-          <div className="p-12 text-center bg-slate-950/60 border border-white/5 rounded-2xl space-y-2">
+          <div className="p-8 sm:p-12 text-center bg-slate-950/60 border border-white/5 rounded-2xl space-y-2">
             <Award className="w-8 h-8 text-slate-600 mx-auto" />
             <p className="text-sm font-bold text-slate-300">No grades recorded yet</p>
             <p className="text-xs text-slate-500 max-w-sm mx-auto">
@@ -406,34 +406,58 @@ export default function DigitalGradebook({ currentUser, effectiveRole }: Digital
             </p>
           </div>
         ) : (
-          <div className="bg-slate-950/60 rounded-3xl border border-white/10 overflow-hidden shadow-xl">
-            <table className="w-full text-left border-collapse text-xs">
-              <thead>
-                <tr className="bg-slate-900 border-b border-white/10 text-slate-400 uppercase tracking-wider text-[10px] font-bold">
-                  <th className="p-4">Subject</th>
-                  <th className="p-4">Score</th>
-                  <th className="p-4">Percentage</th>
-                  <th className="p-4">Grade</th>
-                  <th className="p-4">Teacher Remark</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/5 text-slate-300">
-                {myEntries.map(e => (
-                  <tr key={e.id} className="hover:bg-slate-900/40">
-                    <td className="p-4 font-bold text-white">{e.subject}</td>
-                    <td className="p-4 font-mono font-bold text-slate-200">{e.score} / {e.maxScore}</td>
-                    <td className="p-4 font-mono text-emerald-400 font-bold">{e.percentage}%</td>
-                    <td className="p-4">
-                      <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
-                        {e.letterGrade}
-                      </span>
-                    </td>
-                    <td className="p-4 text-slate-400 italic">{e.comment || '—'}</td>
+          <>
+            {/* Mobile Card List */}
+            <div className="block sm:hidden space-y-3">
+              {myEntries.map(e => (
+                <div key={e.id} className="p-4 bg-slate-950/80 border border-white/10 rounded-2xl space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="font-bold text-white text-xs">{e.subject}</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
+                      {e.letterGrade}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs pt-1 border-t border-white/5">
+                    <span className="font-mono text-slate-300">Score: {e.score} / {e.maxScore}</span>
+                    <span className="font-mono font-bold text-emerald-400">{e.percentage}%</span>
+                  </div>
+                  {e.comment && (
+                    <p className="text-[11px] text-slate-400 italic pt-1 border-t border-white/5">"{e.comment}"</p>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop Table View */}
+            <div className="hidden sm:block bg-slate-950/60 rounded-3xl border border-white/10 overflow-hidden overflow-x-auto shadow-xl">
+              <table className="w-full text-left border-collapse text-xs min-w-[500px]">
+                <thead>
+                  <tr className="bg-slate-900 border-b border-white/10 text-slate-400 uppercase tracking-wider text-[10px] font-bold">
+                    <th className="p-4">Subject</th>
+                    <th className="p-4">Score</th>
+                    <th className="p-4">Percentage</th>
+                    <th className="p-4">Grade</th>
+                    <th className="p-4">Teacher Remark</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-white/5 text-slate-300">
+                  {myEntries.map(e => (
+                    <tr key={e.id} className="hover:bg-slate-900/40">
+                      <td className="p-4 font-bold text-white">{e.subject}</td>
+                      <td className="p-4 font-mono font-bold text-slate-200">{e.score} / {e.maxScore}</td>
+                      <td className="p-4 font-mono text-emerald-400 font-bold">{e.percentage}%</td>
+                      <td className="p-4">
+                        <span className="px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
+                          {e.letterGrade}
+                        </span>
+                      </td>
+                      <td className="p-4 text-slate-400 italic">{e.comment || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </div>
     );
@@ -491,52 +515,54 @@ export default function DigitalGradebook({ currentUser, effectiveRole }: Digital
       )}
 
       {/* Control Selector Bar */}
-      <div className="p-4 bg-slate-950/60 border border-white/10 rounded-2xl flex flex-wrap items-center gap-3">
-        <div>
-          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Grade</label>
-          <select 
-            value={selectedGrade} 
-            onChange={e => setSelectedGrade(e.target.value)} 
-            className="px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-xs focus:outline-none focus:border-indigo-500"
-          >
-            {['Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'].map(g => <option key={g} value={g}>{g}</option>)}
-          </select>
+      <div className="p-3.5 sm:p-4 bg-slate-950/60 border border-white/10 rounded-2xl space-y-3">
+        <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-2.5">
+          <div>
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Grade</label>
+            <select 
+              value={selectedGrade} 
+              onChange={e => setSelectedGrade(e.target.value)} 
+              className="w-full px-2.5 sm:px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-xs focus:outline-none focus:border-indigo-500"
+            >
+              {['Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'].map(g => <option key={g} value={g}>{g}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Section</label>
+            <select 
+              value={selectedSection} 
+              onChange={e => setSelectedSection(e.target.value)} 
+              className="w-full px-2.5 sm:px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-xs focus:outline-none focus:border-indigo-500"
+            >
+              {['Solara', 'Astra', 'Elara', 'Vega'].map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Subject</label>
+            <select 
+              value={selectedSubject} 
+              onChange={e => setSelectedSubject(e.target.value)} 
+              className="w-full px-2.5 sm:px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-xs focus:outline-none focus:border-indigo-500"
+            >
+              {SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Assessment Period</label>
+            <select 
+              value={selectedPeriod} 
+              onChange={e => setSelectedPeriod(e.target.value)} 
+              className="w-full px-2.5 sm:px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-xs focus:outline-none focus:border-indigo-500"
+            >
+              {ASSESSMENT_PERIODS.map(p => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </div>
         </div>
 
-        <div>
-          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Section</label>
-          <select 
-            value={selectedSection} 
-            onChange={e => setSelectedSection(e.target.value)} 
-            className="px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-xs focus:outline-none focus:border-indigo-500"
-          >
-            {['Solara', 'Astra', 'Elara', 'Vega'].map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </div>
-
-        <div>
-          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Subject</label>
-          <select 
-            value={selectedSubject} 
-            onChange={e => setSelectedSubject(e.target.value)} 
-            className="px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-xs focus:outline-none focus:border-indigo-500"
-          >
-            {SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </div>
-
-        <div>
-          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Assessment Period</label>
-          <select 
-            value={selectedPeriod} 
-            onChange={e => setSelectedPeriod(e.target.value)} 
-            className="px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-xs focus:outline-none focus:border-indigo-500"
-          >
-            {ASSESSMENT_PERIODS.map(p => <option key={p} value={p}>{p}</option>)}
-          </select>
-        </div>
-
-        <div className="flex-1 min-w-[200px]">
+        <div className="pt-2 border-t border-white/5">
           <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Active Assessment</label>
           <select
             value={selectedAssessmentId}
@@ -559,36 +585,36 @@ export default function DigitalGradebook({ currentUser, effectiveRole }: Digital
 
       {/* Class Statistics Row */}
       {currentAssessment && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="p-3.5 bg-slate-950/60 border border-white/5 rounded-2xl">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3">
+          <div className="p-3 sm:p-3.5 bg-slate-950/60 border border-white/5 rounded-2xl">
             <span className="text-[10px] font-bold uppercase text-slate-400 block">Class Average</span>
-            <span className="text-xl font-black text-emerald-400 font-mono mt-0.5 block">{stats.average}%</span>
+            <span className="text-lg sm:text-xl font-black text-emerald-400 font-mono mt-0.5 block">{stats.average}%</span>
             <span className="text-[10px] text-slate-500 mt-0.5 block">{computeLetterGrade(stats.average)} Grade Equivalent</span>
           </div>
 
-          <div className="p-3.5 bg-slate-950/60 border border-white/5 rounded-2xl">
+          <div className="p-3 sm:p-3.5 bg-slate-950/60 border border-white/5 rounded-2xl">
             <span className="text-[10px] font-bold uppercase text-slate-400 block">Passing Rate (&gt;=50%)</span>
-            <span className="text-xl font-black text-indigo-400 font-mono mt-0.5 block">{stats.passingPct}%</span>
+            <span className="text-lg sm:text-xl font-black text-indigo-400 font-mono mt-0.5 block">{stats.passingPct}%</span>
             <span className="text-[10px] text-slate-500 mt-0.5 block">Pass/Fail Threshold</span>
           </div>
 
-          <div className="p-3.5 bg-slate-950/60 border border-white/5 rounded-2xl">
+          <div className="p-3 sm:p-3.5 bg-slate-950/60 border border-white/5 rounded-2xl">
             <span className="text-[10px] font-bold uppercase text-slate-400 block">Highest Score</span>
-            <span className="text-xl font-black text-white font-mono mt-0.5 block">{stats.highest} / {currentAssessment.maxScore}</span>
+            <span className="text-lg sm:text-xl font-black text-white font-mono mt-0.5 block">{stats.highest} / {currentAssessment.maxScore}</span>
             <span className="text-[10px] text-slate-500 mt-0.5 block">Top Performance</span>
           </div>
 
           <div className="p-3.5 bg-slate-950/60 border border-white/5 rounded-2xl">
             <span className="text-[10px] font-bold uppercase text-slate-400 block">Lowest Score</span>
-            <span className="text-xl font-black text-slate-300 font-mono mt-0.5 block">{stats.lowest} / {currentAssessment.maxScore}</span>
+            <span className="text-lg sm:text-xl font-black text-slate-300 font-mono mt-0.5 block">{stats.lowest} / {currentAssessment.maxScore}</span>
             <span className="text-[10px] text-slate-500 mt-0.5 block">Needs Scaffolding</span>
           </div>
         </div>
       )}
 
-      {/* Grade Entry Matrix Table */}
+      {/* Grade Entry Matrix */}
       {!currentAssessment ? (
-        <div className="p-12 text-center bg-slate-950/60 border border-white/5 rounded-2xl space-y-3">
+        <div className="p-8 sm:p-12 text-center bg-slate-950/60 border border-white/5 rounded-2xl space-y-3">
           <BookOpen className="w-8 h-8 text-slate-600 mx-auto" />
           <p className="text-sm font-bold text-slate-300">No Assessment Selected</p>
           <p className="text-xs text-slate-500 max-w-sm mx-auto">
@@ -602,90 +628,158 @@ export default function DigitalGradebook({ currentUser, effectiveRole }: Digital
           </button>
         </div>
       ) : (
-        <div className="bg-slate-950/60 rounded-3xl border border-white/10 overflow-hidden shadow-xl">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="bg-slate-900 border-b border-white/10 text-slate-400 uppercase tracking-wider text-[10px] font-bold">
-                <th className="p-4">Student</th>
-                <th className="p-4">Score (Max: {currentAssessment.maxScore})</th>
-                <th className="p-4">Percentage</th>
-                <th className="p-4">Grade</th>
-                <th className="p-4">Teacher Remark</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5 text-slate-300">
-              {students.map(s => {
-                const entry = entries[s.uid!];
-                const score = entry ? entry.score : '';
-                const pct = entry ? entry.percentage : 0;
-                const letter = entry ? entry.letterGrade : '—';
+        <>
+          {/* Mobile Card List for Grade Entry */}
+          <div className="block sm:hidden space-y-3">
+            {students.map(s => {
+              const entry = entries[s.uid!];
+              const score = entry ? entry.score : '';
+              const pct = entry ? entry.percentage : 0;
+              const letter = entry ? entry.letterGrade : '—';
 
-                return (
-                  <tr key={s.uid} className="hover:bg-slate-900/40">
-                    <td className="p-4">
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-7 h-7 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold text-xs">
-                          {s.name ? s.name[0] : 'S'}
-                        </div>
-                        <div>
-                          <span className="font-bold text-white text-xs block">{s.name}</span>
-                          <span className="text-[10px] text-slate-400">{s.email}</span>
-                        </div>
+              return (
+                <div key={s.uid} className="p-4 bg-slate-950/80 border border-white/10 rounded-2xl space-y-3 shadow-md">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-8 h-8 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold text-xs shrink-0">
+                        {s.name ? s.name[0] : 'S'}
                       </div>
-                    </td>
-
-                    <td className="p-4">
-                      <div className="flex items-center gap-1.5">
-                        <input
-                          type="number"
-                          min={0}
-                          max={currentAssessment.maxScore}
-                          value={score}
-                          onChange={e => handleScoreChange(s.uid!, s.name, e.target.value)}
-                          placeholder="0"
-                          className="w-20 px-3 py-1.5 bg-slate-900 border border-white/10 rounded-xl text-white font-mono font-bold focus:outline-none focus:border-indigo-500"
-                        />
-                        <span className="text-slate-500 font-mono text-xs">/ {currentAssessment.maxScore}</span>
+                      <div className="min-w-0">
+                        <span className="font-bold text-white text-xs block truncate">{s.name}</span>
+                        <span className="text-[10px] text-slate-400 block truncate">{s.email}</span>
                       </div>
-                    </td>
+                    </div>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase font-mono shrink-0 ${
+                      letter === 'A+' || letter === 'A' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
+                      letter === 'B' || letter === 'C' ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30' :
+                      letter === 'D' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
+                      'bg-slate-800 text-slate-400'
+                    }`}>
+                      {letter} {entry ? `(${pct}%)` : ''}
+                    </span>
+                  </div>
 
-                    <td className="p-4 font-mono font-bold text-emerald-400">
-                      {entry ? `${pct}%` : '—'}
-                    </td>
-
-                    <td className="p-4">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase font-mono ${
-                        letter === 'A+' || letter === 'A' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
-                        letter === 'B' || letter === 'C' ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30' :
-                        letter === 'D' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
-                        'bg-slate-800 text-slate-400'
-                      }`}>
-                        {letter}
-                      </span>
-                    </td>
-
-                    <td className="p-4">
+                  <div className="grid grid-cols-2 gap-2 pt-1 border-t border-white/5">
+                    <div>
+                      <label className="text-[10px] text-slate-400 font-bold block mb-1">Score (Max {currentAssessment.maxScore})</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={currentAssessment.maxScore}
+                        value={score}
+                        onChange={e => handleScoreChange(s.uid!, s.name, e.target.value)}
+                        placeholder="0"
+                        className="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-white font-mono font-bold focus:outline-none focus:border-indigo-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-slate-400 font-bold block mb-1">Teacher Remark</label>
                       <input
                         type="text"
                         value={entry?.comment || ''}
                         onChange={e => handleCommentChange(s.uid!, s.name, e.target.value)}
-                        placeholder="Excellent analysis, review lab notes..."
-                        className="w-full max-w-xs px-3 py-1.5 bg-slate-900 border border-white/10 rounded-xl text-white text-xs placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                        placeholder="Remarks..."
+                        className="w-full px-3 py-2 bg-slate-900 border border-white/10 rounded-xl text-white text-xs placeholder-slate-500 focus:outline-none focus:border-indigo-500"
                       />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+
+            {students.length === 0 && (
+              <div className="p-8 text-center bg-slate-950/60 border border-white/10 rounded-2xl text-slate-500 text-xs">
+                No students found under {selectedGrade} - Section {selectedSection}.
+              </div>
+            )}
+          </div>
+
+          {/* Desktop Table View */}
+          <div className="hidden sm:block bg-slate-950/60 rounded-3xl border border-white/10 overflow-hidden overflow-x-auto shadow-xl">
+            <table className="w-full text-left border-collapse text-xs min-w-[550px]">
+              <thead>
+                <tr className="bg-slate-900 border-b border-white/10 text-slate-400 uppercase tracking-wider text-[10px] font-bold">
+                  <th className="p-4">Student</th>
+                  <th className="p-4">Score (Max: {currentAssessment.maxScore})</th>
+                  <th className="p-4">Percentage</th>
+                  <th className="p-4">Grade</th>
+                  <th className="p-4">Teacher Remark</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5 text-slate-300">
+                {students.map(s => {
+                  const entry = entries[s.uid!];
+                  const score = entry ? entry.score : '';
+                  const pct = entry ? entry.percentage : 0;
+                  const letter = entry ? entry.letterGrade : '—';
+
+                  return (
+                    <tr key={s.uid} className="hover:bg-slate-900/40">
+                      <td className="p-4">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-7 h-7 rounded-full bg-indigo-600 flex items-center justify-center text-white font-bold text-xs">
+                            {s.name ? s.name[0] : 'S'}
+                          </div>
+                          <div>
+                            <span className="font-bold text-white text-xs block">{s.name}</span>
+                            <span className="text-[10px] text-slate-400">{s.email}</span>
+                          </div>
+                        </div>
+                      </td>
+
+                      <td className="p-4">
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="number"
+                            min={0}
+                            max={currentAssessment.maxScore}
+                            value={score}
+                            onChange={e => handleScoreChange(s.uid!, s.name, e.target.value)}
+                            placeholder="0"
+                            className="w-20 px-3 py-1.5 bg-slate-900 border border-white/10 rounded-xl text-white font-mono font-bold focus:outline-none focus:border-indigo-500"
+                          />
+                          <span className="text-slate-500 font-mono text-xs">/ {currentAssessment.maxScore}</span>
+                        </div>
+                      </td>
+
+                      <td className="p-4 font-mono font-bold text-emerald-400">
+                        {entry ? `${pct}%` : '—'}
+                      </td>
+
+                      <td className="p-4">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase font-mono ${
+                          letter === 'A+' || letter === 'A' ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
+                          letter === 'B' || letter === 'C' ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30' :
+                          letter === 'D' ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' :
+                          'bg-slate-800 text-slate-400'
+                        }`}>
+                          {letter}
+                        </span>
+                      </td>
+
+                      <td className="p-4">
+                        <input
+                          type="text"
+                          value={entry?.comment || ''}
+                          onChange={e => handleCommentChange(s.uid!, s.name, e.target.value)}
+                          placeholder="Excellent analysis, review lab notes..."
+                          className="w-full max-w-xs px-3 py-1.5 bg-slate-900 border border-white/10 rounded-xl text-white text-xs placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+                        />
+                      </td>
+                    </tr>
+                  );
+                })}
+                {students.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="p-12 text-center text-slate-500 text-xs">
+                      No students found under {selectedGrade} - Section {selectedSection}.
                     </td>
                   </tr>
-                );
-              })}
-              {students.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="p-12 text-center text-slate-500 text-xs">
-                    No students found under {selectedGrade} - Section {selectedSection}.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
       )}
 
       {/* MODAL: CREATE ASSESSMENT */}
