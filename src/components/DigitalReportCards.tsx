@@ -294,43 +294,45 @@ export default function DigitalReportCards({ currentUser, effectiveRole }: Digit
 
       {/* Selector & Generator Bar */}
       {!isStudent && (
-        <div className="p-4 bg-slate-950/60 border border-white/10 rounded-2xl flex flex-wrap items-center gap-3">
-          <div>
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Academic Period</label>
-            <select
-              value={selectedPeriod}
-              onChange={e => setSelectedPeriod(e.target.value)}
-              className="px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-xs focus:outline-none focus:border-indigo-500"
-            >
-              {ACADEMIC_PERIODS.map(p => <option key={p} value={p}>{p}</option>)}
-            </select>
-          </div>
+        <div className="p-3.5 sm:p-4 bg-slate-950/60 border border-white/10 rounded-2xl space-y-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            <div>
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Academic Period</label>
+              <select
+                value={selectedPeriod}
+                onChange={e => setSelectedPeriod(e.target.value)}
+                className="w-full px-2.5 sm:px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-xs focus:outline-none focus:border-indigo-500"
+              >
+                {ACADEMIC_PERIODS.map(p => <option key={p} value={p}>{p}</option>)}
+              </select>
+            </div>
 
-          <div>
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Grade</label>
-            <select
-              value={selectedGrade}
-              onChange={e => setSelectedGrade(e.target.value)}
-              className="px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-xs focus:outline-none focus:border-indigo-500"
-            >
-              {['Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'].map(g => <option key={g} value={g}>{g}</option>)}
-            </select>
-          </div>
+            <div>
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Grade</label>
+              <select
+                value={selectedGrade}
+                onChange={e => setSelectedGrade(e.target.value)}
+                className="w-full px-2.5 sm:px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-xs focus:outline-none focus:border-indigo-500"
+              >
+                {['Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'].map(g => <option key={g} value={g}>{g}</option>)}
+              </select>
+            </div>
 
-          <div>
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Section</label>
-            <select
-              value={selectedSection}
-              onChange={e => setSelectedSection(e.target.value)}
-              className="px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-xs focus:outline-none focus:border-indigo-500"
-            >
-              {['Solara', 'Astra', 'Elara', 'Vega'].map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
+            <div>
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Section</label>
+              <select
+                value={selectedSection}
+                onChange={e => setSelectedSection(e.target.value)}
+                className="w-full px-2.5 sm:px-3 py-2 rounded-xl bg-slate-900 border border-white/10 text-white text-xs focus:outline-none focus:border-indigo-500"
+              >
+                {['Solara', 'Astra', 'Elara', 'Vega'].map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
           </div>
 
           {/* Quick Generate Action */}
-          <div className="flex-1 min-w-[220px]">
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Batch Generate</label>
+          <div className="pt-2 border-t border-white/5">
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Batch / Individual Generate</label>
             <select
               value={generatingForStudent}
               onChange={e => {
