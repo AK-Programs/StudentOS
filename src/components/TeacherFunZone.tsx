@@ -294,7 +294,7 @@ export const TeacherFunZone: React.FC<TeacherFunZoneProps> = ({ currentUser }) =
   };
 
   return (
-    <div className={`min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans transition-all ${isFullscreen ? 'p-2' : 'p-6 max-w-7xl mx-auto space-y-6'}`}>
+    <div className={`min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans transition-all ${isFullscreen ? 'p-2' : 'p-3.5 sm:p-6 max-w-7xl mx-auto space-y-6'}`}>
       
       {/* Celebration Banner */}
       <AnimatePresence>
@@ -317,7 +317,7 @@ export const TeacherFunZone: React.FC<TeacherFunZoneProps> = ({ currentUser }) =
       </AnimatePresence>
 
       {/* Title & House Scoreboard Bar */}
-      <div className="bg-gradient-to-r from-purple-900 via-indigo-900 to-slate-900 p-6 rounded-3xl border border-purple-500/30 shadow-2xl flex flex-col lg:flex-row items-center justify-between gap-6">
+      <div className="bg-gradient-to-r from-purple-900 via-indigo-900 to-slate-900 p-4 sm:p-6 rounded-2xl sm:rounded-3xl border border-purple-500/30 shadow-2xl flex flex-col lg:flex-row items-center justify-between gap-6">
         <div>
           <div className="flex items-center gap-2 mb-2">
             <span className="px-3 py-1 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-1.5">
@@ -430,7 +430,7 @@ export const TeacherFunZone: React.FC<TeacherFunZoneProps> = ({ currentUser }) =
       </div>
 
       {/* GAME STAGE */}
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl flex-1 flex flex-col justify-center">
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl sm:rounded-3xl p-4 sm:p-6 md:p-8 shadow-2xl flex-1 flex flex-col justify-center">
         
         {/* GAME 1: RANDOM STUDENT PICKER */}
         {activeGame === 'picker' && (
