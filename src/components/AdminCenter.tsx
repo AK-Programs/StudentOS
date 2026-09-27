@@ -252,7 +252,7 @@ export default function AdminCenter({ currentUser, showNotification, profileTab 
   const isSuperAdmin = currentUser.role === 'super_admin';
 
   return (
-    <div className="smart-glass p-6 md:p-8 rounded-3xl space-y-6 max-w-5xl mx-auto animate-fadeIn w-full">
+    <div className="smart-glass p-3.5 sm:p-6 md:p-8 rounded-2xl sm:rounded-3xl space-y-6 max-w-5xl mx-auto animate-fadeIn w-full">
 
       {/* Database Setup SQL Modal */}
       {setupSql && (
