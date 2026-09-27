@@ -336,12 +336,12 @@ export const SubstituteHub = ({ currentUser, effectiveRole, showNotification }: 
   return (
     <div className="space-y-6 animate-fadeIn">
       {/* Header Panel */}
-      <div className="bg-slate-900 border border-white/10 p-6 rounded-3xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      <div className="bg-slate-900 border border-white/10 p-4 sm:p-6 rounded-2xl sm:rounded-3xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div className="space-y-1">
-          <h2 className="text-3xl font-black text-white tracking-tight flex items-center gap-2.5">
+          <h2 className="text-xl sm:text-2xl md:text-3xl font-black text-white tracking-tight flex items-center gap-2.5">
             📋 Faculty Substitute Hub
           </h2>
-          <p className="text-slate-400 text-sm">
+          <p className="text-slate-400 text-xs sm:text-sm">
             Coordinate standby cover lists, assign class lessons, and notify teachers of substitute schedules automatically.
           </p>
         </div>
@@ -499,7 +499,7 @@ export const SubstituteHub = ({ currentUser, effectiveRole, showNotification }: 
       )}
 
       {/* Main Grid display of assignments */}
-      <div className="bg-slate-950/40 border border-white/10 p-6 rounded-3xl space-y-4">
+      <div className="bg-slate-950/40 border border-white/10 p-3.5 sm:p-6 rounded-2xl sm:rounded-3xl space-y-4">
         <h3 className="text-sm font-black uppercase text-indigo-400 tracking-wider flex items-center gap-1.5">
           <span>📅</span> Live Substitute Registry
         </h3>
@@ -595,10 +595,10 @@ export const SubstituteHub = ({ currentUser, effectiveRole, showNotification }: 
 
 
       {activeTab === 'emergencies' && (
-        <div className="bg-slate-900/60 rounded-3xl border border-white/5 p-6 md:p-8 relative overflow-hidden space-y-6">
-          <div className="flex justify-between items-center border-b border-white/5 pb-4">
+        <div className="bg-slate-900/60 rounded-2xl sm:rounded-3xl border border-white/5 p-4 sm:p-6 md:p-8 relative overflow-hidden space-y-6">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-white/5 pb-4">
             <div>
-              <h3 className="text-xl font-bold text-white flex items-center gap-2">
+              <h3 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
                 <ShieldAlert className="w-5 h-5 text-rose-500" />
                 Emergency Swap & Leave Requests
               </h3>
@@ -705,10 +705,10 @@ export const SubstituteHub = ({ currentUser, effectiveRole, showNotification }: 
       )}
 
       {activeTab === 'swaps' && (
-        <div className="bg-slate-900/60 rounded-3xl border border-white/5 p-6 md:p-8 relative overflow-hidden space-y-6">
-          <div className="flex justify-between items-center border-b border-white/5 pb-4">
+        <div className="bg-slate-900/60 rounded-2xl sm:rounded-3xl border border-white/5 p-4 sm:p-6 md:p-8 relative overflow-hidden space-y-6">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-white/5 pb-4">
             <div>
-              <h3 className="text-xl font-bold text-white flex items-center gap-2">
+              <h3 className="text-lg sm:text-xl font-bold text-white flex items-center gap-2">
                 <ArrowRight className="w-5 h-5 text-teal-500" />
                 Lecture Swap Board
               </h3>
