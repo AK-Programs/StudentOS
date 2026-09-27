@@ -36,13 +36,13 @@ export default function HouseChampionship({ currentUser, effectiveRole, showNoti
   };
 
   return (
-    <div className="smart-glass p-6 md:p-8 rounded-3xl space-y-6 max-w-6xl mx-auto animate-fadeIn w-full">
+    <div className="smart-glass p-3.5 sm:p-6 md:p-8 rounded-2xl sm:rounded-3xl space-y-6 max-w-6xl mx-auto animate-fadeIn w-full">
       <div className="space-y-1">
-        <h3 className="text-2xl font-black font-display text-white">House Championship Leaderboard</h3>
+        <h3 className="text-xl sm:text-2xl font-black font-display text-white">House Championship Leaderboard</h3>
         <p className="text-xs text-slate-400">Live rankings and points based on attendance, assignments, and contributions.</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
         {houses.map((h, i) => (
           <div key={h.id} className={`p-5 rounded-3xl border w-full text-center relative overflow-hidden flex flex-col ${
              h.id === 'Ruby' ? 'border-red-500/30 bg-red-500/10' :
