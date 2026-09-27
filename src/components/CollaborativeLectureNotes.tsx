@@ -196,7 +196,7 @@ export const CollaborativeLectureNotes: React.FC<CollaborativeLectureNotesProps>
   };
 
   return (
-    <div className="bg-slate-900/90 border border-white/10 rounded-3xl p-5 shadow-2xl flex flex-col h-[650px] max-w-5xl mx-auto font-sans">
+    <div className="bg-slate-900/90 border border-white/10 rounded-2xl sm:rounded-3xl p-3.5 sm:p-5 shadow-2xl flex flex-col h-[500px] sm:h-[650px] max-w-5xl mx-auto font-sans">
       
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-4 shrink-0">
