@@ -151,7 +151,7 @@ export default function StudentAttendanceView({ currentUser }: { currentUser: Us
       )}
 
       {/* Main Attendance KPI Card */}
-      <div className="p-6 bg-slate-900 border border-white/10 rounded-3xl relative overflow-hidden shadow-xl">
+      <div className="p-4 sm:p-6 bg-slate-900 border border-white/10 rounded-2xl sm:rounded-3xl relative overflow-hidden shadow-xl">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-2">
             <div className="flex items-center gap-2">
@@ -160,7 +160,7 @@ export default function StudentAttendanceView({ currentUser }: { currentUser: Us
               </span>
               <span className="text-xs text-slate-400">&bull; Read Only</span>
             </div>
-            <h3 className="text-2xl font-black text-white tracking-tight">Student Attendance Summary</h3>
+            <h3 className="text-xl sm:text-2xl font-black text-white tracking-tight">Student Attendance Summary</h3>
             <p className="text-xs text-slate-400 max-w-md leading-relaxed">
               Track your daily presence, subject-wise lecture attendance, and leave authorizations recorded by your teachers.
             </p>
