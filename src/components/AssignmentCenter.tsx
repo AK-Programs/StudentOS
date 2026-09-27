@@ -112,7 +112,7 @@ export const AssignmentCenter: React.FC = () => {
             <div className="p-4 sm:p-6 bg-slate-900 border border-white/10 rounded-2xl">
               <h3 className="text-base sm:text-lg text-white font-bold capitalize mb-1">Upload {activeUploadType}</h3>
               <p className="text-xs text-slate-400 mb-4">Master template file storage & database registration.</p>
-              <AssignmentUploadForm key={activeUploadType} category={activeUploadType} onSuccess={() => alert('Uploaded successfully!')} />
+              <AssignmentUploadForm key={activeUploadType} category={activeUploadType} onSuccess={() => {}} />
             </div>
           </div>
         </>
