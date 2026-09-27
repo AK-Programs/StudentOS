@@ -503,9 +503,9 @@ export const StudentOSLife: React.FC<StudentOSLifeProps> = ({
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
       {/* Header Banner */}
-      <div className="bg-gradient-to-r from-indigo-900 via-purple-900 to-slate-900 border-b border-indigo-500/20 px-6 py-8 relative overflow-hidden">
+      <div className="bg-gradient-to-r from-indigo-900 via-purple-900 to-slate-900 border-b border-indigo-500/20 px-4 sm:px-6 py-6 sm:py-8 relative overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,rgba(99,102,241,0.15),transparent_70%)] pointer-events-none" />
-        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative z-10">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-start md:items-center justify-between gap-4 sm:gap-6 relative z-10">
           <div>
             <div className="flex items-center gap-2 mb-2">
               <span className="px-3 py-1 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 text-xs font-black rounded-full uppercase tracking-widest flex items-center gap-1.5">
@@ -515,26 +515,26 @@ export const StudentOSLife: React.FC<StudentOSLifeProps> = ({
                 Phase 5 Active
               </span>
             </div>
-            <h1 className="text-3xl md:text-4xl font-black text-white tracking-tight">
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-black text-white tracking-tight">
               StudentOS <span className="bg-gradient-to-r from-amber-400 via-indigo-300 to-cyan-300 bg-clip-text text-transparent">Life</span>
             </h1>
-            <p className="text-slate-300 text-sm mt-1 max-w-2xl">
+            <p className="text-slate-300 text-xs sm:text-sm mt-1 max-w-2xl">
               The vibrant heart of school spirit — competitions, house championships, student clubs, live polls, achievement badges, and school memories.
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
             {(currentUser.role === 'teacher' || currentUser.role === 'admin' || currentUser.role === 'coordinator') && (
               <button
                 onClick={() => setShowCreateCompModal(true)}
-                className="px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-600/30 transition-all flex items-center gap-2 active:scale-95"
+                className="px-3.5 sm:px-4 py-2 sm:py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-indigo-600/30 transition-all flex items-center gap-2 active:scale-95 whitespace-nowrap"
               >
                 <Plus className="w-4 h-4" /> Create Competition
               </button>
             )}
             <button
               onClick={() => onTriggerOrionAction?.('Show today\'s summary')}
-              className="px-4 py-2.5 bg-slate-800/80 hover:bg-slate-700 text-indigo-300 border border-indigo-500/30 font-bold text-xs rounded-xl transition-all flex items-center gap-2 shadow-md"
+              className="px-3.5 sm:px-4 py-2 sm:py-2.5 bg-slate-800/80 hover:bg-slate-700 text-indigo-300 border border-indigo-500/30 font-bold text-xs rounded-xl transition-all flex items-center gap-2 shadow-md whitespace-nowrap"
             >
               <Sparkles className="w-4 h-4 text-amber-400" /> Ask Orion AI
             </button>
@@ -542,7 +542,7 @@ export const StudentOSLife: React.FC<StudentOSLifeProps> = ({
         </div>
 
         {/* Navigation Tabs Bar */}
-        <div className="max-w-7xl mx-auto mt-8 flex items-center gap-1 overflow-x-auto pb-1 scrollbar-none border-b border-white/10">
+        <div className="max-w-7xl mx-auto mt-6 sm:mt-8 flex items-center gap-1 overflow-x-auto pb-1 scrollbar-none border-b border-white/10">
           {[
             { id: 'dashboard', label: 'Dashboard', icon: Sparkles },
             { id: 'competitions', label: 'Competitions', icon: Trophy, count: competitions.filter(c => c.status === 'Live' || c.status === 'Upcoming').length },
@@ -561,7 +561,7 @@ export const StudentOSLife: React.FC<StudentOSLifeProps> = ({
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`px-4 py-2.5 rounded-t-xl text-xs font-extrabold flex items-center gap-2 transition-all shrink-0 border-b-2 ${
+                className={`px-3 sm:px-4 py-2 sm:py-2.5 rounded-t-xl text-xs font-extrabold flex items-center gap-1.5 sm:gap-2 transition-all shrink-0 border-b-2 whitespace-nowrap ${
                   isActive
                     ? 'bg-slate-900 text-indigo-300 border-indigo-500 shadow-md'
                     : 'text-slate-400 hover:text-slate-200 border-transparent hover:bg-slate-900/50'
@@ -581,7 +581,7 @@ export const StudentOSLife: React.FC<StudentOSLifeProps> = ({
       </div>
 
       {/* Main Content Area */}
-      <div className="flex-1 max-w-7xl w-full mx-auto p-6">
+      <div className="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-6">
         {/* ================= TAB 1: DASHBOARD ================= */}
         {activeTab === 'dashboard' && (
           <div className="space-y-8 animate-fadeIn">
