@@ -69,8 +69,8 @@ export default function TeacherStudentReports({ currentUser }: { currentUser: Us
   return (
     <div className="space-y-6">
       {/* Search / Selection Area */}
-      <div className="bg-slate-900 border border-white/5 rounded-3xl p-6">
-        <h4 className="text-lg font-bold text-white mb-4">Select Student for Report Generation</h4>
+      <div className="bg-slate-900 border border-white/5 rounded-2xl sm:rounded-3xl p-4 sm:p-6">
+        <h4 className="text-base sm:text-lg font-bold text-white mb-4">Select Student for Report Generation</h4>
         <select 
           className="w-full sm:w-96 text-sm px-4 py-3 rounded-xl bg-slate-950 border border-white/10 text-white focus:outline-none focus:border-indigo-500"
           onChange={(e) => {
@@ -88,7 +88,7 @@ export default function TeacherStudentReports({ currentUser }: { currentUser: Us
       </div>
 
       {selectedStudent && (
-        <div className="bg-slate-900 border border-white/10 rounded-3xl p-6 md:p-8 animate-fadeIn space-y-8">
+        <div className="bg-slate-900 border border-white/10 rounded-2xl sm:rounded-3xl p-4 sm:p-6 md:p-8 animate-fadeIn space-y-8">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-white/5 pb-6 gap-4">
             <div className="flex items-center gap-4">
               <div className="w-16 h-16 rounded-2xl bg-indigo-500/20 flex items-center justify-center text-2xl font-bold text-indigo-400">
