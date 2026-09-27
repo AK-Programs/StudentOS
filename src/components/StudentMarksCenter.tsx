@@ -360,7 +360,7 @@ export default function StudentMarksCenter({ currentUser, effectiveRole, showNot
   const trendChartData = getHistoricalTrendData();
 
   return (
-    <div className="smart-glass p-6 rounded-3xl space-y-6">
+    <div className="smart-glass p-3.5 sm:p-6 md:p-8 rounded-2xl sm:rounded-3xl space-y-6">
       <div className="border-b border-white/5 pb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <div>
           <h3 className="text-xl font-black text-white font-display tracking-tight uppercase flex items-center gap-2">
