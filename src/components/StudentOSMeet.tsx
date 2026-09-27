@@ -1349,41 +1349,41 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
       
       {/* GLOBAL TOP MEET HEADER (When in Lobby / Calendar) */}
       {activeView !== 'room' && (
-        <header className="px-6 py-4 border-b border-white/10 bg-slate-900/60 backdrop-blur-xl flex flex-wrap items-center justify-between gap-4 sticky top-0 z-30">
+        <header className="px-3 sm:px-6 py-3 sm:py-4 border-b border-white/10 bg-slate-900/60 backdrop-blur-xl flex flex-wrap items-center justify-between gap-4 sticky top-0 z-30">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 via-violet-600 to-sky-400 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 via-violet-600 to-sky-400 flex items-center justify-center shadow-lg shadow-indigo-500/20 shrink-0">
               <Video className="w-5 h-5 text-white" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-xl font-black tracking-tight text-white font-display">StudentOS Meet</h1>
+                <h1 className="text-base sm:text-xl font-black tracking-tight text-white font-display">StudentOS Meet</h1>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
                   Real WebRTC
                 </span>
               </div>
-              <p className="text-xs text-slate-400 font-medium">Online Classroom & Virtual Meeting Suite</p>
+              <p className="text-[11px] sm:text-xs text-slate-400 font-medium">Online Classroom & Virtual Meeting Suite</p>
             </div>
           </div>
 
           {/* Navigation Tabs */}
-          <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-2xl border border-white/10 text-xs font-bold">
+          <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-2xl border border-white/10 text-xs font-bold overflow-x-auto max-w-full">
             <button
               onClick={() => setActiveView('lobby')}
-              className={`px-4 py-2 rounded-xl transition-all flex items-center gap-2 ${activeView === 'lobby' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
+              className={`px-3 sm:px-4 py-2 rounded-xl transition-all whitespace-nowrap flex items-center gap-1.5 sm:gap-2 ${activeView === 'lobby' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
             >
               <Grid className="w-4 h-4" />
               Lobby & Meetings
             </button>
             <button
               onClick={() => setActiveView('calendar')}
-              className={`px-4 py-2 rounded-xl transition-all flex items-center gap-2 ${activeView === 'calendar' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
+              className={`px-3 sm:px-4 py-2 rounded-xl transition-all whitespace-nowrap flex items-center gap-1.5 sm:gap-2 ${activeView === 'calendar' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
             >
               <CalendarIcon className="w-4 h-4" />
               Meeting Calendar
             </button>
             <button
               onClick={() => setActiveView('recordings')}
-              className={`px-4 py-2 rounded-xl transition-all flex items-center gap-2 ${activeView === 'recordings' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
+              className={`px-3 sm:px-4 py-2 rounded-xl transition-all whitespace-nowrap flex items-center gap-1.5 sm:gap-2 ${activeView === 'recordings' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:text-white'}`}
             >
               <Radio className="w-4 h-4" />
               Recordings Archive
@@ -1395,7 +1395,7 @@ export const StudentOSMeet: React.FC<StudentOSMeetProps> = ({
             {['teacher', 'coordinator', 'admin', 'super_admin'].includes(effectiveRole) && (
               <button
                 onClick={() => setShowCreateModal(true)}
-                className="px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-indigo-600/30 transition-all flex items-center gap-2"
+                className="px-3.5 sm:px-4 py-2 sm:py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-indigo-600/30 transition-all flex items-center gap-2 whitespace-nowrap"
               >
                 <Plus className="w-4 h-4" />
                 New Class / Meeting
