@@ -248,12 +248,12 @@ export const SportsActivitiesPortal = ({ currentUser, showNotification }: any) =
   return (
     <div className="space-y-6 animate-fadeIn">
       {/* Header Panel */}
-      <div className="bg-slate-900 border border-white/10 p-6 rounded-3xl shadow-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      <div className="bg-slate-900 border border-white/10 p-4 sm:p-6 rounded-2xl sm:rounded-3xl shadow-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div className="space-y-1">
-          <h2 className="text-3xl font-black text-white tracking-tight flex items-center gap-3">
+          <h2 className="text-xl sm:text-2xl md:text-3xl font-black text-white tracking-tight flex items-center gap-3">
             ⚽ Sports & Co-Curricular Center
           </h2>
-          <p className="text-slate-400 text-sm">
+          <p className="text-slate-400 text-xs sm:text-sm">
             Log participation, schedule sports events, track league standings, and publish student achievements.
           </p>
         </div>
@@ -535,7 +535,7 @@ export const SportsActivitiesPortal = ({ currentUser, showNotification }: any) =
       )}
 
       {/* Main Grid View */}
-      <div className="bg-slate-950/40 border border-white/15 p-6 rounded-3xl min-h-[350px]">
+      <div className="bg-slate-950/40 border border-white/15 p-3.5 sm:p-6 rounded-2xl sm:rounded-3xl min-h-[350px]">
         {activeTab === 'participation' && (
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
