@@ -6506,16 +6506,16 @@ ${roleLabel}: ${userQuery}`;
             <LiveBroadcastBanner currentUser={currentUser} />
 
             {/* Global Workspace Header bar */}
-            <header className="sticky top-0 z-40 px-6 py-4 flex items-center justify-between border-b border-white/5 backdrop-blur-xl bg-slate-950/40">
-              <div className="flex items-center gap-4">
+            <header className="sticky top-0 z-40 px-3 sm:px-6 py-3 sm:py-4 flex items-center justify-between border-b border-white/5 backdrop-blur-xl bg-slate-950/40">
+              <div className="flex items-center gap-2 sm:gap-4 min-w-0">
                 <button 
                   onClick={() => setSidebarOpen(!sidebarOpen)}
-                  className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 border border-white/5 transition-all"
+                  className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 border border-white/5 transition-all shrink-0"
                 >
                   <ChevronLeft className={`w-5 h-5 transition-transform duration-300 ${sidebarOpen ? '' : 'rotate-180'}`} />
                 </button>
-                <div>
-                  <h2 className="text-xl font-extrabold tracking-tight text-white font-display">
+                <div className="min-w-0">
+                  <h2 className="text-sm sm:text-xl font-extrabold tracking-tight text-white font-display truncate">
                     {activeTab === 'dashboard' && 'My Dashboard'}
                     {activeTab === 'meet' && 'StudentOS Meet (Virtual Classroom)'}
                     {activeTab === 'tasks' && 'My Tasks'}
@@ -6543,7 +6543,7 @@ ${roleLabel}: ${userQuery}`;
               </div>
 
               {/* Status and Clock widget */}
-              <div className="flex items-center gap-4 text-xs font-semibold">
+              <div className="flex items-center gap-2 sm:gap-4 text-xs font-semibold">
                 
                 {/* Classroom Security Center */}
                 {['teacher', 'coordinator', 'admin', 'super_admin'].includes(effectiveRole || '') && (
@@ -6801,7 +6801,7 @@ ${roleLabel}: ${userQuery}`;
             </header>
 
             {/* Base View Layout Wrapper */}
-            <main className={`flex-1 p-6 md:p-8 max-w-7xl w-full mx-auto space-y-8 ${fontSize === 'large' ? 'text-lg' : fontSize === 'huge' ? 'text-xl' : 'text-sm'}`}>
+            <main className={`flex-1 p-3 sm:p-6 md:p-8 max-w-7xl w-full mx-auto space-y-6 sm:space-y-8 ${fontSize === 'large' ? 'text-lg' : fontSize === 'huge' ? 'text-xl' : 'text-sm'}`}>
               
               {/* Tab: Panel Mode Launcher */}
               {activeTab === 'panel_mode' && effectiveRole !== 'student' && (
@@ -6941,14 +6941,14 @@ ${roleLabel}: ${userQuery}`;
                   />
 
                   {/* Glowing user banner */}
-                  <div className={`p-8 rounded-3xl relative overflow-hidden backdrop-blur-md border shadow-xl ${currentUser.house === 'Ruby' ? 'bg-gradient-to-r from-red-950/40 to-slate-900 border-red-500/20' : currentUser.house === 'Emerald' ? 'bg-gradient-to-r from-emerald-950/40 to-slate-900 border-emerald-500/20' : currentUser.house === 'Sapphire' ? 'bg-gradient-to-r from-blue-950/40 to-slate-900 border-blue-500/20' : currentUser.house === 'Topaz' ? 'bg-gradient-to-r from-amber-950/40 to-slate-900 border-amber-500/20' : 'bg-gradient-to-r from-indigo-950/40 to-slate-900 border-white/10'}`}>
+                  <div className={`p-4 sm:p-8 rounded-3xl relative overflow-hidden backdrop-blur-md border shadow-xl ${currentUser.house === 'Ruby' ? 'bg-gradient-to-r from-red-950/40 to-slate-900 border-red-500/20' : currentUser.house === 'Emerald' ? 'bg-gradient-to-r from-emerald-950/40 to-slate-900 border-emerald-500/20' : currentUser.house === 'Sapphire' ? 'bg-gradient-to-r from-blue-950/40 to-slate-900 border-blue-500/20' : currentUser.house === 'Topaz' ? 'bg-gradient-to-r from-amber-950/40 to-slate-900 border-amber-500/20' : 'bg-gradient-to-r from-indigo-950/40 to-slate-900 border-white/10'}`}>
                     <div className="absolute top-0 right-0 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none"></div>
                     
-                    <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+                    <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4 sm:gap-6">
                       <div className="space-y-2">
-                        <span className="text-xs font-extrabold uppercase tracking-widest text-indigo-400">Adaptive Classroom Node</span>
-                        <h1 className="text-3xl font-black font-display text-white">Welcome back, {currentUser.name}!</h1>
-                        <p className="text-slate-300 max-w-xl text-sm">
+                        <span className="text-[10px] sm:text-xs font-extrabold uppercase tracking-widest text-indigo-400">Adaptive Classroom Node</span>
+                        <h1 className="text-xl sm:text-3xl font-black font-display text-white">Welcome back, {currentUser.name}!</h1>
+                        <p className="text-slate-300 max-w-xl text-xs sm:text-sm">
                           {effectiveRole === 'student' 
                             ? `You represent ${currentUser.house} House, studying in Section ${currentUser.section}. Keep tracking critical tasks and contribute points to your house leaderboard!`
                             : `You are logged in as a specialized faculty leader in ${currentUser.specialtySubject}. Set up whiteboard slide broadcasts, review student feedback lists, and evaluate class performance.`}
@@ -6956,11 +6956,11 @@ ${roleLabel}: ${userQuery}`;
                       </div>
 
                       {/* Summary Streak component */}
-                      <div className="flex items-center gap-4 bg-black/40 p-4 rounded-2xl border border-white/5 animate-pulse">
-                        <Flame className="w-10 h-10 text-orange-500" />
+                      <div className="flex items-center gap-3 sm:gap-4 bg-black/40 p-3 sm:p-4 rounded-2xl border border-white/5 animate-pulse shrink-0">
+                        <Flame className="w-8 h-8 sm:w-10 sm:h-10 text-orange-500" />
                         <div>
-                          <p className="text-lg font-black text-white">{currentUser.streakDays || 5} Days</p>
-                          <p className="text-[10px] text-slate-400 uppercase tracking-wider">Active study streak</p>
+                          <p className="text-base sm:text-lg font-black text-white">{currentUser.streakDays || 5} Days</p>
+                          <p className="text-[9px] sm:text-[10px] text-slate-400 uppercase tracking-wider">Active study streak</p>
                         </div>
                       </div>
                     </div>
@@ -6971,7 +6971,7 @@ ${roleLabel}: ${userQuery}`;
                     <h3 className="text-xs font-black text-indigo-400 uppercase tracking-widest flex items-center gap-1.5">
                       <span>⚡</span> Quick Navigation Dashboard
                     </h3>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3 sm:gap-4">
                       {/* Student Cards */}
                       {effectiveRole === 'student' && (
                         <>
