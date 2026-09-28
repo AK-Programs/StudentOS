@@ -66,6 +66,9 @@ import { PromotionalBanners } from './components/PromotionalBanners';
 import AIQuotaManagerModal from './components/AIQuotaManagerModal';
 import { InstallAppModal, AppInstallSection } from './components/InstallAppModal';
 import { isApkInstalledOnDevice } from './config/appConfig';
+import { WhatsNewPortal } from './components/WhatsNewPortal';
+import { MajorReleaseBanner } from './components/MajorReleaseBanner';
+import { getPublishedUpdates, getUserReadUpdateIds } from './lib/supabaseUpdates';
 import { 
   AIUsageState, 
   getLocalUsageState, 
@@ -326,12 +329,60 @@ export default function App() {
   }, []);
   const [activeTab, setActiveTab] = useState<string>(() => {
     try {
+      if (typeof window !== 'undefined') {
+        const path = window.location.pathname.toLowerCase();
+        if (path === '/whats-new' || path === '/whats_new' || path === '/updates') {
+          return 'whats_new';
+        }
+      }
       return localStorage.getItem('s_os_active_tab') || 'dashboard';
     } catch (e) {
       console.warn('[Storage] Unsafe activeTab localStorage read:', e);
       return 'dashboard';
     }
   });
+
+  const [whatsNewUnreadCount, setWhatsNewUnreadCount] = useState<number>(0);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const path = window.location.pathname.toLowerCase();
+      if (path === '/whats-new' || path === '/whats_new' || path === '/updates') {
+        setActiveTab('whats_new');
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const calculateWhatsNewUnread = async () => {
+      try {
+        const uRole = (effectiveRole as any) || currentUser?.role || 'student';
+        const uId = currentUser?.uid || currentUser?.email || 'guest';
+        const [allPublished, readSet] = await Promise.all([
+          getPublishedUpdates(uRole),
+          getUserReadUpdateIds(uId)
+        ]);
+        if (active) {
+          const unread = allPublished.filter(u => !readSet.has(u.id)).length;
+          setWhatsNewUnreadCount(unread);
+        }
+      } catch (_) {}
+    };
+
+    calculateWhatsNewUnread();
+    const interval = setInterval(calculateWhatsNewUnread, 30000);
+    const handleUpdate = () => calculateWhatsNewUnread();
+    window.addEventListener('studentos_whats_new_updated', handleUpdate);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+      window.removeEventListener('studentos_whats_new_updated', handleUpdate);
+    };
+  }, [currentUser?.uid, effectiveRole]);
   const [assignmentSearchQuery, setAssignmentSearchQuery] = useState<string>('');
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
   const [clock, setClock] = useState<string>('');
@@ -559,6 +610,11 @@ export default function App() {
     }
     setActiveTab(tab);
     localStorage.setItem('s_os_active_tab', tab);
+    if (tab === 'whats_new') {
+      window.history.pushState(null, '', '/whats-new');
+    } else if (typeof window !== 'undefined' && (window.location.pathname === '/whats-new' || window.location.pathname === '/whats_new')) {
+      window.history.pushState(null, '', '/');
+    }
     if (window.innerWidth < 1024) {
       setSidebarOpen(false);
     }
@@ -6323,6 +6379,26 @@ ${roleLabel}: ${userQuery}`;
                     </button>
                   )}
 
+                  {!presentationMode && (
+                    <button 
+                      onClick={() => handleTabSelect('whats_new')}
+                      className={getSidebarBtnClass('whats_new')}
+                      title="What's New in StudentOS"
+                    >
+                      <div className="flex items-center gap-3.5 w-full justify-between">
+                        <div className="flex items-center gap-3.5">
+                          <span>🚀</span>
+                          {sidebarOpen && "What's New"}
+                        </div>
+                        {sidebarOpen && whatsNewUnreadCount > 0 && (
+                          <span className="px-1.5 py-0.5 rounded-full bg-rose-500 text-white font-black text-[9px] leading-none animate-pulse">
+                            {whatsNewUnreadCount}
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  )}
+
                   {effectiveRole === 'teacher' && !presentationMode && (
                     <button 
                       onClick={() => handleTabSelect('faculty')}
@@ -6538,6 +6614,7 @@ ${roleLabel}: ${userQuery}`;
                     {activeTab === 'calendar' && 'Academic Calendar'}
                     {activeTab === 'gradebook' && 'Digital Gradebook'}
                     {activeTab === 'report_cards' && 'Official Report Cards'}
+                    {(activeTab === 'whats_new' || activeTab === 'whats-new') && "What's New & Release Logs"}
                   </h2>
                 </div>
               </div>
@@ -6791,6 +6868,25 @@ ${roleLabel}: ${userQuery}`;
                     onNavigateTab={(tab) => setActiveTab(tab)}
                   />
                 </div>
+
+                {/* What's New Header Indicator Button */}
+                <button
+                  onClick={() => handleTabSelect('whats_new')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 relative border shadow-sm cursor-pointer ${
+                    activeTab === 'whats_new' || activeTab === 'whats-new'
+                      ? 'bg-indigo-600 text-white border-indigo-500 shadow-indigo-600/30'
+                      : 'bg-slate-900 border-white/5 hover:bg-slate-800 text-slate-300 hover:text-white'
+                  }`}
+                  title="What's New in StudentOS"
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                  <span className="hidden sm:inline">What's New</span>
+                  {whatsNewUnreadCount > 0 && (
+                    <span className="flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-rose-500 text-[9px] font-black text-white leading-none animate-pulse">
+                      {whatsNewUnreadCount}
+                    </span>
+                  )}
+                </button>
 
                 {effectiveRole === 'student' && currentUser.house && (
                   <span className={`px-3 py-1.5 rounded-full ${getHouseBadgeColor(currentUser.house)} font-bold tracking-wide uppercase text-[10px]`}>
@@ -11373,6 +11469,19 @@ Could you please guide me step-by-step on how to solve this, explaining the theo
                 <AcademicCalendar currentUser={currentUser} effectiveRole={effectiveRole} />
               )}
 
+              {/* Tab 15: What's New & Official Release Logs */}
+              {(activeTab === 'whats_new' || activeTab === 'whats-new') && (
+                <WhatsNewPortal
+                  currentUser={currentUser}
+                  effectiveRole={effectiveRole}
+                  onNavigateTab={handleTabSelect}
+                  onOpenAdminManager={() => {
+                    setActiveTab('admin');
+                    setProfileTab('whats_new');
+                  }}
+                />
+              )}
+
             </main>
 
             {/* Orion (Jarvis) Drawer Overlay */}
@@ -11695,6 +11804,13 @@ Could you please guide me step-by-step on how to solve this, explaining the theo
           currentUserName={currentUser?.name || currentUser?.email || 'Super Admin'}
         />
       )}
+
+      {/* Major Release Announcement Banner */}
+      <MajorReleaseBanner
+        currentUser={currentUser}
+        effectiveRole={effectiveRole}
+        onNavigateTab={handleTabSelect}
+      />
 
     </div>
   );
