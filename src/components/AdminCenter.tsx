@@ -2,12 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { sendNotificationToUsers } from '../firebase';
 import { UserProfile, UserRole, HouseType, SectionType } from '../types';
 import { fetchAllSupabaseUsers, saveSupabaseUserProfile, getSupabaseUserProfile } from '../lib/supabaseUsers';
+import { WhatsNewAdminTab } from './WhatsNewAdminTab';
 
 export default function AdminCenter({ currentUser, showNotification, profileTab }: { currentUser: UserProfile; showNotification: (msg: string) => void, profileTab?: string }) {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(false);
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
-  const [adminSubTab, setAdminSubTab] = useState<'users' | 'requests'>('users');
+  const [adminSubTab, setAdminSubTab] = useState<'users' | 'requests' | 'whats_new'>('users');
   const [setupSql, setSetupSql] = useState<string | null>(null);
 
   useEffect(() => {
@@ -17,6 +18,8 @@ export default function AdminCenter({ currentUser, showNotification, profileTab 
   useEffect(() => {
     if (profileTab === 'requests') {
       setAdminSubTab('requests');
+    } else if (profileTab === 'whats_new') {
+      setAdminSubTab('whats_new');
     }
   }, [profileTab]);
 
@@ -332,10 +335,11 @@ export default function AdminCenter({ currentUser, showNotification, profileTab 
           
           <div className="pt-2">
             <span className="text-[10px] uppercase font-black text-indigo-300/80 tracking-wider block mb-2.5">Quick Actions</span>
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+            <div className="grid grid-cols-2 sm:grid-cols-6 gap-2.5">
               {[
                 { label: 'Admin Centre', icon: '⚙️', action: () => setAdminSubTab('users') },
                 { label: 'User Approvals', icon: '⏳', action: () => setAdminSubTab('requests') },
+                { label: "What's New Logs", icon: '🚀', action: () => setAdminSubTab('whats_new') },
                 { label: 'School Analytics', icon: '📊', action: () => showNotification('School Analytics: All digital workspace channels reporting healthy response indexes.') },
                 { label: 'Notification Mgmt', icon: '🔔', action: () => showNotification('Notification Management: Direct school broadcasting initialized.') },
                 { label: 'System Settings', icon: '🛡️', action: () => showNotification('System Settings: Global workspace parameters are secured.') }
@@ -356,7 +360,7 @@ export default function AdminCenter({ currentUser, showNotification, profileTab 
       )}
 
       {/* Sub tabs selector */}
-      <div className="flex gap-2.5 border-b border-white/5 pb-1">
+      <div className="flex gap-2.5 border-b border-white/5 pb-1 flex-wrap">
         <button
           onClick={() => setAdminSubTab('users')}
           className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
@@ -382,9 +386,27 @@ export default function AdminCenter({ currentUser, showNotification, profileTab 
             </span>
           )}
         </button>
+        {isSuperAdmin && (
+          <button
+            onClick={() => setAdminSubTab('whats_new')}
+            className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+              adminSubTab === 'whats_new'
+                ? 'bg-purple-600/20 border border-purple-500/30 text-purple-300 font-black shadow-sm'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            🚀 What's New & Release Logs
+          </button>
+        )}
       </div>
 
-      {adminSubTab === 'requests' ? (
+      {adminSubTab === 'whats_new' ? (
+        <WhatsNewAdminTab
+          currentUser={currentUser}
+          showNotification={showNotification}
+          onClose={() => setAdminSubTab('users')}
+        />
+      ) : adminSubTab === 'requests' ? (
         <div className="space-y-4">
           <div className="p-4 rounded-2xl bg-amber-500/5 border border-amber-500/10">
             <p className="text-xs text-amber-300 font-semibold leading-relaxed">
