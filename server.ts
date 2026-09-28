@@ -291,6 +291,151 @@ app.get('/api/health', (req, res) => {
 });
 
 // ========================================================================
+// WHAT'S NEW SCHEDULED UPDATES ENGINE
+// Checks and auto-publishes scheduled releases independently of open browser tabs
+// ========================================================================
+
+let globalWss: WebSocketServer | null = null;
+
+async function checkAndPublishScheduledUpdates(): Promise<{ publishedCount: number; errors: any[] }> {
+  const supabaseUrl = process.env.VITE_SUPABASE_URL || 'https://zwpoutanhsujezglbson.supabase.co';
+  const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp3cG91dGFuaHN1amV6Z2xic29uIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE2OTA2MDEsImV4cCI6MjA5NzI2NjYwMX0.Y48u9duD3WohxzDD6czXevPaG1mFRFS0rdRuu4840pQ';
+
+  let publishedCount = 0;
+  const errors: any[] = [];
+  const nowIso = new Date().toISOString();
+  const nowMs = Date.now();
+
+  try {
+    const res = await fetch(`${supabaseUrl}/rest/v1/system_updates?status=eq.scheduled&select=*`, {
+      headers: {
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${supabaseKey}`
+      }
+    });
+
+    if (res.ok) {
+      const scheduledRows = await res.json();
+      if (Array.isArray(scheduledRows) && scheduledRows.length > 0) {
+        for (const row of scheduledRows) {
+          if (row.scheduled_publish_at && new Date(row.scheduled_publish_at).getTime() <= nowMs) {
+            console.log(`[WhatsNew Engine] Time threshold reached for "${row.version} - ${row.title}". Publishing now...`);
+
+            // Update to published in database
+            const updateRes = await fetch(`${supabaseUrl}/rest/v1/system_updates?id=eq.${encodeURIComponent(row.id)}`, {
+              method: 'PATCH',
+              headers: {
+                'apikey': supabaseKey,
+                'Authorization': `Bearer ${supabaseKey}`,
+                'Content-Type': 'application/json',
+                'Prefer': 'return=minimal'
+              },
+              body: JSON.stringify({
+                status: 'published',
+                published_at: nowIso,
+                updated_at: nowIso
+              })
+            });
+
+            if (updateRes.ok) {
+              publishedCount++;
+              row.status = 'published';
+              row.published_at = nowIso;
+
+              // 1. Broadcast via WebSocket to all connected clients
+              if (globalWss) {
+                globalWss.clients.forEach(client => {
+                  if (client.readyState === WSWebSocket.OPEN) {
+                    client.send(JSON.stringify({
+                      type: 'whats_new:published',
+                      update: row
+                    }));
+                  }
+                });
+              }
+
+              // 2. Dispatch push notification if webpush is enabled
+              if (vapidKeys.publicKey && vapidKeys.privateKey) {
+                try {
+                  const pushPayload = JSON.stringify({
+                    title: `🚀 What's New in StudentOS ${row.version}`,
+                    body: row.title || 'A new official update has been published.',
+                    linkTab: 'whats_new',
+                    url: '/whats-new',
+                    tag: `whats-new-${row.id}`
+                  });
+
+                  // Dispatch to memory subscriptions
+                  memoryPushSubscriptions.forEach(sub => {
+                    if (sub.subscription?.endpoint) {
+                      webpush.sendNotification(sub.subscription, pushPayload, { TTL: 86400 }).catch(() => {});
+                    }
+                  });
+                } catch (_) {}
+              }
+
+              // 3. Write audit log
+              await fetch(`${supabaseUrl}/rest/v1/system_update_audit_logs`, {
+                method: 'POST',
+                headers: {
+                  'apikey': supabaseKey,
+                  'Authorization': `Bearer ${supabaseKey}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  id: `audit-sched-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+                  update_id: row.id,
+                  action: 'publish',
+                  actor_id: 'system_scheduler',
+                  actor_name: 'StudentOS Auto-Scheduler Engine',
+                  actor_role: 'system',
+                  timestamp: nowIso,
+                  details: `Auto-published scheduled release ${row.version} at ${nowIso}`
+                })
+              }).catch(() => {});
+
+              console.log(`[WhatsNew Engine] Successfully auto-published ${row.version}!`);
+            } else {
+              const errTxt = await updateRes.text();
+              errors.push({ id: row.id, error: errTxt });
+            }
+          }
+        }
+      }
+    }
+  } catch (err: any) {
+    errors.push({ error: err.message || err });
+  }
+
+  return { publishedCount, errors };
+}
+
+// Background scheduler interval (runs every 30 seconds)
+setInterval(() => {
+  checkAndPublishScheduledUpdates().catch(() => {});
+}, 30000);
+
+// API endpoint to manually trigger or check scheduled updates engine
+app.get('/api/updates/check-scheduled', async (req, res) => {
+  const result = await checkAndPublishScheduledUpdates();
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    ...result
+  });
+});
+
+app.get('/api/updates/status', (req, res) => {
+  res.json({
+    status: 'online',
+    engine: 'StudentOS Release Notes Engine v3.12',
+    schedulerActive: true,
+    intervalMs: 30000,
+    serverTime: new Date().toISOString()
+  });
+});
+
+// ========================================================================
 // AI BUDDY ROLLING 24-HOUR USAGE LIMIT SYSTEM
 // Role-based limits: Student (30), Teacher (75), Coordinator (100), Admin (150)
 // ========================================================================
@@ -1114,8 +1259,6 @@ Format beautifully in Markdown.`;
 // ============================================================
 app.get('/api/admin/setup-sql', (req, res) => {
   try {
-    const fs = require('fs');
-    const path = require('path');
     const sqlPath = path.join(process.cwd(), 'supabase', 'setup.sql');
     const sql = fs.readFileSync(sqlPath, 'utf-8');
     res.type('text/plain').send(sql);
@@ -1205,6 +1348,7 @@ async function startServer() {
   });
 
   const wss = new WebSocketServer({ server });
+  globalWss = wss;
 
   wss.on('connection', (ws) => {
     console.log('[WS Server] New client linked!');
