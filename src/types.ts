@@ -744,3 +744,53 @@ export interface MeetingAttendanceReport {
   }[];
 }
 
+// ============================================================
+// WHAT'S NEW & SYSTEM UPDATE LOGS ARCHITECTURE
+// ============================================================
+
+export type SystemUpdateCategory = 'feature' | 'improvement' | 'bugfix' | 'maintenance' | 'security';
+
+export type SystemUpdateStatus = 'draft' | 'scheduled' | 'published' | 'archived';
+
+export interface SystemUpdate {
+  id: string;
+  version: string;
+  title: string;
+  summary: string;
+  category: SystemUpdateCategory;
+  content: string; // Rich Markdown formatted notes
+  status: SystemUpdateStatus;
+  audienceRoles: (UserRole | 'all')[];
+  isMajorRelease?: boolean;
+  actionUrl?: string; // e.g. 'meet', 'calendar', 'gradebook', 'materials' or URL
+  actionLabel?: string; // e.g. "Launch Virtual Classroom"
+  mediaUrls?: string[]; // Screenshots, previews
+  authorId: string;
+  authorName: string;
+  authorRole?: string;
+  scheduledPublishAt?: string; // ISO string with timezone
+  publishedAt?: string; // ISO string
+  archivedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  raw_data?: any;
+}
+
+export interface SystemUpdateRead {
+  id: string;
+  updateId: string;
+  userId: string;
+  readAt: string;
+}
+
+export interface SystemUpdateAuditLog {
+  id: string;
+  updateId: string;
+  action: 'create' | 'edit' | 'schedule' | 'publish' | 'unpublish' | 'archive' | 'delete';
+  actorId: string;
+  actorName: string;
+  actorRole: string;
+  timestamp: string;
+  details?: string;
+}
+
