@@ -62,7 +62,6 @@ import DigitalReportCards from './components/DigitalReportCards';
 import PerformanceAnalytics from './components/PerformanceAnalytics';
 import ProfileCustomizer from './components/ProfileCustomizer';
 import { ProfileSettings } from './components/ProfileSettings';
-import { WebPushNotificationToggle } from './components/WebPushNotificationToggle';
 import { PromotionalBanners } from './components/PromotionalBanners';
 import AIQuotaManagerModal from './components/AIQuotaManagerModal';
 import { InstallAppModal, AppInstallSection } from './components/InstallAppModal';
@@ -8657,23 +8656,6 @@ ${activeNote.content}`);
                         >
                           {effectiveRole === 'student' ? 'Update Profile Picture' : 'Update Profile Parameters'}
                         </button>
-                      </div>
-
-                      {/* Web Push Notifications Preference in User Profile */}
-                      <div className="mt-8 pt-6 border-t border-white/5 space-y-2">
-                        <WebPushNotificationToggle 
-                          currentUser={currentUser}
-                          variant="card"
-                          onUpdateUser={(updated) => {
-                            setCurrentUser(updated);
-                            try { localStorage.setItem('s_os_user', JSON.stringify(updated)); } catch (_) {}
-                          }}
-                          onProfileUpdated={(updated) => {
-                            setCurrentUser(updated);
-                            try { localStorage.setItem('s_os_user', JSON.stringify(updated)); } catch (_) {}
-                          }}
-                          showNotification={showNotification}
-                        />
                       </div>
 
                       {/* App Download and Installation Section */}
