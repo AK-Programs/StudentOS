@@ -69,9 +69,11 @@ import { isApkInstalledOnDevice } from './config/appConfig';
 import { WhatsNewPortal } from './components/WhatsNewPortal';
 import { MajorReleaseBanner } from './components/MajorReleaseBanner';
 import { StudyCenterFlashcards } from './components/StudyCenterFlashcards';
+import { ProfessionalTabDropdown } from './components/ProfessionalTabDropdown';
 import { getStoredCards } from './lib/flashcardStorage';
 import { isCardDue } from './lib/sm2Algorithm';
 import { getPublishedUpdates, getUserReadUpdateIds } from './lib/supabaseUpdates';
+import { soundService } from './lib/soundService';
 import { 
   AIUsageState, 
   getLocalUsageState, 
@@ -1212,29 +1214,9 @@ export default function App() {
   }, [pomodoroRunning, currentUser]);
 
   // System Notification Handler
-  const notificationAudioRef = useRef<HTMLAudioElement | null>(null);
-
   const safePlayNotificationSound = () => {
     try {
-      if (!notificationAudioRef.current) {
-        // High quality short notification tone chime
-        const audio = new Audio('data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YU');
-        audio.volume = 0.25;
-        notificationAudioRef.current = audio;
-      }
-      const audio = notificationAudioRef.current;
-      if (audio) {
-        if (!audio.paused && audio.readyState >= 2) {
-          audio.pause();
-          audio.currentTime = 0;
-        }
-        const promise = audio.play();
-        if (promise !== undefined) {
-          promise.catch(() => {
-            // Silently swallow AbortError or autoplay restriction errors
-          });
-        }
-      }
+      soundService.playMessageSound();
     } catch (_) {}
   };
 
@@ -7565,68 +7547,47 @@ ${roleLabel}: ${userQuery}`;
               {['study_hub', 'tasks', 'planner', 'flashcards'].includes(activeTab) && (
                 <div className="space-y-6 animate-fadeIn">
                   {/* Study Hub Unified Sub-Tabs Navigation */}
-                  <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900/90 backdrop-blur-xl p-2.5 rounded-2xl border border-white/10 shadow-lg">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <button
-                        onClick={() => {
-                          setStudyHubSubTab('flashcards');
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-900/90 backdrop-blur-xl p-2.5 rounded-2xl border border-white/10 shadow-lg relative z-20">
+                    <div className="w-full sm:max-w-md">
+                      <ProfessionalTabDropdown
+                        options={[
+                          {
+                            id: 'flashcards',
+                            label: 'Study Center & Flashcards (SM-2)',
+                            icon: '🗂️',
+                            badge: dueCardsCount > 0 ? `${dueCardsCount} due` : undefined,
+                            badgeColor: 'bg-rose-500/20 text-rose-300 border border-rose-500/30',
+                            description: 'Spaced repetition decks and active recall practice'
+                          },
+                          {
+                            id: 'tasks',
+                            label: 'Task Manager',
+                            icon: '📋',
+                            badge: tasks.filter(t => !t.completed).length > 0 ? tasks.filter(t => !t.completed).length : undefined,
+                            description: 'Track assignments, syllabus progress, and goals'
+                          },
+                          {
+                            id: 'planner',
+                            label: 'Study Schedule Planner',
+                            icon: '📅',
+                            badge: schedules.length > 0 ? schedules.length : undefined,
+                            description: 'Daily revision timetable and exam prep blocks'
+                          }
+                        ]}
+                        selectedId={studyHubSubTab}
+                        onSelect={(id) => {
+                          setStudyHubSubTab(id as any);
                           setActiveTab('study_hub');
                         }}
-                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-                          studyHubSubTab === 'flashcards'
-                            ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md'
-                            : 'text-slate-400 hover:text-white hover:bg-white/5'
-                        }`}
-                      >
-                        <span>🗂️ Flashcards (SM-2)</span>
-                        {dueCardsCount > 0 && (
-                          <span className="px-1.5 py-0.5 rounded-full bg-rose-500 text-white font-mono text-[9px] font-black animate-pulse">
-                            {dueCardsCount} due
-                          </span>
-                        )}
-                      </button>
-
-                      <button
-                        onClick={() => {
-                          setStudyHubSubTab('tasks');
-                          setActiveTab('study_hub');
-                        }}
-                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-                          studyHubSubTab === 'tasks'
-                            ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md'
-                            : 'text-slate-400 hover:text-white hover:bg-white/5'
-                        }`}
-                      >
-                        <span>📋 Task Manager</span>
-                        {tasks.filter(t => !t.completed).length > 0 && (
-                          <span className="px-1.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-mono text-[9px] font-bold">
-                            {tasks.filter(t => !t.completed).length}
-                          </span>
-                        )}
-                      </button>
-
-                      <button
-                        onClick={() => {
-                          setStudyHubSubTab('planner');
-                          setActiveTab('study_hub');
-                        }}
-                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-                          studyHubSubTab === 'planner'
-                            ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md'
-                            : 'text-slate-400 hover:text-white hover:bg-white/5'
-                        }`}
-                      >
-                        <span>📅 Study Schedule</span>
-                        {schedules.length > 0 && (
-                          <span className="px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-mono text-[9px] font-bold">
-                            {schedules.length}
-                          </span>
-                        )}
-                      </button>
+                        size="md"
+                      />
                     </div>
 
-                    <div className="flex items-center gap-2 px-3 py-1 bg-black/40 rounded-xl border border-white/5 text-[10px] text-slate-400 font-mono hidden sm:flex">
-                      <span>⚡ Unified Study Hub</span>
+                    <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-black/40 rounded-xl border border-white/5 text-[11px] text-slate-400 font-mono">
+                      <span>⚡ Mode:</span>
+                      <span className="text-indigo-400 font-bold capitalize">
+                        {studyHubSubTab === 'flashcards' ? 'Study Center (Cards)' : studyHubSubTab === 'tasks' ? 'Task Manager' : 'Study Planner'}
+                      </span>
                     </div>
                   </div>
 
@@ -8410,9 +8371,9 @@ ${activeNote.content}`);
 
               {/* Tab: Student/Staff Profile View */}
               {activeTab === 'profile' && (
-                <div className="smart-glass p-8 rounded-3xl space-y-6 max-w-4xl mx-auto animate-fadeIn col-span-2">
+                <div className="smart-glass p-4 sm:p-6 md:p-8 rounded-2xl sm:rounded-3xl space-y-6 max-w-4xl mx-auto animate-fadeIn col-span-2">
                   <div className="space-y-2">
-                    <h3 className="text-2xl font-black font-display text-white">{getUserProfileTitle(currentUser, effectiveRole)} Profile</h3>
+                    <h3 className="text-xl sm:text-2xl font-black font-display text-white">{getUserProfileTitle(currentUser, effectiveRole)} Profile</h3>
                     <p className="text-xs text-slate-400">Manage your presence, identity, and view your dashboard.</p>
                   </div>
 
@@ -8434,46 +8395,49 @@ ${activeNote.content}`);
                      />
                   ) : (
                     <>
-                      {/* Profile Navigation Tabs for Non-Teachers */}
-                      <div className="flex bg-slate-950 p-1.5 rounded-2xl border border-white/5 gap-1 mb-6 flex-wrap">
-                        {(
-                          effectiveRole === 'student' ? ['overview', 'settings', 'attendance', 'records', 'remarks', 'analytics'] : 
-                          effectiveRole === 'coordinator' ? ['overview', 'settings', 'teacher_list', 'student_list', 'house_reports', 'section_reports', 'requests'] : 
-                          ['overview', 'settings', 'students', 'teachers', 'coordinators', 'reports', 'requests']
-                        ).map((pt) => (
-                          <button
-                            key={pt}
-                            onClick={() => setProfileTab(pt as any)}
-                            className={`py-3 px-2 sm:px-4 flex-1 rounded-xl text-[10px] sm:text-xs font-bold uppercase tracking-wider transition-all min-w-[70px] ${
-                              profileTab === pt || (pt === 'settings' && profileTab === 'customizer') ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white hover:bg-white/5'
-                            }`}
-                          >
-                            {pt === 'overview' && 'Overview'}
-                            {pt === 'settings' && '⚙️ Settings'}
-                            
-                            {/* Student Tabs */}
-                            {pt === 'attendance' && 'Attendance'}
-                            {pt === 'records' && 'Records'}
-                            {pt === 'remarks' && 'Remarks'}
-                            {pt === 'analytics' && 'AI Analytics'}
-
-                            {/* Staff Tabs */}
-                            {pt === 'student_list' && 'Student List'}
-                            {pt === 'student_reports' && 'Student Reports'}
-                            {pt === 'enter_marks' && 'Enter Marks'}
-                            {pt === 'class_reports' && 'Class Reports'}
-                            {pt === 'teacher_list' && 'Teacher List'}
-                            {pt === 'house_reports' && 'House Reports'}
-                            {pt === 'section_reports' && 'Section Reports'}
-                            
-                            {/* Admin Specific Tabs */}
-                            {pt === 'students' && 'Students'}
-                            {pt === 'teachers' && 'Teachers'}
-                            {pt === 'coordinators' && 'Coordinators'}
-                            {pt === 'reports' && 'Reports'}
-                            {pt === 'requests' && 'Pending Approvals ⏳'}
-                          </button>
-                        ))}
+                      {/* Profile Navigation Dropdown */}
+                      <div className="mb-6 relative z-20">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-2.5 bg-slate-950/80 border border-white/10 rounded-2xl">
+                          <div className="w-full sm:max-w-md">
+                            <ProfessionalTabDropdown
+                              options={
+                                effectiveRole === 'student' ? [
+                                  { id: 'overview', label: 'Profile Overview', icon: '👤', description: 'Academic identity & house verification' },
+                                  { id: 'settings', label: 'Settings & Themes', icon: '⚙️', description: 'Custom cards, themes and preferences' },
+                                  { id: 'attendance', label: 'Attendance Records', icon: '📅', description: 'Term presence & excused records' },
+                                  { id: 'records', label: 'Academic Records', icon: '📜', description: 'Official marks & subject assessments' },
+                                  { id: 'remarks', label: 'Faculty Remarks', icon: '💬', description: 'Teacher observations & behavioral notes' },
+                                  { id: 'analytics', label: 'AI Study Analytics', icon: '✨', description: 'Predictive performance and strengths' }
+                                ] : effectiveRole === 'coordinator' ? [
+                                  { id: 'overview', label: 'Coordinator Overview', icon: '👤', description: 'Faculty presence and cohort profile' },
+                                  { id: 'settings', label: 'Settings & Studio', icon: '⚙️', description: 'Profile personalization & system tools' },
+                                  { id: 'teacher_list', label: 'Faculty Directory', icon: '👩‍🏫', description: 'Manage assigned teachers and classes' },
+                                  { id: 'student_list', label: 'Student Directory', icon: '🎓', description: 'Inspect student rosters and sections' },
+                                  { id: 'house_reports', label: 'House Reports', icon: '🏠', description: 'Inter-house standings and points' },
+                                  { id: 'section_reports', label: 'Section Reports', icon: '📊', description: 'Curriculum coverage and averages' },
+                                  { id: 'requests', label: 'Pending Approvals', icon: '⏳', description: 'Verification queues and role requests' }
+                                ] : [
+                                  { id: 'overview', label: 'Administrator Overview', icon: '🛡️', description: 'Master institutional profile' },
+                                  { id: 'settings', label: 'System Settings', icon: '⚙️', description: 'Institutional controls & customization' },
+                                  { id: 'students', label: 'Student Management', icon: '🎓', description: 'Student directory and section mappings' },
+                                  { id: 'teachers', label: 'Teacher Management', icon: '👩‍🏫', description: 'Faculty subject assignments and roles' },
+                                  { id: 'coordinators', label: 'Coordinator Roster', icon: '📋', description: 'Department leads and overseers' },
+                                  { id: 'reports', label: 'Administrative Reports', icon: '📈', description: 'School-wide analytics and audit summaries' },
+                                  { id: 'requests', label: 'Pending Approvals', icon: '⏳', description: 'Role elevation and registration requests' }
+                                ]
+                              }
+                              selectedId={profileTab === 'customizer' ? 'settings' : profileTab}
+                              onSelect={(id) => setProfileTab(id as any)}
+                              size="md"
+                            />
+                          </div>
+                          <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-white/5 rounded-xl border border-white/5 text-xs text-slate-300">
+                            <span className="text-slate-500 font-medium">Viewing Section:</span>
+                            <span className="font-bold text-indigo-400 capitalize">
+                              {(profileTab === 'customizer' ? 'settings' : profileTab).replace('_', ' ')}
+                            </span>
+                          </div>
+                        </div>
                       </div>
 
                       {(profileTab === 'settings' || profileTab === 'customizer') && currentUser && (
@@ -9508,40 +9472,32 @@ Could you please guide me step-by-step on how to solve this, explaining the theo
                       </div>
                     </div>
 
-                    {/* Integrated Sub-Tabs Selector */}
-                    <div className="flex border-b border-white/5 gap-2 pb-1.5 scrollbar-none overflow-x-auto">
-                      <button 
-                        onClick={() => setActiveMaterialSubTab('feed')} 
-                        className={`px-4 py-2 text-xs font-black uppercase tracking-wider rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap ${activeMaterialSubTab === 'feed' ? 'bg-indigo-500/15 border border-indigo-500/20 text-indigo-400 shadow' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
-                      >
-                        📂 Shared Resources
-                      </button>
-                      <button 
-                        onClick={() => setActiveMaterialSubTab('my_uploads')} 
-                        className={`px-4 py-2 text-xs font-black uppercase tracking-wider rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap ${activeMaterialSubTab === 'my_uploads' ? 'bg-emerald-500/15 border border-emerald-500/20 text-emerald-400 shadow' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
-                      >
-                        ☁️ My Uploads
-                      </button>
-                      <button 
-                        onClick={() => setActiveMaterialSubTab('verified')} 
-                        className={`px-4 py-2 text-xs font-black uppercase tracking-wider rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap ${activeMaterialSubTab === 'verified' ? 'bg-indigo-500/15 border border-indigo-500/20 text-indigo-400 shadow' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
-                      >
-                        ✅ Verified Resources
-                      </button>
-                      {['teacher', 'admin', 'coordinator', 'super_admin'].includes(effectiveRole) && (
-                        <button 
-                          onClick={() => setActiveMaterialSubTab('teacher_vault')} 
-                          className={`px-4 py-2 text-xs font-black uppercase tracking-wider rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap ${activeMaterialSubTab === 'teacher_vault' ? 'bg-red-500/15 border border-red-500/20 text-red-400 shadow' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
-                        >
-                          🔒 Teacher Vault
-                        </button>
-                      )}
-                      <button 
-                        onClick={() => setActiveMaterialSubTab('saved')} 
-                        className={`px-4 py-2 text-xs font-black uppercase tracking-wider rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap ${activeMaterialSubTab === 'saved' ? 'bg-indigo-500/15 border border-indigo-500/20 text-indigo-400 shadow' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
-                      >
-                        🔖 Saved Bookmarks {savedMaterialIds.length > 0 && `(${savedMaterialIds.length})`}
-                      </button>
+                    {/* Integrated Sub-Tabs Dropdown Navigation */}
+                    <div className="pt-2 pb-1">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="w-full sm:max-w-md">
+                          <ProfessionalTabDropdown
+                            options={[
+                              { id: 'feed', label: 'Shared Resources', icon: '📂', description: 'Browse community and faculty uploads' },
+                              { id: 'my_uploads', label: 'My Uploads', icon: '☁️', description: 'Files you have contributed to the hub' },
+                              { id: 'verified', label: 'Verified Resources', icon: '✅', description: 'Teacher-approved curriculum files' },
+                              ...(['teacher', 'admin', 'coordinator', 'super_admin'].includes(effectiveRole)
+                                ? [{ id: 'teacher_vault', label: 'Teacher Vault', icon: '🔒', description: 'Restricted faculty repository' }]
+                                : []),
+                              { id: 'saved', label: 'Saved Bookmarks', icon: '🔖', badge: savedMaterialIds.length > 0 ? savedMaterialIds.length : undefined, description: 'Bookmarked for quick access' }
+                            ]}
+                            selectedId={activeMaterialSubTab}
+                            onSelect={(id) => setActiveMaterialSubTab(id)}
+                            size="md"
+                          />
+                        </div>
+                        <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-white/5 rounded-xl border border-white/5 text-xs text-slate-300">
+                          <span className="text-slate-500 font-medium">Viewing Category:</span>
+                          <span className="font-bold text-indigo-400 capitalize">
+                            {activeMaterialSubTab.replace('_', ' ')}
+                          </span>
+                        </div>
+                      </div>
                     </div>
                   </div>
 
@@ -9552,7 +9508,7 @@ Could you please guide me step-by-step on how to solve this, explaining the theo
                     <div className="lg:col-span-8 space-y-6">
                       
                       {/* Search and Filters Segment */}
-                      <div className="smart-glass p-5 rounded-3xl space-y-4">
+                      <div className="smart-glass p-4 sm:p-5 rounded-3xl space-y-4">
                         <div className="relative">
                           <input 
                             type="text" 
@@ -9564,14 +9520,14 @@ Could you please guide me step-by-step on how to solve this, explaining the theo
                           <Search className="absolute left-3.5 top-3 w-4 h-4 text-slate-500" />
                         </div>
 
-                        {/* Dropdown Filters Line */}
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-[11px] sm:text-xs">
+                        {/* Dropdown Filters Line: Clean 4-Column Responsive Grid */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-[11px] sm:text-xs">
                           <div className="space-y-1">
-                            <label className="text-slate-500 font-bold block uppercase tracking-wider">Target Level</label>
+                            <label className="text-slate-400 font-bold block uppercase tracking-wider text-[10px]">Target Level</label>
                             <select 
                               value={materialsGradeFilter}
                               onChange={e => setMaterialsGradeFilter(e.target.value)}
-                              className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                              className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
                             >
                               <option value="All">All Grades</option>
                               <option value="Grade 9">Grade 9</option>
@@ -9582,11 +9538,24 @@ Could you please guide me step-by-step on how to solve this, explaining the theo
                           </div>
 
                           <div className="space-y-1">
-                            <label className="text-slate-500 font-bold block uppercase tracking-wider">Format Classification</label>
+                            <label className="text-slate-400 font-bold block uppercase tracking-wider text-[10px]">Subject Domain</label>
+                            <select 
+                              value={materialsSubjectFilter}
+                              onChange={e => setMaterialsSubjectFilter(e.target.value)}
+                              className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                            >
+                              {['All', 'Mathematics', 'Physics', 'Chemistry', 'Biology', 'Computer Science', 'English', 'Social Science', 'General'].map(sub => (
+                                <option key={sub} value={sub}>{sub === 'All' ? 'All Subjects' : sub}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="text-slate-400 font-bold block uppercase tracking-wider text-[10px]">Format Classification</label>
                             <select 
                               value={materialsTypeFilter}
                               onChange={e => setMaterialsTypeFilter(e.target.value)}
-                              className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                              className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
                             >
                               <option value="All">All Formats</option>
                               <option value="pdf">PDF File</option>
@@ -9601,11 +9570,11 @@ Could you please guide me step-by-step on how to solve this, explaining the theo
                           </div>
 
                           <div className="space-y-1">
-                            <label className="text-slate-500 font-bold block uppercase tracking-wider">Sorting Order</label>
+                            <label className="text-slate-400 font-bold block uppercase tracking-wider text-[10px]">Sorting Order</label>
                             <select 
                               value={materialsSortBy}
                               onChange={e => setMaterialsSortBy(e.target.value)}
-                              className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                              className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-white focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
                             >
                               <option value="Newest">Newest first</option>
                               <option value="Downloads">Most Downloaded</option>
@@ -9614,23 +9583,10 @@ Could you please guide me step-by-step on how to solve this, explaining the theo
                             </select>
                           </div>
                         </div>
-
-                        {/* Subject Selector Responsive Horizontal Strip */}
-                        <div className="flex gap-2 pt-2 pb-1 border-t border-white/5 overflow-x-auto scrollbar-none snap-x mask-fade-right">
-                          {['All', 'Mathematics', 'Physics', 'Chemistry', 'Biology', 'Computer Science', 'English', 'Social Science', 'General'].map(sub => (
-                            <button 
-                              key={sub}
-                              onClick={() => setMaterialsSubjectFilter(sub)}
-                              className={`text-[10px] sm:text-xs font-bold px-3 py-1.5 rounded-full border transition-all flex-shrink-0 snap-center ${materialsSubjectFilter === sub ? 'bg-indigo-600 border-indigo-500 text-white shadow-sm' : 'border-white/5 bg-slate-900 text-slate-400 hover:text-white'}`}
-                            >
-                              {sub}
-                            </button>
-                          ))}
-                        </div>
                       </div>
 
                       {/* Materials List Generator */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
                         {(() => {
                           let displayList = materials;
                           const totalRaw = displayList.length;
