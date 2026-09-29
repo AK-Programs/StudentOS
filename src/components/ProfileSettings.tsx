@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { 
   User, Palette, ShieldCheck, Smartphone, Bell, Sliders, Sparkles, 
   Camera, Check, AlertCircle, Save, ExternalLink, Plus, Trash2, 
-  RefreshCw, Lock, Mail, Phone, ShieldAlert, Monitor, CheckCircle2, ChevronRight
+  RefreshCw, Lock, Mail, Phone, ShieldAlert, Monitor, CheckCircle2, ChevronRight,
+  BellRing
 } from 'lucide-react';
 import { UserProfile, ProfileFrameStyle } from '../types';
 import { saveSupabaseUserProfile } from '../lib/supabaseUsers';
@@ -14,6 +15,12 @@ import {
   getVerificationStatus, resendEmailVerification, 
   requestPhoneOtp, verifyPhoneOtpCode, maskPhone, maskEmail 
 } from '../lib/verification';
+import { ProfessionalTabDropdown } from './ProfessionalTabDropdown';
+import { 
+  enableOneSignalWebPush, 
+  disableOneSignalWebPush, 
+  getOneSignalPushStatus 
+} from '../lib/oneSignal';
 
 export type SettingsSubSection = 'customization' | 'info' | 'theme' | 'verification' | 'environment' | 'notifications';
 
@@ -111,6 +118,126 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
   const [chatSounds, setChatSounds] = useState(rawData.notifyChat !== false);
   const [announcementsAlert, setAnnouncementsAlert] = useState(rawData.notifyAnnounce !== false);
 
+  // OneSignal Web Push state
+  const [enableWebPush, setEnableWebPush] = useState<boolean>(() => {
+    return Boolean(currentUser.enableWebPush ?? rawData.enableWebPush ?? false);
+  });
+  const [pushStatusLoading, setPushStatusLoading] = useState<boolean>(false);
+  const [pushNotice, setPushNotice] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
+  const [oneSignalStatus, setOneSignalStatus] = useState<{
+    supported: boolean;
+    permission: 'default' | 'granted' | 'denied';
+    optedIn: boolean;
+    subscriptionId?: string;
+  }>({
+    supported: true,
+    permission: 'default',
+    optedIn: false
+  });
+
+  useEffect(() => {
+    let isMounted = true;
+    getOneSignalPushStatus().then((status) => {
+      if (isMounted) {
+        setOneSignalStatus(status);
+        if (status.optedIn) {
+          setEnableWebPush(true);
+        }
+      }
+    });
+    return () => { isMounted = false; };
+  }, []);
+
+  const handleToggleWebPush = async (newVal: boolean) => {
+    setPushStatusLoading(true);
+    setPushNotice(null);
+
+    if (newVal) {
+      setPushNotice({ text: 'Requesting permission via OneSignal...', type: 'info' });
+      const result = await enableOneSignalWebPush(
+        currentUser.uid || currentUser.email,
+        currentUser.role,
+        {
+          house: currentUser.house || 'None',
+          grade: currentUser.grade || '10',
+          section: currentUser.section || 'A'
+        }
+      );
+
+      if (result.success && result.optedIn) {
+        setEnableWebPush(true);
+        setOneSignalStatus(prev => ({
+          ...prev,
+          permission: 'granted',
+          optedIn: true,
+          subscriptionId: result.subscriptionId
+        }));
+        setPushNotice({
+          text: '✓ Web Push Notifications activated! OneSignal is registered to deliver targeted alerts for your role.',
+          type: 'success'
+        });
+
+        // Persist preference to Supabase / Firebase user profile
+        const updated: UserProfile = {
+          ...currentUser,
+          enableWebPush: true,
+          oneSignalSubscriptionId: result.subscriptionId || currentUser.oneSignalSubscriptionId,
+          raw_data: {
+            ...(currentUser.raw_data || {}),
+            enableWebPush: true,
+            oneSignalSubscribed: true,
+            oneSignalSubscriptionId: result.subscriptionId
+          }
+        };
+
+        try {
+          await saveSupabaseUserProfile(updated);
+          onUpdateUser?.(updated);
+          onProfileUpdated?.(updated);
+          localStorage.setItem('s_os_user', JSON.stringify(updated));
+        } catch (saveErr) {
+          console.warn('[ProfileSettings] Error updating profile with push preference:', saveErr);
+        }
+      } else {
+        setEnableWebPush(false);
+        setOneSignalStatus(prev => ({ ...prev, permission: result.permission || 'denied', optedIn: false }));
+        setPushNotice({
+          text: result.error || 'Notification permission was denied. Please allow notifications in your browser settings.',
+          type: 'error'
+        });
+      }
+    } else {
+      await disableOneSignalWebPush();
+      setEnableWebPush(false);
+      setOneSignalStatus(prev => ({ ...prev, optedIn: false }));
+      setPushNotice({
+        text: 'Web push notifications turned off for this profile.',
+        type: 'info'
+      });
+
+      // Persist disabled preference to profile
+      const updated: UserProfile = {
+        ...currentUser,
+        enableWebPush: false,
+        raw_data: {
+          ...(currentUser.raw_data || {}),
+          enableWebPush: false,
+          oneSignalSubscribed: false
+        }
+      };
+
+      try {
+        await saveSupabaseUserProfile(updated);
+        onUpdateUser?.(updated);
+        onProfileUpdated?.(updated);
+        localStorage.setItem('s_os_user', JSON.stringify(updated));
+      } catch (saveErr) {
+        console.warn('[ProfileSettings] Error saving push disable preference:', saveErr);
+      }
+    }
+    setPushStatusLoading(false);
+  };
+
   useEffect(() => {
     setVerification(getVerificationStatus(currentUser));
   }, [currentUser]);
@@ -207,6 +334,8 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
         customStatus,
         avatarFrame,
         accentColor,
+        enableWebPush,
+        oneSignalSubscriptionId: oneSignalStatus.subscriptionId || currentUser.oneSignalSubscriptionId,
         raw_data: {
           ...(currentUser.raw_data || {}),
           avatarFrame,
@@ -220,7 +349,9 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
           theme: currentTheme,
           notifyStudy: studyReminders,
           notifyChat: chatSounds,
-          notifyAnnounce: announcementsAlert
+          notifyAnnounce: announcementsAlert,
+          enableWebPush,
+          oneSignalSubscriptionId: oneSignalStatus.subscriptionId || currentUser.oneSignalSubscriptionId
         }
       };
 
@@ -354,84 +485,65 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
           </div>
         )}
 
-        {/* Sub-Section Navigation Tabs */}
-        <div className="flex border-b border-white/5 gap-1.5 pb-1 overflow-x-auto scrollbar-none text-xs">
-          <button
-            onClick={() => setActiveSection('customization')}
-            className={`px-3.5 py-2 rounded-xl font-bold uppercase tracking-wider whitespace-nowrap transition-all flex items-center gap-1.5 ${
-              activeSection === 'customization'
-                ? 'bg-indigo-600 text-white shadow-md'
-                : 'text-slate-400 hover:text-white hover:bg-white/5'
-            }`}
-          >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Customization & Cards</span>
-          </button>
-
-          <button
-            onClick={() => setActiveSection('theme')}
-            className={`px-3.5 py-2 rounded-xl font-bold uppercase tracking-wider whitespace-nowrap transition-all flex items-center gap-1.5 ${
-              activeSection === 'theme'
-                ? 'bg-indigo-600 text-white shadow-md'
-                : 'text-slate-400 hover:text-white hover:bg-white/5'
-            }`}
-          >
-            <Palette className="w-3.5 h-3.5" />
-            <span>Themes</span>
-          </button>
-
-          <button
-            onClick={() => setActiveSection('verification')}
-            className={`px-3.5 py-2 rounded-xl font-bold uppercase tracking-wider whitespace-nowrap transition-all flex items-center gap-1.5 ${
-              activeSection === 'verification'
-                ? 'bg-indigo-600 text-white shadow-md'
-                : 'text-slate-400 hover:text-white hover:bg-white/5'
-            }`}
-          >
-            <ShieldCheck className="w-3.5 h-3.5" />
-            <span>Verification & Security</span>
-            {verification.isVerified ? (
-              <span className="w-2 h-2 rounded-full bg-emerald-400 ml-0.5" />
-            ) : (
-              <span className="w-2 h-2 rounded-full bg-amber-400 ml-0.5" />
-            )}
-          </button>
-
-          <button
-            onClick={() => setActiveSection('info')}
-            className={`px-3.5 py-2 rounded-xl font-bold uppercase tracking-wider whitespace-nowrap transition-all flex items-center gap-1.5 ${
-              activeSection === 'info'
-                ? 'bg-indigo-600 text-white shadow-md'
-                : 'text-slate-400 hover:text-white hover:bg-white/5'
-            }`}
-          >
-            <User className="w-3.5 h-3.5" />
-            <span>Profile Info</span>
-          </button>
-
-          <button
-            onClick={() => setActiveSection('environment')}
-            className={`px-3.5 py-2 rounded-xl font-bold uppercase tracking-wider whitespace-nowrap transition-all flex items-center gap-1.5 ${
-              activeSection === 'environment'
-                ? 'bg-indigo-600 text-white shadow-md'
-                : 'text-slate-400 hover:text-white hover:bg-white/5'
-            }`}
-          >
-            <Smartphone className="w-3.5 h-3.5" />
-            <span>App Environment</span>
-          </button>
-
-          <button
-            onClick={() => setActiveSection('notifications')}
-            className={`px-3.5 py-2 rounded-xl font-bold uppercase tracking-wider whitespace-nowrap transition-all flex items-center gap-1.5 ${
-              activeSection === 'notifications'
-                ? 'bg-indigo-600 text-white shadow-md'
-                : 'text-slate-400 hover:text-white hover:bg-white/5'
-            }`}
-          >
-            <Bell className="w-3.5 h-3.5" />
-            <span>Preferences</span>
-          </button>
+        {/* Sub-Section Navigation Dropdown */}
+        <div className="pt-2 pb-1 relative z-20">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-2 bg-slate-950/70 border border-white/10 rounded-2xl">
+            <div className="w-full sm:max-w-md">
+              <ProfessionalTabDropdown
+                options={[
+                  { 
+                    id: 'customization', 
+                    label: 'Customization & Cards', 
+                    icon: <Sparkles className="w-4 h-4" />,
+                    description: 'Bio banners, custom links and profile badges' 
+                  },
+                  { 
+                    id: 'theme', 
+                    label: 'Themes & Aesthetics', 
+                    icon: <Palette className="w-4 h-4" />,
+                    description: 'System palettes and visual atmosphere' 
+                  },
+                  { 
+                    id: 'verification', 
+                    label: 'Verification & Security', 
+                    icon: <ShieldCheck className="w-4 h-4" />,
+                    badge: verification.isVerified ? 'Verified' : 'Pending',
+                    badgeColor: verification.isVerified ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30',
+                    description: 'Email, phone OTP and security validation' 
+                  },
+                  { 
+                    id: 'info', 
+                    label: 'Profile Information', 
+                    icon: <User className="w-4 h-4" />,
+                    description: 'Public presence and personal details' 
+                  },
+                  { 
+                    id: 'environment', 
+                    label: 'App Environment & APK', 
+                    icon: <Smartphone className="w-4 h-4" />,
+                    description: 'PWA, Android APK, and client runtime' 
+                  },
+                  { 
+                    id: 'notifications', 
+                    label: 'Web Push & Notifications', 
+                    icon: <Bell className="w-4 h-4" />,
+                    badge: enableWebPush ? 'Active' : undefined,
+                    badgeColor: 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30',
+                    description: 'VAPID Web Push, sounds and mentions' 
+                  }
+                ]}
+                selectedId={activeSection}
+                onSelect={(id) => setActiveSection(id as SettingsSubSection)}
+                size="md"
+              />
+            </div>
+            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-white/5 rounded-xl border border-white/5 text-xs text-slate-300">
+              <span className="text-slate-500 font-medium">Studio Tab:</span>
+              <span className="font-bold text-indigo-400 capitalize">
+                {activeSection.replace('_', ' ')}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -444,7 +556,7 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
           <div className="lg:col-span-7 space-y-6">
             
             {/* Banner Customization */}
-            <div className="smart-glass p-5 rounded-3xl space-y-4">
+            <div className="smart-glass p-4 sm:p-5 rounded-2xl sm:rounded-3xl space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-black font-display text-white uppercase tracking-wider">
                   Profile Banner
@@ -478,7 +590,7 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
             </div>
 
             {/* Avatar Frame / Border Selector */}
-            <div className="smart-glass p-5 rounded-3xl space-y-4">
+            <div className="smart-glass p-4 sm:p-5 rounded-2xl sm:rounded-3xl space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-black font-display text-white uppercase tracking-wider">
                   Avatar Border / Frame
@@ -510,7 +622,7 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
             </div>
 
             {/* Avatar Upload & Profile Accent */}
-            <div className="smart-glass p-5 rounded-3xl space-y-4">
+            <div className="smart-glass p-4 sm:p-5 rounded-2xl sm:rounded-3xl space-y-4">
               <h3 className="text-sm font-black font-display text-white uppercase tracking-wider">
                 Avatar & Accent Color
               </h3>
@@ -524,7 +636,7 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
                   )}
                 </div>
 
-                <div className="space-y-1">
+                <div className="space-y-1 text-center sm:text-left">
                   <label className="cursor-pointer inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-all border border-white/10">
                     <Camera className="w-3.5 h-3.5" />
                     <span>{uploadingAvatar ? 'Uploading...' : 'Change Avatar Photo'}</span>
@@ -553,7 +665,7 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
             </div>
 
             {/* Bio, Pronouns, and Custom Status */}
-            <div className="smart-glass p-5 rounded-3xl space-y-4">
+            <div className="smart-glass p-4 sm:p-5 rounded-2xl sm:rounded-3xl space-y-4">
               <h3 className="text-sm font-black font-display text-white uppercase tracking-wider">
                 Identity & Status
               </h3>
@@ -595,7 +707,7 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
             </div>
 
             {/* Custom Cards Manager (Migrated & Integrated) */}
-            <div className="smart-glass p-5 rounded-3xl space-y-4">
+            <div className="smart-glass p-4 sm:p-5 rounded-2xl sm:rounded-3xl space-y-4">
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-sm font-black font-display text-white uppercase tracking-wider flex items-center gap-1.5">
@@ -809,7 +921,7 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
       {/* 2. THEMES SELECTOR                                                        */}
       {/* ========================================================================= */}
       {activeSection === 'theme' && (
-        <div className="smart-glass p-6 sm:p-8 rounded-3xl space-y-6 animate-fadeIn">
+        <div className="smart-glass p-4 sm:p-6 md:p-8 rounded-2xl sm:rounded-3xl space-y-6 animate-fadeIn">
           <div className="space-y-1">
             <h3 className="text-lg font-black font-display text-white">
               StudentOS Global Themes
@@ -871,7 +983,7 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
       {/* 3. VERIFICATION & SECURITY                                                */}
       {/* ========================================================================= */}
       {activeSection === 'verification' && (
-        <div className="smart-glass p-6 sm:p-8 rounded-3xl space-y-6 animate-fadeIn">
+        <div className="smart-glass p-4 sm:p-6 md:p-8 rounded-2xl sm:rounded-3xl space-y-6 animate-fadeIn">
           {/* Verification Score & Badge Status Banner */}
           <div className={`p-5 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${
             verification.isVerified
@@ -1063,7 +1175,7 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
       {/* 4. PROFILE INFORMATION (READ-ONLY / CORE DETAILS)                          */}
       {/* ========================================================================= */}
       {activeSection === 'info' && (
-        <div className="smart-glass p-6 sm:p-8 rounded-3xl space-y-6 animate-fadeIn">
+        <div className="smart-glass p-4 sm:p-6 md:p-8 rounded-2xl sm:rounded-3xl space-y-6 animate-fadeIn">
           <div className="space-y-1">
             <h3 className="text-lg font-black font-display text-white">
               Academic Profile Information
@@ -1111,7 +1223,7 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
       {/* 5. APP ENVIRONMENT                                                        */}
       {/* ========================================================================= */}
       {activeSection === 'environment' && (
-        <div className="smart-glass p-6 sm:p-8 rounded-3xl space-y-6 animate-fadeIn">
+        <div className="smart-glass p-4 sm:p-6 md:p-8 rounded-2xl sm:rounded-3xl space-y-6 animate-fadeIn">
           <div className="space-y-1">
             <h3 className="text-lg font-black font-display text-white">
               App Environment & Runtime Status
@@ -1168,7 +1280,7 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
       {/* 6. NOTIFICATIONS & PREFERENCES                                            */}
       {/* ========================================================================= */}
       {activeSection === 'notifications' && (
-        <div className="smart-glass p-6 sm:p-8 rounded-3xl space-y-6 animate-fadeIn">
+        <div className="smart-glass p-4 sm:p-6 md:p-8 rounded-2xl sm:rounded-3xl space-y-6 animate-fadeIn">
           <div className="space-y-1">
             <h3 className="text-lg font-black font-display text-white">
               App Preferences & Alerts
@@ -1178,7 +1290,133 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
             </p>
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-4">
+            {/* ONE-SIGNAL WEB PUSH NOTIFICATIONS CARD */}
+            <div className="p-5 rounded-2xl bg-gradient-to-r from-indigo-950/70 via-slate-900 to-purple-950/70 border border-indigo-500/30 shadow-xl space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-start gap-3.5">
+                  <div className="p-2.5 rounded-xl bg-indigo-600/20 text-indigo-400 border border-indigo-500/30 shrink-0 mt-0.5">
+                    <BellRing className="w-5 h-5" />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="text-sm font-black text-white tracking-tight">
+                        Enable Web Push Notifications
+                      </h4>
+                      <span className="px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30 font-mono text-[9px] font-black uppercase">
+                        OneSignal SDK
+                      </span>
+                      {enableWebPush && oneSignalStatus.permission === 'granted' ? (
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                          Subscribed & Active
+                        </span>
+                      ) : oneSignalStatus.permission === 'denied' ? (
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                          ⚠️ Permission Blocked
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white/5 text-slate-400 border border-white/10">
+                          ○ Inactive
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-slate-300 leading-relaxed max-w-xl">
+                      Receive immediate desktop, Android APK, and PWA browser alerts for official announcements, assignment deadlines, grade updates, and release notes — even when StudentOS is in the background or closed.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Animated Interactive Toggle Switch */}
+                <div className="flex items-center gap-2.5 shrink-0 self-start sm:self-center">
+                  {pushStatusLoading && (
+                    <RefreshCw className="w-4 h-4 text-indigo-400 animate-spin" />
+                  )}
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={enableWebPush}
+                    disabled={pushStatusLoading}
+                    onClick={() => handleToggleWebPush(!enableWebPush)}
+                    className={`relative inline-flex h-7 w-13 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none disabled:opacity-50 ${
+                      enableWebPush ? 'bg-indigo-600' : 'bg-slate-800'
+                    }`}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out ${
+                        enableWebPush ? 'translate-x-6' : 'translate-x-0'
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
+
+              {/* Status / Feedback Banner */}
+              {pushNotice && (
+                <div className={`p-3 rounded-xl border text-xs font-semibold animate-fadeIn flex items-center justify-between gap-2 ${
+                  pushNotice.type === 'success' 
+                    ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300' 
+                    : pushNotice.type === 'error'
+                      ? 'bg-rose-500/10 border-rose-500/20 text-rose-300'
+                      : 'bg-indigo-500/10 border-indigo-500/20 text-indigo-300'
+                }`}>
+                  <span>{pushNotice.text}</span>
+                  <button 
+                    onClick={() => setPushNotice(null)}
+                    className="text-slate-400 hover:text-white text-xs font-bold px-1"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+
+              {/* Audience Targeting Segmentation Info */}
+              <div className="pt-3 border-t border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[10px] font-black uppercase text-slate-400 font-mono">Targeted Segments:</span>
+                  <span className="px-2 py-0.5 rounded bg-black/30 border border-white/10 text-indigo-300 font-mono text-[10px] font-bold">
+                    role: {currentUser.role || 'student'}
+                  </span>
+                  {currentUser.grade && (
+                    <span className="px-2 py-0.5 rounded bg-black/30 border border-white/10 text-slate-300 font-mono text-[10px]">
+                      grade: {currentUser.grade}
+                    </span>
+                  )}
+                  {currentUser.section && (
+                    <span className="px-2 py-0.5 rounded bg-black/30 border border-white/10 text-slate-300 font-mono text-[10px]">
+                      section: {currentUser.section}
+                    </span>
+                  )}
+                  {currentUser.house && (
+                    <span className="px-2 py-0.5 rounded bg-black/30 border border-white/10 text-slate-300 font-mono text-[10px]">
+                      house: {currentUser.house}
+                    </span>
+                  )}
+                </div>
+
+                {enableWebPush && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if ('Notification' in window && Notification.permission === 'granted') {
+                        new Notification('🔔 StudentOS Push Notification Verified', {
+                          body: `Targeted update for ${currentUser.name} (${(currentUser.role || 'student').toUpperCase()}). You will receive real-time academic alerts!`,
+                          icon: '/icons/icon-192.png'
+                        });
+                        setPushNotice({ text: '✓ Test notification delivered to your screen!', type: 'success' });
+                      } else {
+                        handleToggleWebPush(true);
+                      }
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-slate-200 text-[11px] font-bold transition-all shrink-0 cursor-pointer self-start sm:self-auto"
+                  >
+                    Send Test Alert
+                  </button>
+                )}
+              </div>
+            </div>
+
             <div className="p-4 rounded-2xl bg-slate-900/60 border border-white/5 flex items-center justify-between">
               <div>
                 <span className="text-xs font-bold text-white block">Homework & Study Reminders</span>
