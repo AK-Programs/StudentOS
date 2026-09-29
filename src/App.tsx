@@ -12,7 +12,7 @@ import {
   ZoomOut, Eye, Settings, MessageSquare, BarChart2, User, Calendar, 
   Flame, Upload, FileText, CheckCircle, Download, ChevronLeft, 
   PenTool, Eraser, Share2, LogOut, AlertTriangle, Activity, RefreshCw,
-  Heart, Bookmark, X, Bell, Zap, Gift, Smartphone, Paperclip, History
+  Heart, Bookmark, X, Bell, Zap, Gift, Smartphone, Paperclip, History, Brain
 } from 'lucide-react';
 import { 
   UserRole, HouseType, SectionType, UserProfile, HouseStats, 
@@ -62,12 +62,16 @@ import DigitalReportCards from './components/DigitalReportCards';
 import PerformanceAnalytics from './components/PerformanceAnalytics';
 import ProfileCustomizer from './components/ProfileCustomizer';
 import { ProfileSettings } from './components/ProfileSettings';
+import { WebPushNotificationToggle } from './components/WebPushNotificationToggle';
 import { PromotionalBanners } from './components/PromotionalBanners';
 import AIQuotaManagerModal from './components/AIQuotaManagerModal';
 import { InstallAppModal, AppInstallSection } from './components/InstallAppModal';
 import { isApkInstalledOnDevice } from './config/appConfig';
 import { WhatsNewPortal } from './components/WhatsNewPortal';
 import { MajorReleaseBanner } from './components/MajorReleaseBanner';
+import { StudyCenterFlashcards } from './components/StudyCenterFlashcards';
+import { getStoredCards } from './lib/flashcardStorage';
+import { isCardDue } from './lib/sm2Algorithm';
 import { getPublishedUpdates, getUserReadUpdateIds } from './lib/supabaseUpdates';
 import { 
   AIUsageState, 
@@ -334,6 +338,9 @@ export default function App() {
         if (path === '/whats-new' || path === '/whats_new' || path === '/updates') {
           return 'whats_new';
         }
+        if (path === '/study-hub' || path === '/study_hub' || path === '/flashcards' || path === '/study-center' || path === '/study_center' || path === '/tasks' || path === '/planner') {
+          return 'study_hub';
+        }
       }
       return localStorage.getItem('s_os_active_tab') || 'dashboard';
     } catch (e) {
@@ -343,16 +350,51 @@ export default function App() {
   });
 
   const [whatsNewUnreadCount, setWhatsNewUnreadCount] = useState<number>(0);
+  const [dueCardsCount, setDueCardsCount] = useState<number>(0);
+  const [studyHubSubTab, setStudyHubSubTab] = useState<'tasks' | 'planner' | 'flashcards'>('flashcards');
+
+  useEffect(() => {
+    if (activeTab === 'tasks') setStudyHubSubTab('tasks');
+    else if (activeTab === 'planner') setStudyHubSubTab('planner');
+    else if (activeTab === 'flashcards') setStudyHubSubTab('flashcards');
+  }, [activeTab]);
 
   useEffect(() => {
     const handlePopState = () => {
       const path = window.location.pathname.toLowerCase();
       if (path === '/whats-new' || path === '/whats_new' || path === '/updates') {
         setActiveTab('whats_new');
+      } else if (path === '/tasks') {
+        setActiveTab('study_hub');
+        setStudyHubSubTab('tasks');
+      } else if (path === '/planner') {
+        setActiveTab('study_hub');
+        setStudyHubSubTab('planner');
+      } else if (path === '/flashcards' || path === '/study-center' || path === '/study_center' || path === '/study-hub' || path === '/study_hub') {
+        setActiveTab('study_hub');
+        setStudyHubSubTab('flashcards');
       }
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  // Track Due Flashcards count for Spaced Repetition badge
+  useEffect(() => {
+    const updateDueCards = () => {
+      try {
+        const allCards = getStoredCards();
+        const count = allCards.filter(c => isCardDue(c)).length;
+        setDueCardsCount(count);
+      } catch (e) {}
+    };
+    updateDueCards();
+    const interval = setInterval(updateDueCards, 30000);
+    window.addEventListener('storage', updateDueCards);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('storage', updateDueCards);
+    };
   }, []);
 
   useEffect(() => {
@@ -501,7 +543,7 @@ export default function App() {
   const [lockScreenError, setLockScreenError] = useState<string>('');
 
   const isTabAllowedInPresentation = (tab: string) => {
-    return ['whiteboard', 'ai_teacher', 'materials', 'assignments', 'homework', 'pomodoro', 'planner', 'tasks'].includes(tab);
+    return ['whiteboard', 'ai_teacher', 'materials', 'assignments', 'homework', 'pomodoro', 'planner', 'tasks', 'flashcards', 'study_hub'].includes(tab);
   };
 
   const getSidebarBtnClass = (tab: string, type: 'standard' | 'faculty' | 'attendance' | 'admin' = 'standard') => {
@@ -6168,23 +6210,25 @@ ${roleLabel}: ${userQuery}`;
                     </button>
                   )}
 
-                  {(!presentationMode || isTabAllowedInPresentation('tasks')) && (
+                  {(!presentationMode || isTabAllowedInPresentation('study_hub')) && (
                     <button 
-                      onClick={() => handleTabSelect('tasks')}
-                      className={getSidebarBtnClass('tasks')}
+                      onClick={() => handleTabSelect('study_hub')}
+                      className={getSidebarBtnClass(
+                        ['study_hub', 'tasks', 'planner', 'flashcards'].includes(activeTab) ? activeTab : 'study_hub'
+                      )}
+                      title="Study Hub: Tasks, Study Planner, & Spaced Repetition Flashcards"
                     >
-                      <span>📋</span>
-                      {sidebarOpen && 'Task Manager'}
-                    </button>
-                  )}
-
-                  {(!presentationMode || isTabAllowedInPresentation('planner')) && (
-                    <button 
-                      onClick={() => handleTabSelect('planner')}
-                      className={getSidebarBtnClass('planner')}
-                    >
-                      <span>📅</span>
-                      {sidebarOpen && 'Study Planner'}
+                      <div className="flex items-center gap-3.5 w-full justify-between">
+                        <div className="flex items-center gap-3.5">
+                          <span>🎯</span>
+                          {sidebarOpen && 'Study Hub'}
+                        </div>
+                        {sidebarOpen && dueCardsCount > 0 && (
+                          <span className="px-1.5 py-0.5 rounded-full bg-rose-500 text-white font-black text-[9px] leading-none animate-pulse">
+                            {dueCardsCount} due
+                          </span>
+                        )}
+                      </div>
                     </button>
                   )}
 
@@ -6594,7 +6638,11 @@ ${roleLabel}: ${userQuery}`;
                   <h2 className="text-sm sm:text-xl font-extrabold tracking-tight text-white font-display truncate">
                     {activeTab === 'dashboard' && 'My Dashboard'}
                     {activeTab === 'meet' && 'StudentOS Meet (Virtual Classroom)'}
-                    {activeTab === 'tasks' && 'My Tasks'}
+                    {['study_hub', 'tasks', 'planner', 'flashcards'].includes(activeTab) && (
+                      studyHubSubTab === 'tasks' ? 'Tasks & Focus Objectives' :
+                      studyHubSubTab === 'planner' ? 'Study Schedule Planner' :
+                      'Study Center & Flashcards'
+                    )}
                     {activeTab === 'whiteboard' && 'Drawing Board'}
                     {activeTab === 'houses' && 'House Standings'}
                     {activeTab === 'materials' && 'Class Files & Materials'}
@@ -6605,7 +6653,6 @@ ${roleLabel}: ${userQuery}`;
                     {activeTab === 'ai_teacher' && 'My AI Tutor'}
                     {activeTab === 'peer_chat' && 'Class Chat Room'}
                     {activeTab === 'faculty' && 'Teacher Dashboard'}
-                    {activeTab === 'planner' && 'Study Planner'}
                     {activeTab === 'notes' && 'My Personal Notes'}
                     {activeTab === 'pomodoro' && 'Focus Timer'}
                     {activeTab === 'analytics' && 'My Progress'}
@@ -7100,6 +7147,18 @@ ${roleLabel}: ${userQuery}`;
                             <span className="text-xs font-bold text-white">Interactive Quizzes</span>
                           </button>
                           <button
+                            onClick={() => handleTabSelect('study_hub')}
+                            className="p-4 bg-gradient-to-br from-indigo-950/70 to-purple-950/70 hover:from-indigo-900 hover:to-purple-900 border border-indigo-500/30 rounded-2xl flex flex-col items-center justify-center text-center gap-2 hover:border-indigo-400 hover:shadow-lg transition-all relative group"
+                          >
+                            <span className="text-2xl group-hover:scale-110 transition-transform">🎯</span>
+                            <span className="text-xs font-bold text-white">Study Hub</span>
+                            {dueCardsCount > 0 && (
+                              <span className="absolute top-2 right-2 px-1.5 py-0.5 rounded-full bg-rose-500 text-white font-mono text-[9px] font-black animate-pulse">
+                                {dueCardsCount} due
+                              </span>
+                            )}
+                          </button>
+                          <button
                             onClick={() => handleTabSelect('analytics')}
                             className="p-4 bg-slate-900/60 hover:bg-indigo-950/40 border border-white/10 rounded-2xl flex flex-col items-center justify-center text-center gap-2 hover:border-indigo-500/50 hover:shadow-lg transition-all"
                           >
@@ -7503,148 +7562,228 @@ ${roleLabel}: ${userQuery}`;
                 </div>
               )}
 
-              {/* Tab 2: Task Manager View */}
-              {activeTab === 'tasks' && (
-                <div className="smart-glass p-8 rounded-3xl space-y-6 max-w-3xl mx-auto animate-fadeIn">
-                  <div className="space-y-2">
-                    <h3 className="text-2xl font-black font-display text-white">Target Tasks & Focus Objectives</h3>
-                    <p className="text-xs text-slate-400">Record syllabus preparation sequences, project homework, and term tests timelines.</p>
-                  </div>
-
-                  <div className="flex flex-col sm:flex-row gap-2.5">
-                    <input 
-                      type="text"
-                      value={newTaskTitle}
-                      onChange={e => setNewTaskTitle(e.target.value)}
-                      placeholder="e.g., Study AVL Tree balancing heights and double rotations..."
-                      className="flex-1 px-4 py-3 text-sm rounded-xl bg-slate-900 border border-white/10 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    />
-                    <button 
-                      onClick={handleAddTask}
-                      className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-6 py-3 rounded-xl text-xs uppercase tracking-wide transition-all shadow-md active:scale-95 flex items-center justify-center gap-1.5"
-                    >
-                      <Plus className="w-4 h-4" /> Add Task
-                    </button>
-                  </div>
-
-                  <div className="space-y-2.5 pt-4 border-t border-white/5">
-                    {tasks.map(t => (
-                      <div key={t.id} className="p-4 rounded-xl bg-white/5 border border-white/5 hover:border-white/10 transition-colors flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <button 
-                            onClick={() => toggleTask(t.id)}
-                            className={`h-5 w-5 rounded flex items-center justify-center border transition-all ${t.completed ? 'bg-emerald-600 border-emerald-500 text-white' : 'border-white/20 hover:border-white'}`}
-                          >
-                            {t.completed && <Check className="w-3 h-3 stroke-[3]" />}
-                          </button>
-                          <span className={`text-sm ${t.completed ? 'line-through text-slate-500' : 'text-slate-200'}`}>
-                            {t.title}
+              {/* Unified Study Hub View: Flashcards (SM-2), Task Manager, & Study Schedule Planner */}
+              {['study_hub', 'tasks', 'planner', 'flashcards'].includes(activeTab) && (
+                <div className="space-y-6 animate-fadeIn">
+                  {/* Study Hub Unified Sub-Tabs Navigation */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900/90 backdrop-blur-xl p-2.5 rounded-2xl border border-white/10 shadow-lg">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <button
+                        onClick={() => {
+                          setStudyHubSubTab('flashcards');
+                          setActiveTab('study_hub');
+                        }}
+                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                          studyHubSubTab === 'flashcards'
+                            ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md'
+                            : 'text-slate-400 hover:text-white hover:bg-white/5'
+                        }`}
+                      >
+                        <span>🗂️ Flashcards (SM-2)</span>
+                        {dueCardsCount > 0 && (
+                          <span className="px-1.5 py-0.5 rounded-full bg-rose-500 text-white font-mono text-[9px] font-black animate-pulse">
+                            {dueCardsCount} due
                           </span>
-                        </div>
-                        <button 
-                          onClick={() => deleteTask(t.id)}
-                          className="text-red-400 hover:bg-red-500/10 p-1.5 rounded-lg transition-colors"
-                        >
-                          <Trash className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ))}
+                        )}
+                      </button>
 
-                    {tasks.length === 0 && (
-                      <div className="text-center py-8 text-slate-500">
-                        No active task milestones recorded yet. Create one!
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Tab: Study Planner View */}
-              {activeTab === 'planner' && (
-                <div className="smart-glass p-8 rounded-3xl space-y-6 max-w-4xl mx-auto animate-fadeIn">
-                  <div className="space-y-2">
-                    <h3 className="text-2xl font-black font-display text-white">Target Study Time Planner</h3>
-                    <p className="text-xs text-slate-400">Map targeted times against core disciplines and organize class exam sequences.</p>
-                  </div>
-
-                  <form onSubmit={handleAddSchedule} className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-white/5 p-5 rounded-2xl border border-white/5 shadow-inner">
-                    <div className="space-y-1">
-                      <label className="text-[10px] uppercase font-bold text-slate-400">Focus Subject</label>
-                      <input 
-                        type="text"
-                        value={schSubject}
-                        onChange={e => setSchSubject(e.target.value)}
-                        placeholder="Subject Focus Title" 
-                        className="w-full text-xs px-3.5 py-3 rounded-xl bg-slate-900 border border-white/10 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                        required
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] uppercase font-bold text-slate-400">Target Window</label>
-                      <input 
-                        type="text"
-                        value={schTime}
-                        onChange={e => setSchTime(e.target.value)}
-                        placeholder="e.g. 14:00 - 16:30" 
-                        className="w-full text-xs px-3.5 py-3 rounded-xl bg-slate-900 border border-white/10 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                        required
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] uppercase font-bold text-slate-400">Schedule Day</label>
-                      <select 
-                        value={schDay}
-                        onChange={e => setSchDay(e.target.value)}
-                        className="w-full text-xs px-3.5 py-3 rounded-xl bg-slate-900 border border-white/10 text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      <button
+                        onClick={() => {
+                          setStudyHubSubTab('tasks');
+                          setActiveTab('study_hub');
+                        }}
+                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                          studyHubSubTab === 'tasks'
+                            ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md'
+                            : 'text-slate-400 hover:text-white hover:bg-white/5'
+                        }`}
                       >
-                        <option>Monday</option>
-                        <option>Tuesday</option>
-                        <option>Wednesday</option>
-                        <option>Thursday</option>
-                        <option>Friday</option>
-                        <option>Saturday</option>
-                        <option>Sunday</option>
-                      </select>
-                    </div>
-                    <div className="flex items-end">
-                      <button 
-                        type="submit"
-                        className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3.5 px-4 rounded-xl text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 flex items-center justify-center gap-1.5"
+                        <span>📋 Task Manager</span>
+                        {tasks.filter(t => !t.completed).length > 0 && (
+                          <span className="px-1.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-mono text-[9px] font-bold">
+                            {tasks.filter(t => !t.completed).length}
+                          </span>
+                        )}
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          setStudyHubSubTab('planner');
+                          setActiveTab('study_hub');
+                        }}
+                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+                          studyHubSubTab === 'planner'
+                            ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md'
+                            : 'text-slate-400 hover:text-white hover:bg-white/5'
+                        }`}
                       >
-                        <Plus className="w-4 h-4" /> Add Schedule
+                        <span>📅 Study Schedule</span>
+                        {schedules.length > 0 && (
+                          <span className="px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-mono text-[9px] font-bold">
+                            {schedules.length}
+                          </span>
+                        )}
                       </button>
                     </div>
-                  </form>
 
-                  <div className="space-y-4 pt-4 border-t border-white/5">
-                    <h4 className="text-sm font-bold text-indigo-400">Current Schedule Blocks</h4>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      {schedules.map(sch => (
-                        <div key={sch.id} className="p-4 rounded-xl bg-white/5 border border-white/5 hover:border-indigo-500/20 hover:bg-indigo-500/5 transition-all duration-300 flex items-center justify-between group shadow-sm">
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs font-extrabold uppercase tracking-widest text-indigo-400">📚 {sch.subject}</span>
-                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 font-bold">{sch.day}</span>
-                            </div>
-                            <p className="text-xs font-mono text-slate-300">⏱️ {sch.time}</p>
-                          </div>
-                          <button 
-                            onClick={() => handleDeleteSchedule(sch.id)}
-                            className="text-red-400 hover:bg-red-500/10 p-2 rounded-lg opacity-80 group-hover:opacity-100 transition-all active:scale-95"
-                            title="Delete Interval"
-                          >
-                            <Trash className="w-4 h-4" />
-                          </button>
-                        </div>
-                      ))}
-
-                      {schedules.length === 0 && (
-                        <div className="col-span-2 text-center py-8 text-slate-500 border border-dashed border-white/5 rounded-2xl">
-                          No study schedules saved. Map your day above!
-                        </div>
-                      )}
+                    <div className="flex items-center gap-2 px-3 py-1 bg-black/40 rounded-xl border border-white/5 text-[10px] text-slate-400 font-mono hidden sm:flex">
+                      <span>⚡ Unified Study Hub</span>
                     </div>
                   </div>
+
+                  {/* Sub-tab 1: Flashcards & Spaced Repetition Study Center */}
+                  {studyHubSubTab === 'flashcards' && (
+                    <StudyCenterFlashcards 
+                      currentUser={currentUser} 
+                      showNotification={showNotification}
+                      onNavigateTab={handleTabSelect}
+                    />
+                  )}
+
+                  {/* Sub-tab 2: Task Manager View */}
+                  {studyHubSubTab === 'tasks' && (
+                    <div className="smart-glass p-8 rounded-3xl space-y-6 max-w-3xl mx-auto animate-fadeIn">
+                      <div className="space-y-2">
+                        <h3 className="text-2xl font-black font-display text-white">Target Tasks & Focus Objectives</h3>
+                        <p className="text-xs text-slate-400">Record syllabus preparation sequences, project homework, and term tests timelines.</p>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row gap-2.5">
+                        <input 
+                          type="text"
+                          value={newTaskTitle}
+                          onChange={e => setNewTaskTitle(e.target.value)}
+                          placeholder="e.g., Study AVL Tree balancing heights and double rotations..."
+                          className="flex-1 px-4 py-3 text-sm rounded-xl bg-slate-900 border border-white/10 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                        <button 
+                          onClick={handleAddTask}
+                          className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold px-6 py-3 rounded-xl text-xs uppercase tracking-wide transition-all shadow-md active:scale-95 flex items-center justify-center gap-1.5"
+                        >
+                          <Plus className="w-4 h-4" /> Add Task
+                        </button>
+                      </div>
+
+                      <div className="space-y-2.5 pt-4 border-t border-white/5">
+                        {tasks.map(t => (
+                          <div key={t.id} className="p-4 rounded-xl bg-white/5 border border-white/5 hover:border-white/10 transition-colors flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <button 
+                                onClick={() => toggleTask(t.id)}
+                                className={`h-5 w-5 rounded flex items-center justify-center border transition-all ${t.completed ? 'bg-emerald-600 border-emerald-500 text-white' : 'border-white/20 hover:border-white'}`}
+                              >
+                                {t.completed && <Check className="w-3 h-3 stroke-[3]" />}
+                              </button>
+                              <span className={`text-sm ${t.completed ? 'line-through text-slate-500' : 'text-slate-200'}`}>
+                                {t.title}
+                              </span>
+                            </div>
+                            <button 
+                              onClick={() => deleteTask(t.id)}
+                              className="text-red-400 hover:bg-red-500/10 p-1.5 rounded-lg transition-colors"
+                            >
+                              <Trash className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ))}
+
+                        {tasks.length === 0 && (
+                          <div className="text-center py-8 text-slate-500">
+                            No active task milestones recorded yet. Create one!
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Sub-tab 3: Study Planner View */}
+                  {studyHubSubTab === 'planner' && (
+                    <div className="smart-glass p-8 rounded-3xl space-y-6 max-w-4xl mx-auto animate-fadeIn">
+                      <div className="space-y-2">
+                        <h3 className="text-2xl font-black font-display text-white">Target Study Time Planner</h3>
+                        <p className="text-xs text-slate-400">Map targeted times against core disciplines and organize class exam sequences.</p>
+                      </div>
+
+                      <form onSubmit={handleAddSchedule} className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-white/5 p-5 rounded-2xl border border-white/5 shadow-inner">
+                        <div className="space-y-1">
+                          <label className="text-[10px] uppercase font-bold text-slate-400">Focus Subject</label>
+                          <input 
+                            type="text"
+                            value={schSubject}
+                            onChange={e => setSchSubject(e.target.value)}
+                            placeholder="Subject Focus Title" 
+                            className="w-full text-xs px-3.5 py-3 rounded-xl bg-slate-900 border border-white/10 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            required
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] uppercase font-bold text-slate-400">Target Window</label>
+                          <input 
+                            type="text"
+                            value={schTime}
+                            onChange={e => setSchTime(e.target.value)}
+                            placeholder="e.g. 14:00 - 16:30" 
+                            className="w-full text-xs px-3.5 py-3 rounded-xl bg-slate-900 border border-white/10 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            required
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] uppercase font-bold text-slate-400">Schedule Day</label>
+                          <select 
+                            value={schDay}
+                            onChange={e => setSchDay(e.target.value)}
+                            className="w-full text-xs px-3.5 py-3 rounded-xl bg-slate-900 border border-white/10 text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                          >
+                            <option>Monday</option>
+                            <option>Tuesday</option>
+                            <option>Wednesday</option>
+                            <option>Thursday</option>
+                            <option>Friday</option>
+                            <option>Saturday</option>
+                            <option>Sunday</option>
+                          </select>
+                        </div>
+                        <div className="flex items-end">
+                          <button 
+                            type="submit"
+                            className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3.5 px-4 rounded-xl text-xs uppercase tracking-wider transition-all shadow-md active:scale-95 flex items-center justify-center gap-1.5"
+                          >
+                            <Plus className="w-4 h-4" /> Add Schedule
+                          </button>
+                        </div>
+                      </form>
+
+                      <div className="space-y-4 pt-4 border-t border-white/5">
+                        <h4 className="text-sm font-bold text-indigo-400">Current Schedule Blocks</h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          {schedules.map(sch => (
+                            <div key={sch.id} className="p-4 rounded-xl bg-white/5 border border-white/5 hover:border-indigo-500/20 hover:bg-indigo-500/5 transition-all duration-300 flex items-center justify-between group shadow-sm">
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-extrabold uppercase tracking-widest text-indigo-400">📚 {sch.subject}</span>
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 font-bold">{sch.day}</span>
+                                </div>
+                                <p className="text-xs font-mono text-slate-300">⏱️ {sch.time}</p>
+                              </div>
+                              <button 
+                                onClick={() => handleDeleteSchedule(sch.id)}
+                                className="text-red-400 hover:bg-red-500/10 p-2 rounded-lg opacity-80 group-hover:opacity-100 transition-all active:scale-95"
+                                title="Delete Interval"
+                              >
+                                <Trash className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ))}
+
+                          {schedules.length === 0 && (
+                            <div className="col-span-2 text-center py-8 text-slate-500 border border-dashed border-white/5 rounded-2xl">
+                              No study schedules saved. Map your day above!
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -7677,6 +7816,24 @@ ${roleLabel}: ${userQuery}`;
                         <span>🔒 Personal Vault Canvas</span>
                       </button>
                     </div>
+
+                    <button
+                      onClick={() => {
+                        setStudyHubSubTab('flashcards');
+                        handleTabSelect('study_hub');
+                      }}
+                      className="px-3.5 py-2 rounded-xl bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 border border-purple-500/30 text-xs font-bold transition-all flex items-center gap-1.5 active:scale-95 cursor-pointer"
+                      title="Open Interactive Flashcards & SM-2 Study Center"
+                    >
+                      <Brain className="w-3.5 h-3.5 text-purple-400" />
+                      <span className="hidden sm:inline">Flashcards Study Center</span>
+                      <span className="sm:hidden">Cards</span>
+                      {dueCardsCount > 0 && (
+                        <span className="px-1.5 py-0.5 rounded-full bg-rose-500 text-white font-mono text-[9px] font-black animate-pulse">
+                          {dueCardsCount}
+                        </span>
+                      )}
+                    </button>
                   </div>
 
                   {notesViewMode === 'collaborative' ? (
@@ -8324,7 +8481,7 @@ ${activeNote.content}`);
                         <div className="animate-fadeIn">
                           <ProfileSettings 
                             currentUser={currentUser}
-                            initialSubSection={profileTab === 'customizer' ? 'customization' : 'customization'}
+                            initialSubSection={profileTab === 'customizer' ? 'customization' : 'notifications'}
                             onUpdateUser={(updated) => {
                               setCurrentUser(updated);
                               try { localStorage.setItem('s_os_user', JSON.stringify(updated)); } catch (_) {}
@@ -8492,13 +8649,32 @@ ${activeNote.content}`);
                         )}
                       </div>
 
-                      <button 
-                        type="submit"
-                        disabled={!!profileNameError}
-                        className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-bold py-3 px-6 rounded-xl text-xs uppercase tracking-wider transition-all shadow-md active:scale-95"
-                      >
-                        {effectiveRole === 'student' ? 'Update Profile Picture' : 'Update Profile Parameters'}
-                      </button>
+                      <div className="flex items-center gap-4 flex-wrap">
+                        <button 
+                          type="submit"
+                          disabled={!!profileNameError}
+                          className="bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-white font-bold py-3 px-6 rounded-xl text-xs uppercase tracking-wider transition-all shadow-md active:scale-95"
+                        >
+                          {effectiveRole === 'student' ? 'Update Profile Picture' : 'Update Profile Parameters'}
+                        </button>
+                      </div>
+
+                      {/* Web Push Notifications Preference in User Profile */}
+                      <div className="mt-8 pt-6 border-t border-white/5 space-y-2">
+                        <WebPushNotificationToggle 
+                          currentUser={currentUser}
+                          variant="card"
+                          onUpdateUser={(updated) => {
+                            setCurrentUser(updated);
+                            try { localStorage.setItem('s_os_user', JSON.stringify(updated)); } catch (_) {}
+                          }}
+                          onProfileUpdated={(updated) => {
+                            setCurrentUser(updated);
+                            try { localStorage.setItem('s_os_user', JSON.stringify(updated)); } catch (_) {}
+                          }}
+                          showNotification={showNotification}
+                        />
+                      </div>
 
                       {/* App Download and Installation Section */}
                       <div className="mt-8 pt-6 border-t border-white/5">
