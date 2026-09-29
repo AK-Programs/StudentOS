@@ -10,7 +10,7 @@
 
 const BAD_WORDS = [
   'bastard', 'bitch', 'idiot', 'stupid', 'dumbass', 'asshole', 'fuck', 'shit',
-  'crap', 'scam', 'hate', 'kill', 'die', 'trash', 'loser', '67, '6 7', 'abe', 'sale', kutte'
+  'crap', 'scam', 'hate', 'kill', 'die', 'trash', 'loser'
 ];
 
 const PHONE_REGEX = /(\+?\d{1,3}[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/g;
