@@ -488,3 +488,112 @@ export function resetDeckProgress(deckId: string): Flashcard[] {
   saveStoredCards(updated);
   return updated;
 }
+
+// ==========================================
+// SUPABASE CLOUD SYNCHRONIZATION HELPERS
+// ==========================================
+
+export async function fetchSupabaseDecks(userId?: string): Promise<FlashcardDeck[] | null> {
+  if (!supabase) return null;
+  try {
+    const query = supabase.from('flashcard_decks').select('*');
+    if (userId) {
+      query.or(`user_id.eq.${userId},user_id.eq.system,user_id.is.null`);
+    }
+    const { data, error } = await query;
+    if (error || !data) return null;
+
+    return data.map((d: any) => ({
+      id: d.id,
+      title: d.title,
+      description: d.description || '',
+      subject: d.subject || 'General',
+      color: d.color || 'from-indigo-600 to-violet-800',
+      icon: d.icon || '📚',
+      tags: Array.isArray(d.tags) ? d.tags : [],
+      isFavorite: Boolean(d.is_favorite),
+      createdAt: d.created_at || new Date().toISOString(),
+      updatedAt: d.updated_at || new Date().toISOString(),
+      createdBy: d.user_id || 'system'
+    }));
+  } catch (err) {
+    console.warn('[Flashcards] Supabase decks fetch error (using local storage):', err);
+    return null;
+  }
+}
+
+export async function fetchSupabaseCards(deckId?: string): Promise<Flashcard[] | null> {
+  if (!supabase) return null;
+  try {
+    let query = supabase.from('flashcards').select('*');
+    if (deckId) {
+      query = query.eq('deck_id', deckId);
+    }
+    const { data, error } = await query;
+    if (error || !data) return null;
+
+    return data.map((c: any) => ({
+      id: c.id,
+      deckId: c.deck_id,
+      front: c.front,
+      back: c.back,
+      hint: c.hint || undefined,
+      tags: Array.isArray(c.tags) ? c.tags : [],
+      interval: c.interval || 0,
+      repetition: c.repetition || 0,
+      easeFactor: Number(c.ease_factor) || 2.5,
+      nextReviewDate: c.next_review_date || new Date().toISOString(),
+      lastReviewedDate: c.last_reviewed_date || undefined,
+      state: (c.state as any) || 'new',
+      history: Array.isArray(c.history) ? c.history : []
+    }));
+  } catch (err) {
+    console.warn('[Flashcards] Supabase cards fetch error (using local storage):', err);
+    return null;
+  }
+}
+
+export async function syncDeckToSupabase(deck: FlashcardDeck, userId?: string): Promise<void> {
+  if (!supabase) return;
+  try {
+    await supabase.from('flashcard_decks').upsert({
+      id: deck.id,
+      user_id: userId || deck.createdBy || 'system',
+      title: deck.title,
+      description: deck.description,
+      subject: deck.subject,
+      color: deck.color,
+      icon: deck.icon,
+      tags: deck.tags || [],
+      is_favorite: Boolean(deck.isFavorite),
+      updated_at: new Date().toISOString()
+    });
+  } catch (err) {
+    console.warn('[Flashcards] Failed to sync deck to Supabase:', err);
+  }
+}
+
+export async function syncCardToSupabase(card: Flashcard, userId?: string): Promise<void> {
+  if (!supabase) return;
+  try {
+    await supabase.from('flashcards').upsert({
+      id: card.id,
+      deck_id: card.deckId,
+      user_id: userId || 'system',
+      front: card.front,
+      back: card.back,
+      hint: card.hint || null,
+      tags: card.tags || [],
+      interval: card.interval,
+      repetition: card.repetition,
+      ease_factor: card.easeFactor,
+      next_review_date: card.nextReviewDate,
+      last_reviewed_date: card.lastReviewedDate || null,
+      state: card.state,
+      history: card.history || [],
+      updated_at: new Date().toISOString()
+    });
+  } catch (err) {
+    console.warn('[Flashcards] Failed to sync card to Supabase:', err);
+  }
+}
