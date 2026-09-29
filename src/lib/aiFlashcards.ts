@@ -5,8 +5,6 @@
  * Client helper to generate flashcard decks using AI
  */
 
-import { clientSideGemini } from './clientAiFallback';
-
 export interface GeneratedFlashcardData {
   front: string;
   back: string;
@@ -47,8 +45,9 @@ export async function generateFlashcardsWithAI(params: {
     console.warn('[AI Flashcards] Server API error, attempting client-side fallback:', serverErr);
   }
 
-  // 2. Try client-side direct Gemini
+  // 2. Try client-side direct Gemini (dynamic import)
   try {
+    const { clientSideGemini } = await import('./clientAiFallback');
     const prompt = `Create ${count} high-yield active-recall study flashcards for ${difficulty} level in ${subject}.
 Topic: ${topic || 'Extracted from notes'}
 Notes text:
