@@ -12,8 +12,9 @@ import {
   Flame, Plus, Search, Trash2, Edit3, BookOpen, Volume2, VolumeX, 
   ChevronLeft, ChevronRight, Filter, ArrowRight, Upload, Download, 
   RefreshCw, HelpCircle, Award, Zap, Check, X, ArrowUpRight, BarChart2,
-  Bookmark, Share2, Tag
+  Bookmark, Share2, Tag, GraduationCap
 } from 'lucide-react';
+import { ProfessionalTabDropdown } from './ProfessionalTabDropdown';
 import { Flashcard, FlashcardDeck, FlashcardQuality, UserProfile, VaultNote } from '../types';
 import { 
   getStoredDecks, saveStoredDecks, getStoredCards, saveStoredCards,
@@ -532,7 +533,7 @@ export const StudyCenterFlashcards: React.FC<StudyCenterProps> = ({
             transition={{ duration: 0.5, ease: 'easeInOut' }}
           >
             {/* FRONT OF CARD */}
-            <div className={`absolute inset-0 w-full min-h-[360px] sm:min-h-[420px] rounded-3xl p-6 sm:p-10 flex flex-col justify-between border backface-hidden shadow-2xl ${
+            <div className={`absolute inset-0 w-full min-h-[320px] sm:min-h-[420px] rounded-2xl sm:rounded-3xl p-4 sm:p-8 md:p-10 flex flex-col justify-between border backface-hidden shadow-2xl overflow-hidden ${
               isFlipped ? 'pointer-events-none' : ''
             } bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-950/40 border-white/10`}>
               {/* Header */}
@@ -626,7 +627,7 @@ export const StudyCenterFlashcards: React.FC<StudyCenterProps> = ({
             {/* BACK OF CARD */}
             <div 
               style={{ transform: 'rotateY(180deg)' }}
-              className={`absolute inset-0 w-full min-h-[360px] sm:min-h-[420px] rounded-3xl p-6 sm:p-10 flex flex-col justify-between border backface-hidden shadow-2xl bg-gradient-to-br from-slate-900 via-indigo-950/50 to-slate-950 border-indigo-500/30 ${
+              className={`absolute inset-0 w-full min-h-[320px] sm:min-h-[420px] rounded-2xl sm:rounded-3xl p-4 sm:p-8 md:p-10 flex flex-col justify-between border backface-hidden shadow-2xl overflow-hidden bg-gradient-to-br from-slate-900 via-indigo-950/50 to-slate-950 border-indigo-500/30 ${
                 !isFlipped ? 'pointer-events-none' : ''
               }`}
             >
@@ -1152,33 +1153,31 @@ export const StudyCenterFlashcards: React.FC<StudyCenterProps> = ({
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-900 p-4 rounded-2xl border border-white/5">
-        {/* Subject pills */}
-        <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none pb-1 sm:pb-0">
-          {subjects.map(s => (
-            <button
-              key={s}
-              onClick={() => setSubjectFilter(s)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
-                subjectFilter === s 
-                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20' 
-                  : 'bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white'
-              }`}
-            >
-              {s}
-            </button>
-          ))}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-900/90 p-3 sm:p-4 rounded-2xl border border-white/10 relative z-20">
+        {/* Subject Dropdown Filter */}
+        <div className="w-full sm:w-64">
+          <ProfessionalTabDropdown
+            options={subjects.map(s => ({
+              id: s,
+              label: s === 'All' ? 'All Subjects' : s,
+              icon: s === 'All' ? <BookOpen className="w-4 h-4" /> : <GraduationCap className="w-4 h-4" />,
+              badge: s === 'All' ? decks.length : decks.filter(d => d.subject === s).length
+            }))}
+            selectedId={subjectFilter}
+            onSelect={setSubjectFilter}
+            size="sm"
+          />
         </div>
 
         {/* Search input */}
-        <div className="relative min-w-[200px] sm:min-w-[260px]">
+        <div className="relative w-full sm:max-w-xs">
           <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
           <input
             type="text"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
             placeholder="Search decks, topics, tags..."
-            className="w-full pl-9 pr-4 py-2 bg-slate-950/60 rounded-xl border border-white/10 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
+            className="w-full pl-9 pr-4 py-2 bg-slate-950/80 rounded-xl border border-white/10 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
           />
         </div>
       </div>
