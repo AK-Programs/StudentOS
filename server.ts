@@ -6,12 +6,11 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
-import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import { getAIClient, generateAICompletion } from './server/aiClient';
 import dotenv from 'dotenv';
 import { WebSocketServer, WebSocket as WSWebSocket } from 'ws';
-import { generateMermaidDiagram, generateSvgDiagram, generateCanvasElements } from './server/diagramEngine.js';
+import { generateMermaidDiagram, generateSvgDiagram, generateCanvasElements } from './server/diagramEngine';
 import webpush from 'web-push';
 
 dotenv.config();
@@ -22,7 +21,9 @@ const PORT = 3000;
 app.use(express.json({ limit: '10mb' }));
 
 // VAPID keys for Web Push with file system persistence across server restarts
-const VAPID_KEY_FILE = path.join(process.cwd(), '.vapid-keys.json');
+const VAPID_KEY_FILE = process.env.VERCEL
+  ? path.join('/tmp', '.vapid-keys.json')
+  : path.join(process.cwd(), '.vapid-keys.json');
 
 function getOrGenerateVapidKeys() {
   if (process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY) {
@@ -32,14 +33,14 @@ function getOrGenerateVapidKeys() {
     };
   }
 
-  if (fs.existsSync(VAPID_KEY_FILE)) {
-    try {
+  try {
+    if (fs.existsSync(VAPID_KEY_FILE)) {
       const saved = JSON.parse(fs.readFileSync(VAPID_KEY_FILE, 'utf-8'));
       if (saved.publicKey && saved.privateKey) {
         return saved;
       }
-    } catch (e) {}
-  }
+    }
+  } catch (e) {}
 
   try {
     const generated = webpush.generateVAPIDKeys();
@@ -47,11 +48,15 @@ function getOrGenerateVapidKeys() {
       publicKey: generated.publicKey,
       privateKey: generated.privateKey
     };
-    fs.writeFileSync(VAPID_KEY_FILE, JSON.stringify(keys, null, 2));
-    console.log('[Push] Persisted new matched VAPID keypair to .vapid-keys.json');
+    try {
+      fs.writeFileSync(VAPID_KEY_FILE, JSON.stringify(keys, null, 2));
+      console.log('[Push] Persisted new matched VAPID keypair');
+    } catch (_) {
+      // Handled silently if filesystem is read-only (e.g. serverless)
+    }
     return keys;
   } catch (e) {
-    console.warn('[Push] Error writing VAPID keys file:', e);
+    console.warn('[Push] Error generating VAPID keys:', e);
     return { publicKey: '', privateKey: '' };
   }
 }
@@ -518,10 +523,22 @@ function getRolling24hUsage(userId: string, role?: string): {
 
 // Endpoint to inspect rolling 24-hour limit
 app.get('/api/ai/usage-status', (req, res) => {
-  const userId = (req.query.userId as string) || 'anonymous';
-  const role = (req.query.role as string) || 'student';
-  const info = getRolling24hUsage(userId, role);
-  return res.json(info);
+  try {
+    const userId = (req.query.userId as string) || 'anonymous';
+    const role = (req.query.role as string) || 'student';
+    const info = getRolling24hUsage(userId, role);
+    return res.json(info);
+  } catch (err: any) {
+    return res.json({
+      used: 0,
+      limit: 30,
+      baseLimit: 30,
+      bonus: 0,
+      remaining: 30,
+      nextAvailableInMinutes: null,
+      role: 'student'
+    });
+  }
 });
 
 // Endpoint to redeem voucher codes for quota boost
@@ -1418,7 +1435,8 @@ let globalHomeworkState: any[] = [];
 
 // Configure Vite middleware in development or static serving in production
 async function startServer() {
-  if (process.env.NODE_ENV !== 'production') {
+  if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
