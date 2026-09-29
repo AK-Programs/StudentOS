@@ -60,6 +60,8 @@ export interface UserProfile {
   pin?: string;
   grant_all_permissions?: boolean;
   permissions?: string[];
+  enableWebPush?: boolean;
+  oneSignalSubscriptionId?: string;
   raw_data?: any;
 }
 
@@ -792,5 +794,47 @@ export interface SystemUpdateAuditLog {
   actorRole: string;
   timestamp: string;
   details?: string;
+}
+
+// Spaced Repetition (SM-2) Flashcard & Study Center Types
+export type FlashcardQuality = 0 | 1 | 2 | 3 | 4 | 5;
+
+export type FlashcardState = 'new' | 'learning' | 'review' | 'mastered';
+
+export interface FlashcardReviewLog {
+  date: string;
+  rating: number;
+  interval: number;
+}
+
+export interface Flashcard {
+  id: string;
+  deckId: string;
+  front: string;
+  back: string;
+  hint?: string;
+  tags?: string[];
+  interval: number; // days
+  repetition: number;
+  easeFactor: number; // minimum 1.3, standard 2.5
+  nextReviewDate: string; // ISO date string
+  lastReviewedDate?: string;
+  state: FlashcardState;
+  history?: FlashcardReviewLog[];
+}
+
+export interface FlashcardDeck {
+  id: string;
+  title: string;
+  description: string;
+  subject: string;
+  color: string;
+  icon: string;
+  cardCount?: number;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
+  tags?: string[];
+  isFavorite?: boolean;
 }
 
